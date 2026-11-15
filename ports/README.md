@@ -53,15 +53,19 @@ decompilation, pass `-DMVC2_DECOMP=FOLDER` and make its tables with `tools/point
 Both versions run at their boards' own 59.94 frames a second, whatever the monitor's refresh rate (both drive
 VGA from a 27 MHz clock, 858 by 525). `MVC2_FPS=n` sets another rate, and `MVC2_FPS=0` runs as fast as it can.
 
-The picture is drawn in software, on as many threads as the machine has (`MVC2_RDTHREADS=n` sets the count;
+The picture is drawn by the GPU through SDL_GPU (Direct3D 12 or Vulkan), by the PowerVR2's rules, at the
+window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead, `aa = 2` to `4`
+draws that many times larger again and filters it down, and `sprites = sharp`, `pixel` or `arcade` sets how a
+flat textured triangle (a sprite, the HUD, text) is read when drawn larger. `renderer = soft`, or a GPU that can't,
+draws it in software at 640 by 480 instead, on as many threads as the machine has (`MVC2_RDTHREADS=n` sets the count;
 the picture is the same for any count). On a slow machine, `MVC2_RDQUALITY=half` draws it at 320 by 240 and
 shows each pixel as four: about three and a half times faster, but small text and sprites lose detail.
 `render =` in `mvc2.cfg` sets the quality for every run, and `MVC2_RDQUALITY` overrides it for one. Its words:
 `exact` (the default, every pixel as the PowerVR2 draws it), `fast` (the nearest texel, one mip level a
 triangle), `half`, `fast+half`, `nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
 
-The front end is built with SDL3 (`SDL3.dll` beside the executable). `renderer = gpu` in `mvc2.cfg` draws with
-the GPU through SDL_GPU (Direct3D 12 or Vulkan); when it can't, it says why and draws in software.
+The front end is built with SDL3 (`SDL3.dll` beside the executable). When the GPU can't start, it says why and
+draws in software; test runs draw in software unless `mvc2.cfg` names a renderer.
 `-DMVC2_SDL3=OFF` builds it with SDL2 (`mingw-w64-i686-SDL2`), software only.
 
 `build/mvc2dc` is the Dreamcast alone. Test runs show no message boxes and run as fast as they can unless
