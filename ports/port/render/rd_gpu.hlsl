@@ -120,7 +120,8 @@ int4 texel(int x, int y, int k) {
 }
 
 /* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0; 2: the nearest texel; 3: as the
-   game filters it. Each reads only the sprite's own texels, between uvb's corners */
+   game filters it; 4: bilinear, with the nearest texel's alpha. Each reads only the sprite's own texels, between uvb's
+   corners */
 int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
     uint uvm = flags / F_UV & 15;
     bool cv = (uvm & 1) != 0, cu = (uvm & 2) != 0, fv = (uvm & 4) != 0, fu = (uvm & 8) != 0;
@@ -130,6 +131,8 @@ int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
     int4 c;
     if (smode == 2) {
         bilinear = false;
+    } else if (smode == 4) {
+        bilinear = true;
     } else if (smode == 1) {
         float2 f = fw * exp2(-(float)k);
         if (max(f.x, f.y) < 1.0) {
@@ -164,6 +167,9 @@ int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
             /* a sprite's colour weighed by alpha, so a clear texel beside it fades it out without darkening it */
             float4 aw = float4((1 - ax) * (1 - ay), ax * (1 - ay), (1 - ax) * ay, ax * ay) * float4(c00.x, c10.x, c01.x, c11.x);
             c.yzw = (int3)((c00.yzw * aw.x + c10.yzw * aw.y + c01.yzw * aw.z + c11.yzw * aw.w) / (aw.x + aw.y + aw.z + aw.w));
+        }
+        if (smode == 4) {
+            c.x = (int)(ay < 0.5 ? (ax < 0.5 ? c00.x : c10.x) : (ax < 0.5 ? c01.x : c11.x));
         }
     }
     return c;
@@ -341,7 +347,10 @@ float4 ps_main(VOut i) : SV_Target0 {
         float2 m = (abs(jx) + abs(jy)) * float2(width, height);
         int4 t;
         bool bilinear = (flags & F_BILINEAR) != 0;
-        [branch] if (i.cf.w != 0 && inv_scale < 1.0 && !(bilinear && max(m.x, m.y) < 0.8)) {
+        [branch] if (i.cf.w == 2) {
+            /* an upright sprite drawn larger, its texels fitted to it: read where they fall */
+            t = sample_tex(k, u, v, smode == 0 ? 3 : smode == 3 ? 4 : smode, fw, i.uvb);
+        } else if (i.cf.w != 0 && inv_scale < 1.0 && !(bilinear && max(m.x, m.y) < 0.8)) {
             /* pixel art drawn larger: its colours at the game's pixel centres, as at 640 by 480, each from the
                sprite's own texels, blended weighed by alpha: sharp over a pixel at their edges, smooth all the way
                across, and arcade all the way when the game filters it */

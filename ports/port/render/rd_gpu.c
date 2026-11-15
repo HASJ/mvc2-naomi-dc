@@ -861,6 +861,67 @@ static int sprite(const RD_STATE* s, const RD_TRI* t) {
     return s->tex != NULL && t->v[0].z == t->v[1].z && t->v[1].z == t->v[2].z;
 }
 
+static double texel_at(double s) {
+    return floor(fabs(s - floor(s + 0.5)) < 1e-4 ? floor(s + 0.5) : s);     /* on a texel's edge: the one after it */
+}
+
+/* the texels a sprite's game pixels show at 640 by 480, across or down: lo and hi from the pixel centres c0 and c1 of
+   its first and last, u0 + du (c - x0) the texture there, n its texels */
+static void shown(double u0, double du, double x0, double c0, double c1, int n, double* lo, double* hi) {
+    double a = texel_at((u0 + du * (c0 - x0)) * n), b = texel_at((u0 + du * (c1 - x0)) * n);
+    *lo = (du > 0 ? a : a + 1) / n;
+    *hi = (du > 0 ? b + 1 : b) / n;
+}
+
+/* a sprite drawn larger, upright, a texel a game pixel or smaller: b the bounds of the texels it shows at 640 by
+   480, and across or down at a texel a game pixel, its u or v moved so those texels fill it from edge to edge, each
+   on its game pixel (shrunk, its texels stay where the game put them, in line with the sprites drawn with it); 0 for
+   a magnified one, drawn as at 640 by 480 */
+static int fit_texels(const RD_STATE* s, const RD_TRI* o, RD_TRI* t, float* b) {
+    const RD_VTX *a = &o->v[0], *p = &o->v[1], *c = &o->v[2];
+    double area = edge(a->x, a->y, p->x, p->y, c->x, c->y);
+    double dux, duy, dvx, dvy, x0, x1, y0, y1, u0, u1, v0, v1;
+    int w = s->tex->width, h = s->tex->height, j;
+    if (area == 0) {
+        return 0;
+    }
+    dux = ((p->u - a->u) * ((double)c->y - a->y) - (c->u - a->u) * ((double)p->y - a->y)) / area;
+    duy = ((c->u - a->u) * ((double)p->x - a->x) - (p->u - a->u) * ((double)c->x - a->x)) / area;
+    dvx = ((p->v - a->v) * ((double)c->y - a->y) - (c->v - a->v) * ((double)p->y - a->y)) / area;
+    dvy = ((c->v - a->v) * ((double)p->x - a->x) - (p->v - a->v) * ((double)c->x - a->x)) / area;
+    if (dux == 0 || dvy == 0 || fabs(duy * w) > 1e-4 || fabs(dvx * h) > 1e-4) {
+        /* turned or slanted: its texels where they fall, between its own u and v */
+        b[0] = fminf(a->u, fminf(p->u, c->u)), b[1] = fminf(a->v, fminf(p->v, c->v));
+        b[2] = fmaxf(a->u, fmaxf(p->u, c->u)), b[3] = fmaxf(a->v, fmaxf(p->v, c->v));
+        return 1;
+    }
+    if (fmin(fabs(dux * w), fabs(dvy * h)) < 1 - 1e-3) {
+        return 0;   /* magnified: as at 640 by 480, so sprites drawn over each other stay in line */
+    }
+    x0 = x1 = t->v[0].x, y0 = y1 = t->v[0].y;
+    for (j = 0; j < 3; j++) {
+        if (t->v[j].x != floorf(t->v[j].x) || t->v[j].y != floorf(t->v[j].y)) {
+            return 0;
+        }
+        x0 = fmin(x0, t->v[j].x), x1 = fmax(x1, t->v[j].x), y0 = fmin(y0, t->v[j].y), y1 = fmax(y1, t->v[j].y);
+    }
+    if (x1 <= x0 || y1 <= y0) {
+        return 0;
+    }
+    shown(a->u, dux, a->x, x0 + 0.5, x1 - 0.5, w, &u0, &u1);
+    shown(a->v, dvy, a->y, y0 + 0.5, y1 - 0.5, h, &v0, &v1);
+    for (j = 0; j < 3; j++) {
+        if (fabs(fabs(dux * w) - 1) < 1e-3) {
+            t->v[j].u = (float)(u0 + (u1 - u0) * (t->v[j].x - x0) / (x1 - x0));
+        }
+        if (fabs(fabs(dvy * h) - 1) < 1e-3) {
+            t->v[j].v = (float)(v0 + (v1 - v0) * (t->v[j].y - y0) / (y1 - y0));
+        }
+    }
+    b[0] = (float)fmin(u0, u1), b[1] = (float)fmin(v0, v1), b[2] = (float)fmax(u0, u1), b[3] = (float)fmax(v0, v1);
+    return 1;
+}
+
 static float snap16(float x) {
     return fabsf(x) < 65536.0f ? floorf(x * 16.0f + 0.5f) * (1.0f / 16.0f) : x;
 }
@@ -992,7 +1053,8 @@ static int build(float* zscale) {
             const RD_STATE* s = &rd_frame->states[t->state];
             RD_TRI snapped;
             GVTX g[3];
-            int j, k;
+            float fb[4];
+            int j, k, fitted = 0;
             if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                 continue;
             }
@@ -1025,6 +1087,7 @@ static int build(float* zscale) {
                         }
                     }
                 }
+                fitted = sprite(s, o) && fit_texels(s, o, &snapped, fb);
                 t = &snapped;
                 if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                     continue;
@@ -1033,14 +1096,15 @@ static int build(float* zscale) {
             for (j = 0; j < 3; j++) {
                 put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *zscale, (float)i);
             }
-            /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to */
+            /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to.
+               cf.w 2: its texels fitted to it */
             if (sprite(s, o)) {
                 float b[4];
                 b[0] = fminf(o->v[0].u, fminf(o->v[1].u, o->v[2].u)), b[1] = fminf(o->v[0].v, fminf(o->v[1].v, o->v[2].v));
                 b[2] = fmaxf(o->v[0].u, fmaxf(o->v[1].u, o->v[2].u)), b[3] = fmaxf(o->v[0].v, fmaxf(o->v[1].v, o->v[2].v));
                 for (j = 0; j < 3; j++) {
-                    g[j].cf[3] = 1.0f;
-                    memcpy(g[j].uvb, b, sizeof b);
+                    g[j].cf[3] = fitted ? 2.0f : 1.0f;
+                    memcpy(g[j].uvb, fitted ? fb : b, sizeof b);
                 }
             }
             k = put_triangle(&verts[n], g, t);
