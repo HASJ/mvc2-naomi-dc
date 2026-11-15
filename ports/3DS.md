@@ -12,6 +12,13 @@ Copy the zip's `sd` folder to the root of the SD card, then install `mvc2.cia` w
 `mvc2.3dsx` from the Homebrew Launcher. On an Old 3DS or 2DS use the CIA: the 3dsx has only the memory for the
 Dreamcast version there.
 
+Or install the latest release's CIA straight from FBI: Remote Install, Scan QR Code, and scan this. Then make
+the folders below for the game's data.
+
+![FBI QR code for the latest mvc2.cia](port/ctr/cia/install-qr.png)
+
+    https://github.com/gibletto/mvc2-naomi-dc/releases/latest/download/mvc2.cia
+
 Sound needs the usual `sdmc:/3ds/dspfirm.cdc`.
 
 ## The game's data
