@@ -18,14 +18,14 @@ Sound needs the usual `sdmc:/3ds/dspfirm.cdc`.
 
     sdmc:/3ds/mvc2/
         mvc2.3dsx
-        roms/mvsc2/     the mvsc2 set, unzipped
+        roms/mvsc2/     MAME's mvsc2.zip, or its files
         disc/           the USA disc's files (1ST_READ.BIN and the rest)
         mvc2.cfg        settings
         mvc2.log        the last run's log (mvc2_o3ds.log for the Old 3DS test build)
 
-The first start joins the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB); the set's other files can be
-deleted after. With both versions there it asks which to play (A arcade, B Dreamcast) and keeps the answer in
-`mvc2.cfg` as `mode =`.
+The first start unpacks the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB); the zip or the set's other
+files can be deleted after. With both versions there it asks which to play (touch NAOMI or Dreamcast, or choose with left,
+right and A) and keeps the answer in `mvc2.cfg` as `mode =`.
 
 ## Controls
 
@@ -48,7 +48,8 @@ On the Dreamcast, Y X L B A R are its X Y L A B R.
 
 `mvc2.cfg` has one `key = value` a line:
 
-- `scale = stretch` fills the top screen (the default is 1:1, 320 by 240).
+- `scale = stretch` fills the top screen (the default is 1:1, 320 by 240, between Marvel and Capcom pillars).
+- `pillars = off` leaves the sides black.
 - `render = exact` draws at 640 by 480 and halves it: sharper, slower.
 - `arcade =` and `dc =` set other data folders.
 

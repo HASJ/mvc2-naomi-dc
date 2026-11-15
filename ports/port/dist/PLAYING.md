@@ -5,7 +5,8 @@ data comes with it.
 
 ## The game's data
 
-- The arcade: MAME's `mvsc2` set, unzipped into `roms/mvsc2` beside the executable.
+- The arcade: MAME's `mvsc2.zip` in `roms/mvsc2` beside the executable (or its files, unzipped there). The first
+  start unpacks the zip into `roms/mvsc2/mvsc2.bin` (136 MB).
 - The Dreamcast: the files of your own USA disc (`1ST_READ.BIN` and the rest) in `disc`.
 
 Other folders can be set in `mvc2.cfg` (`arcade = ...`, `dc = ...`) or given on the command line

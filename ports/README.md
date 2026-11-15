@@ -13,7 +13,7 @@ Library routines the port lacks are stubs that say so in the log (`port/tools/ge
 Sound: the AICA's own driver runs on an emulated ARM7 with its DSP; the Dreamcast's ADX music is decoded by
 the port. `MVC2_SOUND=0` turns it off; `MVC2_WAV=file` records it. On the 3DS the DSP is off, and `MVC2_REVERB=1` adds a cheap reverb in its place.
 
-**No game data is included.** You need the MAME `mvsc2` set, unzipped into a folder, and for the
+**No game data is included.** You need the MAME `mvsc2` set (the zip or its files), and for the
 Dreamcast the files of your own USA disc, extracted into a folder.
 
 ## How it fits together
@@ -156,10 +156,10 @@ and 2 on the Dreamcast), so there the 3dsx runs the Dreamcast version and the ar
 faster CPU, and no more memory than an Old 3DS gives (64 MB as a 3dsx, 80 as the CIA).
 
 Everything is in `sdmc:/3ds/mvc2`: `mvc2.cfg`, `roms/mvsc2` and `disc` as on the PC, and `mvc2.log`. The
-first start joins the ROM set's files into one file, `roms/mvsc2/mvsc2.bin` (136 MB), which the game then
+first start unpacks the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB), which the game then
 reads in 64 KB blocks through a cache of what memory allows, a thread on the other core reading ahead. The
-picture is drawn by the GPU at 320 by 240, 1:1 in the middle of the top screen; `scale = stretch` stretches
-it across, and `render = exact` draws it at 640 by 480 and halves it (slower). Test runs read `env.txt`'s
+picture is drawn by the GPU at 320 by 240, 1:1 in the middle of the top screen; `scale = stretch` (or
+`MVC2_STRETCH=1`) stretches it across, and `render = exact` draws it at 640 by 480 and halves it (slower). Test runs read `env.txt`'s
 `NAME=value` lines as environment variables (`MVC2_FRAMES`, `MVC2_SHOT`, `MVC2_PRESS` as on the PC).
 
 ## Which game it runs
@@ -167,7 +167,8 @@ it across, and `render = exact` draws it at 640 by 480 and halves it (slower). T
 At start-up `mvc2` looks for each version's data, checking that the files are there with the right sizes
 (it does not read them through):
 
-- the arcade's: the MAME `mvsc2` set unzipped (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`);
+- the arcade's: the MAME `mvsc2` set (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`), or its
+  `mvsc2.zip` in the folder or beside it, which the first start unpacks into `mvsc2.bin`;
 - the Dreamcast's: the files of the USA disc (`1ST_READ.BIN` and the rest).
 
 With one found, that one runs. With both, it asks which to play, once, and keeps the answer in `mvc2.cfg`

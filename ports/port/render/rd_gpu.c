@@ -664,8 +664,8 @@ static int build(float* scale) {
     float qmax = 0;
     int e;
     for (list = 0; list < RD_LISTS; list++) {
-        for (i = 0; i < rd_frame.ntris[list]; i++) {
-            const RD_TRI* t = &rd_frame.tris[list][i];
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
             int j;
             for (j = 0; j < 3; j++) {
                 if (t->v[j].z > qmax && isfinite(t->v[j].z)) {
@@ -675,14 +675,14 @@ static int build(float* scale) {
         }
     }
     for (i = 0; i < 3; i++) {
-        if (rd_frame.background[i].z > qmax && isfinite(rd_frame.background[i].z)) {
-            qmax = rd_frame.background[i].z;
+        if (rd_frame->background[i].z > qmax && isfinite(rd_frame->background[i].z)) {
+            qmax = rd_frame->background[i].z;
         }
     }
     frexpf(qmax > 0 ? qmax : 1.0f, &e);
     *scale = ldexpf(1.0f, -e);          /* a power of two: 1/w scaled exactly below 1 */
     for (list = 0; list < RD_LISTS; list++) {
-        n += rd_frame.ntris[list] * (exact_edges ? 3 * (MAX_CORNERS - 2) : 3);
+        n += rd_frame->ntris[list] * (exact_edges ? 3 * (MAX_CORNERS - 2) : 3);
     }
     if ((uint32_t)n > vcap) {
         SDL_GPUBufferCreateInfo bi = { SDL_GPU_BUFFERUSAGE_VERTEX, (Uint32)(n * sizeof(GVTX)), 0 };
@@ -699,7 +699,7 @@ static int build(float* scale) {
     {
         /* the background: 1/w = 1, so it is not divided */
         static const float cx[6] = { 0, RD_WIDTH, 0, RD_WIDTH, RD_WIDTH, 0 }, cy[6] = { 0, 0, RD_HEIGHT, 0, RD_HEIGHT, RD_HEIGHT };
-        const RD_VTX* b = rd_frame.background;
+        const RD_VTX* b = rd_frame->background;
         double f[3];
         int c, j;
         for (j = 0; j < 6; j++) {
@@ -723,9 +723,9 @@ static int build(float* scale) {
     n = 6;
     for (list = 0; list < RD_LISTS; list++) {
         nbatches[list] = 0;
-        for (i = 0; i < rd_frame.ntris[list]; i++) {
-            const RD_TRI* t = &rd_frame.tris[list][i];
-            const RD_STATE* s = &rd_frame.states[t->state];
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_STATE* s = &rd_frame->states[t->state];
             GVTX g[3];
             int j, k;
             if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
@@ -815,7 +815,7 @@ static void draw_list(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int list
     SDL_GPUGraphicsPipeline* bound = NULL;
     for (i = 0; i < nbatches[list]; i++) {
         const BATCH* b = &batches[list][i];
-        const RD_STATE* s = &rd_frame.states[b->state];
+        const RD_STATE* s = &rd_frame->states[b->state];
         SDL_GPUGraphicsPipeline* p;
         DRAW d;
         if (kind == P_OPAQUE) {
@@ -881,9 +881,9 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
         SDL_GPUBufferRegion dst = { vbuf, 0, (Uint32)(n * sizeof(GVTX)) };
         SDL_UploadToGPUBuffer(copy, &src, &dst, true);
     }
-    for (i = 0; i < rd_frame.nstates; i++) {
-        const RD_TEXTURE* t = rd_frame.states[i].tex;
-        state_tex[i] = t == NULL ? NULL : i > 0 && rd_frame.states[i - 1].tex == t ? state_tex[i - 1] : texture(copy, t);
+    for (i = 0; i < rd_frame->nstates; i++) {
+        const RD_TEXTURE* t = rd_frame->states[i].tex;
+        state_tex[i] = t == NULL ? NULL : i > 0 && rd_frame->states[i - 1].tex == t ? state_tex[i - 1] : texture(copy, t);
     }
     fog_on = 0;
     for (i = 0; i < 128; i++) {

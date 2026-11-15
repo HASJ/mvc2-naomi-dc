@@ -44,6 +44,7 @@ const HOST_INPUT* host_input(void) {
 static unsigned presented;
 static int switch_req;      /* F9 */
 static int coin_req;
+static int test_run;        /* MVC2_FRAMES: the press list is the only input */
 
 /* MVC2_PRESS=n:key,...: player 1 holds the key for 5 frames from frame n; coin and switch happen at n */
 static uint32_t pressed(void) {
@@ -82,15 +83,19 @@ static uint32_t pressed(void) {
 static void read_input(void) {
     input.player[0] = pressed();
     input.player[1] = 0;
-    input_read(&input);
+    input.coin = 0;
+    input.test = 0;
+    if (!test_run) {
+        input_read(&input);
+        if (key_held(SDL_SCANCODE_9)) {
+            input.player[0] |= JVS_SERVICE;
+        }
+        input.test = key_held(SDL_SCANCODE_F2);
+    }
     if (coin_req) {
         input.coin = 1;
         coin_req = 0;
     }
-    if (key_held(SDL_SCANCODE_9)) {
-        input.player[0] |= JVS_SERVICE;
-    }
-    input.test = key_held(SDL_SCANCODE_F2);
 }
 
 static uint32_t frame[RD_WIDTH * RD_HEIGHT];
@@ -603,9 +608,29 @@ static int missing_screen(int argc, char** argv) {
     }
 }
 
+void* host_try_malloc(size_t bytes) {
+    return malloc(bytes);
+}
+
+void* host_try_calloc(size_t n, size_t size) {
+    return calloc(n, size);
+}
+
+void host_out_of_memory(const char* what, size_t bytes) {
+    char text[200];
+    snprintf(text, sizeof text, "Out of memory: %s of %lu bytes failed.", what, (unsigned long)bytes);
+    host_log("stopped: %s", text);
+    if (getenv("MVC2_FRAMES") == NULL) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Marvel vs. Capcom 2", text, NULL);
+    }
+    exit(1);
+}
+
 int main(int argc, char** argv) {
     int quit = 0;
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
+
+    test_run = frames_left >= 0;
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -614,10 +639,10 @@ int main(int argc, char** argv) {
     host_divzero_install();
     pace_init();
 #ifdef MVC2_SDL3
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMEPAD))) {
 #else
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | SDL_INIT_GAMECONTROLLER) != 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMECONTROLLER)) != 0) {
 #endif
         fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -642,6 +667,10 @@ int main(int argc, char** argv) {
     while (!quit) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
+            if (test_run) {
+                quit |= e.type == SDL_EVENT_QUIT;
+                continue;
+            }
             input_event(&e);
             if (window_key(&e) || menu_event(&e)) {
                 continue;
