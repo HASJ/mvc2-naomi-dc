@@ -1,7 +1,7 @@
 # Marvel vs. Capcom 2 on the 3DS
 
-The 3DS port is a work in progress. It runs both versions, but on an Old 3DS fights are only about 10 fps
-so far.
+Both versions run at full speed, 60 fps, on every 3DS and 2DS, the original models too. A few screen changes
+(the title, the select screen, the load before a fight) still pause for a moment while they read the SD card.
 
 The arcade game and the Dreamcast version, built for the original 3DS and 2DS (a New 3DS also gets its faster
 CPU). No game data comes with it: you need the MAME `mvsc2` set, the Dreamcast USA disc's files, or both.
@@ -10,7 +10,7 @@ CPU). No game data comes with it: you need the MAME `mvsc2` set, the Dreamcast U
 
 Copy the zip's `sd` folder to the root of the SD card, then install `mvc2.cia` with FBI, or start
 `mvc2.3dsx` from the Homebrew Launcher. On an Old 3DS or 2DS use the CIA: the 3dsx has only the memory for the
-Dreamcast version there. A New 3DS runs near full speed with the CIA.
+Dreamcast version there.
 
 Sound needs the usual `sdmc:/3ds/dspfirm.cdc`.
 
