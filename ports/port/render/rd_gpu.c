@@ -857,6 +857,68 @@ static double plane(const RD_VTX* v, const double* f, double x, double y) {
     return f[0] + (f[1] - f[0]) * w1 + (f[2] - f[0]) * w2;
 }
 
+static int sprite(const RD_STATE* s, const RD_TRI* t) {
+    return s->tex != NULL && t->v[0].z == t->v[1].z && t->v[1].z == t->v[2].z;
+}
+
+static float snap16(float x) {
+    return fabsf(x) < 65536.0f ? floorf(x * 16.0f + 0.5f) * (1.0f / 16.0f) : x;
+}
+
+/* the sprites' corners, on a sixteenth of a game pixel: an open-addressed set, ~0 empty */
+static uint64_t* corners;
+static uint32_t corners_size;
+
+static uint64_t corner_key(float x, float y) {
+    uint32_t a, b;
+    memcpy(&a, &x, 4), memcpy(&b, &y, 4);
+    return (uint64_t)a << 32 | b;
+}
+
+static uint64_t* corner_slot(uint64_t k) {
+    uint32_t i = (uint32_t)((k * 0x9E3779B97F4A7C15ull) >> 32) & (corners_size - 1);
+    while (corners[i] != ~0ull && corners[i] != k) {
+        i = (i + 1) & (corners_size - 1);
+    }
+    return &corners[i];
+}
+
+static void find_corners(void) {
+    uint32_t want = 64, count = 0;
+    int list, i, j;
+    for (list = 0; list < RD_LISTS; list++) {
+        count += 3 * (uint32_t)rd_frame->ntris[list];
+    }
+    while (want < 2 * count) {
+        want *= 2;
+    }
+    if (want > corners_size) {
+        free(corners);
+        corners = malloc(want * sizeof *corners);
+        corners_size = corners != NULL ? want : 0;
+    }
+    if (corners == NULL) {
+        return;
+    }
+    memset(corners, 0xFF, corners_size * sizeof *corners);
+    for (list = 0; list < RD_LISTS; list++) {
+        for (i = 0; i < rd_frame->ntris[list]; i++) {
+            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_STATE* s = &rd_frame->states[t->state];
+            if (sprite(s, t) && !cull(s, &t->v[0], &t->v[1], &t->v[2])) {
+                for (j = 0; j < 3; j++) {
+                    uint64_t k = corner_key(snap16(t->v[j].x), snap16(t->v[j].y));
+                    *corner_slot(k) = k;
+                }
+            }
+        }
+    }
+}
+
+static int is_corner(float x, float y) {
+    return corners != NULL && *corner_slot(corner_key(x, y)) != ~0ull;
+}
+
 /* the background's 6 vertices, then each list's triangles; how many */
 static int build(float* zscale) {
     int list, i, n = 6;
@@ -920,21 +982,42 @@ static int build(float* zscale) {
         }
     }
     n = 6;
+    if (scale > 1) {
+        find_corners();
+    }
     for (list = 0; list < RD_LISTS; list++) {
         nbatches[list] = 0;
         for (i = 0; i < rd_frame->ntris[list]; i++) {
             const RD_TRI* t = &rd_frame->tris[list][i];
             const RD_STATE* s = &rd_frame->states[t->state];
+            RD_TRI snapped;
             GVTX g[3];
             int j, k;
             if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                 continue;
             }
+            if (scale > 1) {
+                /* drawn larger: corners on a sixteenth of a game pixel, so neighbours a float's rounding apart meet,
+                   and sprites' corners (and the corners they share) on whole ones, so sprites side by side meet as
+                   they do at 640 by 480 */
+                snapped = *t;
+                for (j = 0; j < 3; j++) {
+                    float x = snap16(t->v[j].x), y = snap16(t->v[j].y);
+                    if (is_corner(x, y)) {
+                        x = floorf(x + 0.5f), y = floorf(y + 0.5f);
+                    }
+                    snapped.v[j].x = x, snapped.v[j].y = y;
+                }
+                t = &snapped;
+                if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
+                    continue;
+                }
+            }
             for (j = 0; j < 3; j++) {
                 put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *zscale, (float)i);
             }
             /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to */
-            if (s->tex != NULL && t->v[0].z == t->v[1].z && t->v[1].z == t->v[2].z) {
+            if (sprite(s, t)) {
                 float b[4];
                 b[0] = fminf(t->v[0].u, fminf(t->v[1].u, t->v[2].u)), b[1] = fminf(t->v[0].v, fminf(t->v[1].v, t->v[2].v));
                 b[2] = fmaxf(t->v[0].u, fmaxf(t->v[1].u, t->v[2].u)), b[3] = fmaxf(t->v[0].v, fmaxf(t->v[1].v, t->v[2].v));
