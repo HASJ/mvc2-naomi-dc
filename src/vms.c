@@ -2359,7 +2359,12 @@ int vms_exec_reload( int port, Uint8 no )
 		if( vms_w->bu_busy_bit & VMS_BIT( port ) ) return -1 ;
 		shown = vms_w->mount_port ;
 		if( shown == cur ){
+#ifdef HOST_PORT
+			/* the board passes vms_load_ex the buffer this routine was given */
+			rc = vms_load_ex( slot[shown].port, no ) ;
+#else
 			rc = vms_load_ex( slot[shown].port ) ;
+#endif
 			switch( rc ){
 			default:
 				return -1 ;
