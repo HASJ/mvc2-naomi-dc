@@ -13,7 +13,7 @@
 
 #define RD_GPU_MAX_SCALE 12
 
-enum { RD_SPRITES_ARCADE, RD_SPRITES_SHARP, RD_SPRITES_PIXEL };
+enum { RD_SPRITES_ARCADE, RD_SPRITES_SHARP, RD_SPRITES_PIXEL, RD_SPRITES_SMOOTH };
 
 bool rd_gpu_init(SDL_GPUDevice* device);
 /* From the next frame: drawn at resolution times the game's 640 by 480 (0: enough for h, times aa), then

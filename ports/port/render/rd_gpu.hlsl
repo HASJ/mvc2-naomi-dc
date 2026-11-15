@@ -78,7 +78,8 @@ cbuffer Frame : register(b1, space3) {
     float fog_density;
     uint zero;          /* 0, for hold() */
     float inv_scale;    /* the game's pixels a pixel drawn */
-    int sprite_mode;    /* drawn larger, a flat triangle's texture: 0 as the game has it, 1 sharp, 2 the nearest texel */
+    int sprite_mode;    /* drawn larger, a flat triangle's texture: 0 as the game has it, 1 sharp, 2 the nearest texel,
+                           3 smooth */
 };
 
 #define F_TEX 1
@@ -118,8 +119,8 @@ int4 texel(int x, int y, int k) {
     return int4(t.a * 255.0 + 0.5, t.r * 255.0 + 0.5, t.g * 255.0 + 0.5, t.b * 255.0 + 0.5);
 }
 
-/* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0; 2: the nearest texel. Either
-   reads only the sprite's own texels, between uvb's corners */
+/* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0; 2: the nearest texel; 3: as the
+   game filters it. Each reads only the sprite's own texels, between uvb's corners */
 int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
     uint uvm = flags / F_UV & 15;
     bool cv = (uvm & 1) != 0, cu = (uvm & 2) != 0, fv = (uvm & 4) != 0, fu = (uvm & 8) != 0;
@@ -159,6 +160,11 @@ int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
         float4 c00 = texel(x0, y0, k), c10 = texel(x1, y0, k), c01 = texel(x0, y1, k), c11 = texel(x1, y1, k);
         precise float4 mix = (c00 * (1 - ax) + c10 * ax) * (1 - ay) + (c01 * (1 - ax) + c11 * ax) * ay;
         c = (int4)mix;
+        if (smode != 0 && mix.x > 0) {
+            /* a sprite's colour weighed by alpha, so a clear texel beside it fades it out without darkening it */
+            float4 aw = float4((1 - ax) * (1 - ay), ax * (1 - ay), (1 - ax) * ay, ax * ay) * float4(c00.x, c10.x, c01.x, c11.x);
+            c.yzw = (int3)((c00.yzw * aw.x + c10.yzw * aw.y + c01.yzw * aw.z + c11.yzw * aw.w) / (aw.x + aw.y + aw.z + aw.w));
+        }
     }
     return c;
 }
@@ -330,7 +336,39 @@ float4 ps_main(VOut i) : SV_Target0 {
         if (smode == 1) {
             fw = (abs((uvz_x - uv * z_x) * rz) + abs((uvz_y - uv * z_y) * rz)) * float2(width, height);
         }
-        int4 t = sample_tex(k, u, v, smode, fw, i.uvb);
+        /* u and v a game pixel across and down, and the texels in a game pixel */
+        float2 jx = (uvz_x - uv * z_x) * rz / inv_scale, jy = (uvz_y - uv * z_y) * rz / inv_scale;
+        float2 m = (abs(jx) + abs(jy)) * float2(width, height);
+        int4 t;
+        bool bilinear = (flags & F_BILINEAR) != 0;
+        [branch] if (i.cf.w != 0 && inv_scale < 1.0 && !(bilinear && max(m.x, m.y) < 0.8)) {
+            /* pixel art drawn larger: its colours at the game's pixel centres, as at 640 by 480, each from the
+               sprite's own texels, blended weighed by alpha: sharp over a pixel at their edges, smooth all the way
+               across, and arcade all the way when the game filters it */
+            float2 seam = floor(at + 0.5);
+            float2 f = smode == 1 ? clamp((at - seam) / inv_scale, -0.5, 0.5) + 0.5
+                     : smode == 3 || (smode == 0 && bilinear) ? at - seam + 0.5 : step(seam, at);
+            int tap = smode == 0 ? 3 : 2;
+            float2 g0 = seam - 0.5 - at, g1 = seam + 0.5 - at;
+            float2 uv00 = uv + jx * g0.x + jy * g0.y, uv10 = uv + jx * g1.x + jy * g0.y;
+            float2 uv01 = uv + jx * g0.x + jy * g1.y, uv11 = uv + jx * g1.x + jy * g1.y;
+            [branch] if (all(f * (1 - f) == 0)) {
+                float2 s = f.y == 0 ? (f.x == 0 ? uv00 : uv10) : (f.x == 0 ? uv01 : uv11);
+                t = sample_tex(k, s.x, s.y, tap, fw, i.uvb);
+            } else {
+                float4 c00 = sample_tex(k, uv00.x, uv00.y, tap, fw, i.uvb), c10 = sample_tex(k, uv10.x, uv10.y, tap, fw, i.uvb);
+                float4 c01 = sample_tex(k, uv01.x, uv01.y, tap, fw, i.uvb), c11 = sample_tex(k, uv11.x, uv11.y, tap, fw, i.uvb);
+                float4 aw = float4((1 - f.x) * (1 - f.y), f.x * (1 - f.y), (1 - f.x) * f.y, f.x * f.y) *
+                            float4(c00.x, c10.x, c01.x, c11.x);
+                float a = aw.x + aw.y + aw.z + aw.w;
+                /* alpha the game pixel's own, as at 640 by 480 */
+                float2 own = step(seam, at);
+                t.x = (int)(own.y == 0 ? (own.x == 0 ? c00.x : c10.x) : (own.x == 0 ? c01.x : c11.x));
+                t.yzw = a > 0 ? (int3)((c00.yzw * aw.x + c10.yzw * aw.y + c01.yzw * aw.z + c11.yzw * aw.w) / a) : (int3)c00.yzw;
+            }
+        } else {
+            t = sample_tex(k, u, v, smode, fw, i.uvb);
+        }
         if (!(flags & F_TEX_ALPHA)) {
             t.x = 255;
         }

@@ -139,7 +139,7 @@ static int gpu_picture(void) {
     return -1;
 }
 
-static const char* const sprite_modes[] = { "sharp", "pixel", "arcade" };
+static const char* const sprite_modes[] = { "sharp", "smooth", "pixel", "arcade" };
 enum { SPRITE_MODES = sizeof sprite_modes / sizeof sprite_modes[0] };
 
 static const char* sprites(void) {

@@ -50,8 +50,8 @@ Controllers: the first plugged in is player 1's, the second player 2's.
 `mvc2.cfg` beside the executable has the settings, each explained there.
 
 The graphics card draws the game at the window's resolution: 3D stages, polygons and effects come out sharp, while the
-characters keep their pixels (`sprites = sharp`; `pixel` for no smoothing at all, `arcade` for the
-arcade's own filtering). `aa = 2` (up to 4) smooths edges by drawing larger still; `resolution = 1` is
+characters keep their pixels (`sprites = sharp`; `smooth` to smooth them, `pixel` for no smoothing at all,
+`arcade` for the arcade's own filtering). `aa = 2` (up to 4) smooths edges by drawing larger still; `resolution = 1` is
 the arcade's 640 by 480. F1 sets these too.
 
 Without a graphics card that can, or with `renderer = soft`, the CPU draws the arcade's 640 by 480

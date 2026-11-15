@@ -988,7 +988,7 @@ static int build(float* zscale) {
     for (list = 0; list < RD_LISTS; list++) {
         nbatches[list] = 0;
         for (i = 0; i < rd_frame->ntris[list]; i++) {
-            const RD_TRI* t = &rd_frame->tris[list][i];
+            const RD_TRI *t = &rd_frame->tris[list][i], *o = t;
             const RD_STATE* s = &rd_frame->states[t->state];
             RD_TRI snapped;
             GVTX g[3];
@@ -1008,6 +1008,23 @@ static int build(float* zscale) {
                     }
                     snapped.v[j].x = x, snapped.v[j].y = y;
                 }
+                {
+                    /* the game's planes kept: 1/w, and u and v over w, at the moved corners from the triangle as it was */
+                    const RD_VTX *a = &o->v[0], *b = &o->v[1], *c = &o->v[2];
+                    double inv = 1.0 / edge(a->x, a->y, b->x, b->y, c->x, c->y);
+                    int level = a->z == b->z && b->z == c->z;
+                    for (j = 0; j < 3; j++) {
+                        RD_VTX* v = &snapped.v[j];
+                        double w0 = edge(b->x, b->y, c->x, c->y, v->x, v->y) * inv, w1 = edge(c->x, c->y, a->x, a->y, v->x, v->y) * inv;
+                        double w2 = 1.0 - w0 - w1;
+                        double q = level ? a->z : w0 * a->z + w1 * b->z + w2 * c->z;
+                        double uq = w0 * a->u * a->z + w1 * b->u * b->z + w2 * c->u * c->z;
+                        double vq = w0 * a->v * a->z + w1 * b->v * b->z + w2 * c->v * c->z;
+                        if (q > 0 && (v->x != o->v[j].x || v->y != o->v[j].y)) {
+                            v->z = (float)q, v->u = (float)(uq / q), v->v = (float)(vq / q);
+                        }
+                    }
+                }
                 t = &snapped;
                 if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                     continue;
@@ -1017,10 +1034,10 @@ static int build(float* zscale) {
                 put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *zscale, (float)i);
             }
             /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to */
-            if (sprite(s, t)) {
+            if (sprite(s, o)) {
                 float b[4];
-                b[0] = fminf(t->v[0].u, fminf(t->v[1].u, t->v[2].u)), b[1] = fminf(t->v[0].v, fminf(t->v[1].v, t->v[2].v));
-                b[2] = fmaxf(t->v[0].u, fmaxf(t->v[1].u, t->v[2].u)), b[3] = fmaxf(t->v[0].v, fmaxf(t->v[1].v, t->v[2].v));
+                b[0] = fminf(o->v[0].u, fminf(o->v[1].u, o->v[2].u)), b[1] = fminf(o->v[0].v, fminf(o->v[1].v, o->v[2].v));
+                b[2] = fmaxf(o->v[0].u, fmaxf(o->v[1].u, o->v[2].u)), b[3] = fmaxf(o->v[0].v, fmaxf(o->v[1].v, o->v[2].v));
                 for (j = 0; j < 3; j++) {
                     g[j].cf[3] = 1.0f;
                     memcpy(g[j].uvb, b, sizeof b);

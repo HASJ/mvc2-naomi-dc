@@ -226,7 +226,7 @@ static int gpu_wrapped_w, gpu_wrapped_h;
 
 /* the GPU's picture settings from mvc2.cfg: resolution (auto or 1 to 12), aa (1 to 4), sprites */
 static int view_res, view_aa = 1, view_sprites = RD_SPRITES_SHARP;
-static const char* const sprite_names[] = { "arcade", "sharp", "pixel" };
+static const char* const sprite_names[] = { "arcade", "sharp", "pixel", "smooth" };
 
 void view_settings(void) {
     const char* r = config_get("resolution");
@@ -237,7 +237,7 @@ void view_settings(void) {
     view_aa = a != NULL && atoi(a) > 0 ? atoi(a) : 1;
     view_aa = view_aa > 4 ? 4 : view_aa;
     view_sprites = RD_SPRITES_SHARP;
-    for (i = 0; i < 3; i++) {
+    for (i = 0; i < 4; i++) {
         if (sp != NULL && strcmp(sp, sprite_names[i]) == 0) {
             view_sprites = i;
         }
