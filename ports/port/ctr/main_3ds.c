@@ -672,38 +672,33 @@ static void read_env(int old) {
     }
 }
 
-/* the switches set by default, from the console runs; env.txt's own value (=0: off) is kept */
-static void model_defaults(int old) {
-    static const char* const o3ds[][2] = { { "MVC2_LISTS_CORE1", "1" }, { "MVC2_LISTS1_ABOVE", "1" },
-                                           { "MVC2_TEX_SEEN", "1" }, { "MVC2_GROUP_INFO", "1" },
-                                           { "MVC2_LZ_CACHE", "1" }, { "MVC2_TEX_CURRENT", "1" },
-                                           { "MVC2_RAW_BACK", "1" }, { "MVC2_LISTS1_STAGES", "5" },
-                                           { "MVC2_MIXSIMD", "2" }, { "MVC2_PILLARS_ONCE", "1" },
-                                           { "MVC2_PILLARS_LINE", "1" }, { "MVC2_MAP_SAME", "1" },
-                                           { "MVC2_FRAG_INLINE", "1" }, { "MVC2_RAW_FRONT", "1" },
-                                           { "MVC2_VRAM_FB", "1" }, { "MVC2_PREP_FAST", "1" },
-                                           { "MVC2_PREP_FAST2", "1" }, { "MVC2_TEX_VRAM", "1" },
-                                           { "MVC2_GPU_SPLIT", "1" }, { "MVC2_DRAW_COPY", "1" },
-                                           { "MVC2_MEMCPY_FAST", "1" }, { "MVC2_SNDROOM", "1" },
-                                           { "MVC2_ROM_ROLL", "1" }, { "MVC2_TEX_FROM_SERIAL", "1" },
-                                           { "MVC2_LOAD_KB", "48" }, { "MVC2_ADX_AHEAD", "1" },
-                                           { "MVC2_TEX_LEAN", "1" }, { "MVC2_SNDNATIVE", "3" },
-                                           { "MVC2_ARMSMALL", "2" }, { "MVC2_GPU_WATCH", "1" },
-                                           { "MVC2_TL_NEARCLIP", "1" }, { "MVC2_FAR_CUT", "256" },
-                                           { "MVC2_SLICE_CUT", "all" }, { "MVC2_RAW_BUFS", "1" },
-                                           { "MVC2_TEX_UNPARK", "1" }, { "MVC2_LISTS1_YIELD", "14" },
-                                           { "MVC2_GD_ASYNC", "1" }, { "MVC2_GD_AHEAD", "1" },
-                                           { "MVC2_GD_NOBUF", "1" }, { "MVC2_ADX_THREAD", "1" },
-                                           { "MVC2_TEX_AHEAD", "1" }, { "MVC2_GD_NEXT", "1" },
-                                           { "MVC2_TEX_KEEP_FREED", "1" }, { "MVC2_GD_STEP_KB", "256" },
-                                           { "MVC2_ROM_DIRECT", "1" }, { "MVC2_ROM_PRELOAD", "1" } };
-    static const char* const n3ds[][2] = { { "MVC2_TEX_SEEN", "1" }, { "MVC2_TEX_UNPARK", "1" }, { "MVC2_GD_ASYNC", "1" },
-                                           { "MVC2_GD_AHEAD", "1" }, { "MVC2_GD_NOBUF", "1" }, { "MVC2_ADX_THREAD", "1" },
-                                           { "MVC2_TEX_AHEAD", "1" }, { "MVC2_GD_NEXT", "1" }, { "MVC2_TEX_KEEP_FREED", "1" },
-                                           { "MVC2_GD_STEP_KB", "256" } };
-    const char* const(*on)[2] = old ? o3ds : n3ds;
-    int i, n = old ? (int)(sizeof o3ds / sizeof *o3ds) : (int)(sizeof n3ds / sizeof *n3ds);
-    for (i = 0; i < n; i++) {
+/* the switches set by default on every model, from the console runs; env.txt's own value (=0: off) is kept */
+static void set_defaults(void) {
+    static const char* const on[][2] = { { "MVC2_LISTS_CORE1", "1" }, { "MVC2_LISTS1_ABOVE", "1" },
+                                         { "MVC2_TEX_SEEN", "1" }, { "MVC2_GROUP_INFO", "1" },
+                                         { "MVC2_LZ_CACHE", "1" }, { "MVC2_TEX_CURRENT", "1" },
+                                         { "MVC2_RAW_BACK", "1" }, { "MVC2_LISTS1_STAGES", "5" },
+                                         { "MVC2_MIXSIMD", "2" }, { "MVC2_PILLARS_ONCE", "1" },
+                                         { "MVC2_PILLARS_LINE", "1" }, { "MVC2_MAP_SAME", "1" },
+                                         { "MVC2_FRAG_INLINE", "1" }, { "MVC2_RAW_FRONT", "1" },
+                                         { "MVC2_VRAM_FB", "1" }, { "MVC2_PREP_FAST", "1" },
+                                         { "MVC2_PREP_FAST2", "1" }, { "MVC2_TEX_VRAM", "1" },
+                                         { "MVC2_GPU_SPLIT", "1" }, { "MVC2_DRAW_COPY", "1" },
+                                         { "MVC2_MEMCPY_FAST", "1" }, { "MVC2_SNDROOM", "1" },
+                                         { "MVC2_ROM_ROLL", "1" }, { "MVC2_TEX_FROM_SERIAL", "1" },
+                                         { "MVC2_LOAD_KB", "48" }, { "MVC2_ADX_AHEAD", "1" },
+                                         { "MVC2_TEX_LEAN", "1" }, { "MVC2_SNDNATIVE", "3" },
+                                         { "MVC2_ARMSMALL", "2" }, { "MVC2_GPU_WATCH", "1" },
+                                         { "MVC2_TL_NEARCLIP", "1" }, { "MVC2_FAR_CUT", "256" },
+                                         { "MVC2_SLICE_CUT", "all" }, { "MVC2_RAW_BUFS", "1" },
+                                         { "MVC2_TEX_UNPARK", "1" }, { "MVC2_LISTS1_YIELD", "14" },
+                                         { "MVC2_GD_ASYNC", "1" }, { "MVC2_GD_AHEAD", "1" },
+                                         { "MVC2_GD_NOBUF", "1" }, { "MVC2_ADX_THREAD", "1" },
+                                         { "MVC2_TEX_AHEAD", "1" }, { "MVC2_GD_NEXT", "1" },
+                                         { "MVC2_TEX_KEEP_FREED", "1" }, { "MVC2_GD_STEP_KB", "256" },
+                                         { "MVC2_ROM_DIRECT", "1" }, { "MVC2_ROM_PRELOAD", "1" } };
+    int i;
+    for (i = 0; i < (int)(sizeof on / sizeof *on); i++) {
         if (getenv(on[i][0]) == NULL) {
             setenv(on[i][0], on[i][1], 0);
             host_log("default: %s=%s", on[i][0], on[i][1]);
@@ -837,11 +832,10 @@ int main(int argc, char** argv) {
     freopen(HOME "/" CTR_LOG, "w", stderr);
 #ifdef OLD_3DS_TEST
     read_env(1);
-    model_defaults(1);
 #else
     read_env(!n3ds);
-    model_defaults(!n3ds);
 #endif
+    set_defaults();
     ctr_log_start(stderr);
     host_log("memory %lu KB, heap %lu KB, linear %lu KB, main RAM %s", (unsigned long)(mem_total >> 10),
              (unsigned long)(__ctru_heap_size >> 10), (unsigned long)(__ctru_linear_heap_size >> 10),
@@ -892,8 +886,10 @@ int main(int argc, char** argv) {
 #ifdef OLD_3DS_TEST
     serial_why = "serial: the Old 3DS test build";
 #else
-    /* Old 3DS: core 1 is the sound's */
-    serial_why = !n3ds ? "serial: an Old 3DS" : getenv("MVC2_PIPE") != NULL && strcmp(getenv("MVC2_PIPE"), "0") == 0 ? "serial: MVC2_PIPE=0" : NULL;
+    /* Old 3DS: core 1 is the sound's; a New 3DS draws as an Old 3DS does unless MVC2_PIPE=1 */
+    serial_why = !n3ds ? "serial: an Old 3DS"
+                 : getenv("MVC2_PIPE") == NULL || strcmp(getenv("MVC2_PIPE"), "0") == 0 ? "serial: as an Old 3DS (MVC2_PIPE=1: core 2)"
+                                                                                       : NULL;
     if (serial_why == NULL) {
         ctr_render_reserve();
     }

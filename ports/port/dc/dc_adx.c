@@ -503,10 +503,12 @@ static void adx_mix_locked(int16_t* buf, int n) {
     settle(&player);
 }
 
-/* the sound thread's: the music for the game's frame, with MVC2_ADX_THREAD */
+/* the sound thread's: the music for the game's frame, with MVC2_ADX_THREAD, in place of what the game's thread
+   mixed; a file not read ahead is still mixed there */
 static void adx_mix_late(int16_t* buf, int n) {
     FILL_LOCK();
     if (fill.threaded) {
+        memset(buf, 0, (size_t)n * 4);
         fill.sound = 1;
         adx_mix(buf, n);
         fill.sound = 0;

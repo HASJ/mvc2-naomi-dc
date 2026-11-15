@@ -6584,12 +6584,7 @@ int ctr_render_init(int full, int stretch) {
     }
     {
         const char* e = getenv("MVC2_TRANS_STRIPS");
-        bool n3ds = false;
-        APT_CheckNew3DS(&n3ds);
-#ifdef OLD_3DS_TEST
-        n3ds = false;
-#endif
-        trans_strips = e != NULL ? strcmp(e, "0") != 0 : !n3ds;
+        trans_strips = e == NULL || strcmp(e, "0") != 0;
         strip_cuts = getenv("MVC2_STRIP_CUTS") == NULL || strcmp(getenv("MVC2_STRIP_CUTS"), "0") != 0;
         host_log("translucent sort: %s", !trans_strips ? "a triangle at a time, deep ones cut"
                                          : strip_cuts ? "a strip at a time, a deep one's triangles cut at the shallow ones' depths"
@@ -6809,12 +6804,7 @@ int ctr_render_init(int full, int stretch) {
         {
             /* translucent groups need the strip sort, which places them */
             const char* e = getenv("MVC2_GPU_TL_TRANS");
-            bool n3ds = false;
-            APT_CheckNew3DS(&n3ds);
-#ifdef OLD_3DS_TEST
-            n3ds = false;
-#endif
-            rd_gpu_tl_trans = trans_strips && (e != NULL ? strcmp(e, "0") != 0 : !n3ds);
+            rd_gpu_tl_trans = trans_strips && (e == NULL || strcmp(e, "0") != 0);
             host_log("models: %s", rd_gpu_tl_trans ? "translucent groups too, each whole at its place in the translucent list"
                                    : trans_strips ? "translucent groups turned and lit here (MVC2_GPU_TL_TRANS)"
                                                   : "translucent groups turned and lit here, without the strip sort");

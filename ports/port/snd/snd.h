@@ -44,7 +44,7 @@ void snd_set_mixer(SND_MIXER fn);
 /* its part of a frame between the game's, on the sound thread; 0 when it can't be made, and then the frame isn't */
 typedef int (*SND_EXTRA_MIXER)(int16_t* buf, int n);
 void snd_set_extra_mixer(SND_EXTRA_MIXER fn);
-/* and its part of the game's frames made where the frame is, on the sound thread */
+/* and its part of the game's frames, on the sound thread: replacing what snd_prepare mixed into buf, or not */
 void snd_set_late_mixer(SND_MIXER fn);
 #endif
 

@@ -822,7 +822,6 @@ int snd_frame(const int16_t** out) {
     } else {
 #ifdef __3DS__
         if (late_mixer != NULL) {
-            memset(mix_buf, 0, n * 4);
             late_mixer(mix_buf, (int)n);
         }
 #endif
