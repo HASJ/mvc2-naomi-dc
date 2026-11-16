@@ -178,8 +178,11 @@ jobs:
           rm sdl3.tar.gz
 
       - name: Build
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH="$(cygpath -m "$RUNNER_TEMP")/sdl3/i686-w64-mingw32"
+          cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH="$(cygpath -m "$RUNNER_TEMP")/sdl3/i686-w64-mingw32" \
+            -DMVC2_VERSION="${TAG:-${GITHUB_SHA::7}}"
           ninja -C build
 
       - name: Package

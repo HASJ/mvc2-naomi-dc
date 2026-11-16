@@ -3,6 +3,10 @@
 #   cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc && ninja -C build    (MSYS2 mingw32; -DMVC2_SDL3=OFF: SDL2)
 cmake_minimum_required(VERSION 3.21)
 project(mvc2_ports C)
+if(WIN32)
+    enable_language(RC)
+    set(MVC2_VERSION "dev" CACHE STRING "the version in the executables' Windows version information")
+endif()
 
 set(PORT ${CMAKE_SOURCE_DIR}/port)
 get_filename_component(DEFAULT_DECOMP ${CMAKE_SOURCE_DIR}/.. ABSOLUTE)
@@ -398,7 +402,29 @@ function(mvc2_executable TARGET)
         endif()
         if(WIN32)
             # a fixed load address, so the RAM at 0x0C000000 stays free and runs are repeatable
-            target_link_options(${TARGET} PRIVATE "-Wl,--disable-dynamicbase")
+            target_link_options(${TARGET} PRIVATE "-Wl,--disable-dynamicbase"
+                -Wl,--major-os-version,6,--minor-os-version,0,--major-subsystem-version,6,--minor-subsystem-version,0
+                -Wl,--nxcompat,--tsaware)
+            # the icon and the version that Explorer shows
+            if("${TARGET}" STREQUAL "mvc2dc")
+                set(RC_DESCRIPTION "Marvel vs. Capcom 2 port (Dreamcast version)")
+            else()
+                set(RC_DESCRIPTION "Marvel vs. Capcom 2 port (arcade and Dreamcast versions)")
+            endif()
+            set(RC_ICON ${PORT}/sdl/mvc2.ico)
+            set(RC_V1 0)
+            set(RC_V2 0)
+            set(RC_V3 0)
+            if(MVC2_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)(\\.([0-9]+))?")
+                set(RC_V1 ${CMAKE_MATCH_1})
+                set(RC_V2 ${CMAKE_MATCH_2})
+                if(CMAKE_MATCH_4)
+                    set(RC_V3 ${CMAKE_MATCH_4})
+                endif()
+            endif()
+            configure_file(${PORT}/sdl/mvc2.rc.in ${CMAKE_BINARY_DIR}/${TARGET}.rc @ONLY)
+            target_sources(${TARGET} PRIVATE ${CMAKE_BINARY_DIR}/${TARGET}.rc)
+            set_property(SOURCE ${CMAKE_BINARY_DIR}/${TARGET}.rc APPEND PROPERTY OBJECT_DEPENDS ${RC_ICON})
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
             # libgcc's division helpers, through port/sys/divzero_arm.c
             target_link_options(${TARGET} PRIVATE
