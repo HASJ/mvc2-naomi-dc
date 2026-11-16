@@ -40,6 +40,9 @@ static int arcade;              /* the cartridge's program, not the Dreamcast's 
 int ctr_log_line(const char* fmt, va_list ap);  /* port/ctr/ctr_log.c: queued for a thread to write */
 #endif
 
+static FILE* log_file;
+static int log_init;
+
 void host_log(const char* fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -47,6 +50,24 @@ void host_log(const char* fmt, ...) {
     if (ctr_log_line(fmt, ap)) {
         va_end(ap);
         return;
+    }
+#endif
+#ifndef __3DS__
+    if (!log_init) {
+        const char* env = getenv("MVC2_LOG");
+        log_init = 1;
+        if (env == NULL || strcmp(env, "0") != 0) {
+            log_file = fopen(host_save_path("mvc2.log"), "w");
+        }
+    }
+    if (log_file != NULL) {
+        va_list ap_file;
+        va_copy(ap_file, ap);
+        fprintf(log_file, "[%u] ", frames);
+        vfprintf(log_file, fmt, ap_file);
+        va_end(ap_file);
+        fputc('\n', log_file);
+        fflush(log_file);
     }
 #endif
     vfprintf(stderr, fmt, ap);
