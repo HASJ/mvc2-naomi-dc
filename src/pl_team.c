@@ -11,10 +11,78 @@ static PLAYER_WORK *pl_list2_end ;
 static Uint8 double_assist_pending[2] ;	/* bit (1 << team_no) set when both assists were called together */
 static Sint8 assist_extra_req[2][3] = { { -1, -1, -1 }, { -1, -1, -1 } } ;
 static Sint8 assist_saved_personal[6] = { -1, -1, -1, -1, -1, -1 } ;
+static Uint8 active_tag_req[2] ;	/* partner team_no (1 or 2) requested for active tag this frame */
+static Uint8 active_tag_out_pending[6] ;	/* set on work_no while an actively tagged-out char is on screen */
+static Uint8 was_actively_tagged_out[6] ;	/* set on work_no until combo and lockout/on-screen end */
+static Uint8 active_tag_no_retag[6] ;	/* set on work_no when prohibited from being actively tagged in */
+static Uint8 active_tag_combo_assist_used[6] ;	/* set on work_no once the 1 extra combo assist call is used */
 
 void pl_assist_extra_set( Uint8 pl_no, Uint8 team_idx, Sint8 assist_type )
 {
 	if( pl_no < 2 && team_idx < 3 ) assist_extra_req[pl_no][team_idx] = assist_type ;
+}
+
+int pl_in_combo_ck( Uint8 pl_no )
+{
+	Uint8 opp = pl_no ^ 1 ;
+
+	if( vs_sys_work.combo_total[pl_no] > 0 ) return 1 ;
+	if( vs_sys_work.team_w[pl_no][0]->combo_cnt > 0 ) return 1 ;
+	if( vs_sys_work.team_w[opp][0]->combo_reset_flag
+	 || vs_sys_work.team_w[opp][1]->combo_reset_flag
+	 || vs_sys_work.team_w[opp][2]->combo_reset_flag ) return 1 ;
+	return 0 ;
+}
+
+int pl_active_tag_out_ck( PLAYER_WORK *pl_w )
+{
+	return active_tag_out_pending[pl_w->work_no] != 0 ;
+}
+
+int pl_active_tag_ok_ck( PLAYER_WORK *nw )
+{
+	if( active_tag_no_retag[nw->work_no] || active_tag_out_pending[nw->work_no] ) return 0 ;
+	return 1 ;
+}
+
+int pl_active_tag_pending_ck( Uint8 pl_no )
+{
+	return pl_no < 2 && active_tag_req[pl_no] != 0 ;
+}
+
+int pl_assist_slot_ok_ck( PLAYER_WORK *nw, int is_assist )
+{
+	if( is_assist && was_actively_tagged_out[nw->work_no] && pl_in_combo_ck( nw->pl_no ) ){
+		return !active_tag_combo_assist_used[nw->work_no] ;
+	}
+	return !nw->vital_red_wait ;
+}
+
+void pl_active_tag_req_set( Uint8 pl_no, Uint8 team_idx )
+{
+	if( pl_no < 2 && ( team_idx == 1 || team_idx == 2 ) ) active_tag_req[pl_no] = team_idx ;
+}
+
+void pl_assist_out_lockout( PLAYER_WORK *pl_w )
+{
+	Uint8 mask ;
+	Sint16 wait = 0 ;
+
+	if( !pl_w->team_no ) return ;
+	mask = (Uint8)( 1 << pl_w->team_no ) ;
+	if( double_assist_pending[pl_w->pl_no] & mask ){
+		double_assist_pending[pl_w->pl_no] &= (Uint8)~mask ;
+		wait += 180 ;
+	}
+	if( active_tag_out_pending[pl_w->work_no] ){
+		active_tag_out_pending[pl_w->work_no] = 0 ;
+		wait += 120 ;
+	}
+	if( wait > 0 && pl_w->vital_new > 0 ){
+		if( pl_w->vital_red_wait < wait ){
+			pl_w->vital_red_wait = wait ;
+		}
+	}
 }
 
 extern int dbg_flag_ck( int a, int b ) ;
@@ -30,6 +98,7 @@ extern void pl_change_in_set2( PLAYER_WORK *pl_w ) ;
 extern void pl_hyper_scr_flash( PLAYER_WORK *pl_w ) ;
 extern void pl_hyper_lvup_flash( PLAYER_WORK *pl_w ) ;
 extern void pl_gauge_sub( PLAYER_WORK *pl_w, int no ) ;
+extern void pl_tlocal_init( PLAYER_WORK *pl_w ) ;
 extern void catch_ko_ck( PLAYER_WORK *pl_w ) ;
 
 void pl_work_move( void ) ;
@@ -39,6 +108,7 @@ void team_w_set( void ) ;
 void pl_work_disp( void ) ;
 static void team_change_ck( void ) ;
 static void change_tag( PLAYER_WORK *pl_w ) ;
+static void change_active_tag( PLAYER_WORK *pl_w, Uint8 idx ) ;
 static void change_in( PLAYER_WORK *pl_w ) ;
 static void change_next( PLAYER_WORK *pl_w ) ;
 static void change_vcounter( PLAYER_WORK *pl_w ) ;
@@ -48,6 +118,7 @@ static void change_hyper( PLAYER_WORK *pl_w ) ;
 static void change_delay( PLAYER_WORK *pl_w ) ;
 static void change_snap( PLAYER_WORK *pl_w ) ;
 static void team_hyper_ck( void ) ;
+static int partner_neutral_ck( PLAYER_WORK *w ) ;
 static void team_end_ck( PLAYER_WORK *pl_w, PLAYER_WORK *w1, PLAYER_WORK *w2 ) ;
 static void team_end_ck_all( void ) ;
 #ifdef TARGET_DC
@@ -222,6 +293,16 @@ static void team_change_ck( void )
 	PLAYER_WORK *w ;
 	int i ;
 
+	if( vs_sys_work.vs_st < VS_FIGHT ){
+		double_assist_pending[0] = double_assist_pending[1] = 0 ;
+		active_tag_req[0] = active_tag_req[1] = 0 ;
+		for( i = 0 ; i < 6 ; i ++ ){
+			active_tag_out_pending[i] = 0 ;
+			was_actively_tagged_out[i] = 0 ;
+			active_tag_no_retag[i] = 0 ;
+			active_tag_combo_assist_used[i] = 0 ;
+		}
+	}
 	for( i = 0 ; i < 6 ; i ++ ) list[i] = &pl_work[i] ;
 	for( i = 0 ; i < 6 ; i ++ ){
 		w = list[i] ;
@@ -236,6 +317,10 @@ static void team_change_ck( void )
 			change_delay( w ) ;
 			w->delay_change_flag = 0 ;
 		}
+		if( active_tag_req[i] ){
+			change_active_tag( vs_sys_work.team_w[i][0], active_tag_req[i] ) ;
+			active_tag_req[i] = 0 ;
+		}
 		if( !vs_sys_work.team_w[i][1]->be_flag && !vs_sys_work.team_w[i][2]->be_flag ){
 			double_assist_pending[i] = 0 ;
 		}
@@ -245,7 +330,144 @@ static void team_change_ck( void )
 			pl_work[i].pl_personal = assist_saved_personal[i] ;
 			assist_saved_personal[i] = -1 ;
 		}
+		if( !pl_work[i].be_flag && active_tag_out_pending[i] ){
+			pl_assist_out_lockout( &pl_work[i] ) ;
+		}
+		if( !pl_work[i].team_no || ( !pl_work[i].be_flag && !active_tag_out_pending[i] && !pl_work[i].vital_red_wait && !pl_in_combo_ck( pl_work[i].pl_no ) ) ){
+			was_actively_tagged_out[i] = 0 ;
+			active_tag_no_retag[i] = 0 ;
+			active_tag_combo_assist_used[i] = 0 ;
+		}
 	}
+}
+
+/*==============================================================*/
+/*			Active tag: cancels the on-screen assist into point	*/
+/*			control, leaving the old point to finish to neutral	*/
+/*==============================================================*/
+static void change_active_tag( PLAYER_WORK *pl_w, Uint8 idx )
+{
+	Uint8 pl_no = pl_w->pl_no ;
+	Uint8 other_idx = idx ^ 3 ;
+	PLAYER_WORK *nw = vs_sys_work.team_w[pl_no][idx] ;
+	PLAYER_WORK *other_w = vs_sys_work.team_w[pl_no][other_idx] ;
+	VEC3 pos ;
+	Sint8 partner_cnt ;
+
+	if( !nw->be_flag || nw->team_type != 8 || nw->vital_new <= 0 || nw->routine_1 != PL_NORM ) return ;
+	if( pl_w->vital_new <= 0 || pl_w->routine_1 != PL_NORM ) return ;
+
+	if( ( double_assist_pending[pl_no] & ( 1 << other_idx ) )
+	 || ( other_w->be_flag && other_w->team_type == 8 && !active_tag_out_pending[other_w->work_no] ) ){
+		active_tag_no_retag[other_w->work_no] = 1 ;
+	}
+	double_assist_pending[pl_no] &= (Uint8)~( 1 << idx ) ;
+
+	if( assist_saved_personal[nw->work_no] >= 0 ){
+		nw->pl_personal = assist_saved_personal[nw->work_no] ;
+		assist_saved_personal[nw->work_no] = -1 ;
+	}
+
+	nw->team_no = 0 ;
+	nw->team_type = 0 ;
+	pl_w->team_no = idx ;
+	pl_w->team_type = 8 ;
+	vs_sys_work.team_w[pl_no][0] = nw ;
+	vs_sys_work.team_w[pl_no][idx] = pl_w ;
+	vs_sys_work.team_hyper_bit[pl_no] |= (Uint8)( 1 << idx ) ;
+	partner_cnt = 0 ;
+	if( vs_sys_work.team_w[pl_no][1]->be_flag && vs_sys_work.team_w[pl_no][1]->team_type == 8 ) partner_cnt ++ ;
+	if( vs_sys_work.team_w[pl_no][2]->be_flag && vs_sys_work.team_w[pl_no][2]->team_type == 8 ) partner_cnt ++ ;
+	nw->v_combi_cnt = partner_cnt ;
+
+	nw->combo_cnt = vs_sys_work.combo_total[pl_no] ? vs_sys_work.combo_total[pl_no] : pl_w->combo_cnt ;
+	nw->combo_kind = pl_w->combo_kind ;
+	nw->combo_kind_old = pl_w->combo_kind_old ;
+	nw->combo_hit_type = pl_w->combo_hit_type ;
+	nw->combo_hit_type_old = pl_w->combo_hit_type_old ;
+	nw->combo_hit_types = pl_w->combo_hit_types ;
+	nw->air_combo_cnt = pl_w->air_combo_cnt ;
+	pl_w->combo_cnt = 0 ;
+	pl_w->combo_kind = 0 ;
+	pl_w->air_combo_cnt = 0 ;
+	pl_w->combo_hit_types = 0 ;
+	pl_w->combo_hit_type = 0 ;
+
+	active_tag_out_pending[pl_w->work_no] = 1 ;
+	was_actively_tagged_out[pl_w->work_no] = 1 ;
+	active_tag_no_retag[pl_w->work_no] = 1 ;
+	active_tag_combo_assist_used[pl_w->work_no] = 0 ;
+	pl_w->vital_red_cnt = 300 ;
+	pl_w->fly_screen_flag = 0 ;
+	pl_w->delay_flag = 0 ;
+	pl_w->delay_timer = 0 ;
+	pl_w->delay_change_flag = 0 ;
+	memset( &pl_w->dash_w, 0, sizeof( COM_WORK ) * 17 ) ;
+	pl_w->pl_sw_new = pl_w->pl_sw_now = pl_w->pl_sw_old = 0 ;
+	pl_w->pl_new_lvbt = pl_w->pl_now_lvbt = pl_w->pl_last_lvbt = 0 ;
+	pl_w->pl_old_lvbt = pl_w->pl_old2_lvbt = 0 ;
+	pl_w->pl_stop_new = pl_w->pl_stop_now = 0 ;
+	pl_w->assist_timer[0] = pl_w->assist_timer[1] = 0 ;
+	pl_w->change_timer[0] = pl_w->change_timer[1] = 0 ;
+
+	scr_excep_clr() ;
+	pl_tlocal_init( nw ) ;
+	memset( &nw->dash_w, 0, sizeof( COM_WORK ) * 17 ) ;
+	nw->assist_timer[0] = nw->assist_timer[1] = 0 ;
+	nw->change_timer[0] = nw->change_timer[1] = 0 ;
+	nw->routine_0 = PL_FIGHT ;
+	nw->routine_1 = PL_NORM ;
+	nw->routine_2 = 0 ;
+	nw->routine_3 = 0 ;
+	nw->fly_flag = 0 ;
+	nw->sp_ng_timer = 0 ;
+	nw->atck_ng_timer = 0 ;
+	nw->catch_ng_timer = 0 ;
+	nw->wall_ng_timer = 0 ;
+	nw->stop_move_flag = 0 ;
+	nw->stop_move_timer = 0 ;
+	nw->cg_atck_flag = 0 ;
+	nw->hit_flag = -1 ;
+	nw->dm_flag = -128 ;
+	nw->vital_red = nw->vital_new ;
+	nw->vital_red_wait = 0 ;
+#ifdef TARGET_DC
+	nw->drain_timer = 100 ;
+#endif
+	nw->rot[0] = nw->rot[1] = nw->rot[2] = 0 ;
+	nw->scale = nw->pl_scale ;
+	nw->alpha = 1.0f ;
+	nw->disp_flag = 1 ;
+	pl_color_set( nw, 1 ) ;
+	if( nw->pos.x < scr_work.eye[0].x - 285.0f ) nw->pos.x = scr_work.eye[0].x - 285.0f ;
+	if( nw->pos.x > scr_work.eye[0].x + 285.0f ) nw->pos.x = scr_work.eye[0].x + 285.0f ;
+	pl_dir_set( nw ) ;
+	pl_sw_set( nw ) ;
+	nw->pl_now_lvbt &= ~( KEY_A1 | KEY_A2 ) ;
+	nw->pl_sw_now &= ~( KEY_A1 | KEY_A2 ) ;
+	if( nw->pos.y > nw->ground_y ){
+		nw->spd.x = 0.0f ;
+		nw->spd.y = 0.0f ;
+		nw->acc.x = 0.0f ;
+		nw->acc.y = -DOT_Y( 0.375f ) ;
+		nw->pl_stance = STANCE_AIR ;
+		nw->sjump_flag = 0 ;
+		nw->jump_atk_cnt = JATK_ONE ;
+		nw->jump_com_cnt = 0 ;
+		nw->jump_dash_cnt = 0 ;
+		nw->air_jump_cnt = 0 ;
+		nw->jump_dir = -1 ;
+		pl_jump_ret( nw ) ;
+	} else {
+		nw->pos.y = nw->ground_y ;
+		nw->pl_stance = STANCE_STAND ;
+		pl_stop_stand_ret( nw ) ;
+	}
+	pos.x = nw->pos.x ;
+	pos.y = nw->pos.y + DOT_Y( 50.0f ) ;
+	pos.z = nw->pos.z ;
+	clash_ef_set( &pos, nw->disp_dir ) ;
+	pl_se_req( nw, 63 ) ;
 }
 
 /*==============================================================*/
@@ -340,14 +562,8 @@ static void change_next( PLAYER_WORK *pl_w )
 		change_in( nw ) ;
 		pl_change_set( nw, pl_w ) ;
 	} else {
-		Uint8 mask = (Uint8)( 1 << pl_w->team_no ) ;
 		pl_w->be_flag = pl_w->disp_flag = 0 ;
-		if( double_assist_pending[pl_w->pl_no] & mask ){
-			double_assist_pending[pl_w->pl_no] &= (Uint8)~mask ;
-			if( pl_w->vital_new > 0 && pl_w->vital_red_wait < 180 ){
-				pl_w->vital_red_wait = 180 ;
-			}
-		}
+		pl_assist_out_lockout( pl_w ) ;
 		if( !pl_w->vital_new && pl_w->team_no != 2 ){
 			w2 = vs_sys_work.team_w[pl_w->pl_no][2] ;
 			if( w2->vital_new ){
@@ -521,7 +737,10 @@ static void change_delay( PLAYER_WORK *pl_w )
 		req = assist_extra_req[pl_w->pl_no][idx] ;
 		assist_extra_req[pl_w->pl_no][idx] = -1 ;
 		nw = vs_sys_work.team_w[pl_w->pl_no][idx] ;
-		if( nw->vital_new > 0 && !nw->vital_red_wait ){
+		if( nw->vital_new > 0 && pl_assist_slot_ok_ck( nw, 1 ) ){
+			if( was_actively_tagged_out[nw->work_no] && pl_in_combo_ck( pl_w->pl_no ) ){
+				active_tag_combo_assist_used[nw->work_no] = 1 ;
+			}
 			if( req >= 0 ){
 				if( assist_saved_personal[nw->work_no] < 0 ){
 					assist_saved_personal[nw->work_no] = nw->pl_personal ;
@@ -548,7 +767,8 @@ static void change_delay( PLAYER_WORK *pl_w )
 	{
 		PLAYER_WORK *w1 = vs_sys_work.team_w[pl_w->pl_no][1] ;
 		PLAYER_WORK *w2 = vs_sys_work.team_w[pl_w->pl_no][2] ;
-		if( w1->be_flag && w1->team_type == 8 && w2->be_flag && w2->team_type == 8 ){
+		if( w1->be_flag && w1->team_type == 8 && !active_tag_out_pending[w1->work_no]
+		 && w2->be_flag && w2->team_type == 8 && !active_tag_out_pending[w2->work_no] ){
 			double_assist_pending[pl_w->pl_no] |= (Uint8)( ( 1 << 1 ) | ( 1 << 2 ) ) ;
 		}
 	}
@@ -606,6 +826,34 @@ static void team_hyper_ck( void )
 }
 
 /*==============================================================*/
+/*			Whether a partner on screen has finished its		*/
+/*			action and returned to ground neutral state			*/
+/*==============================================================*/
+static int partner_neutral_ck( PLAYER_WORK *w )
+{
+	if( w->fly_flag && w->act_st != N_SPECIAL && w->act_st != N_SUPER && w->act_st != N_NML_ATCK && w->act_st != N_CMD_ATCK ){
+		w->fly_flag = 0 ;
+		if( w->pos.y > w->ground_y ){
+			pl_jump_ret2( w ) ;
+			return 0 ;
+		}
+		if( w->act_st == N_FLY ){
+			w->pos.y = w->ground_y ;
+			w->pl_stance = STANCE_STAND ;
+			pl_stop_stand_ret( w ) ;
+			return 0 ;
+		}
+	}
+	if( w->pl_stance == STANCE_AIR ) return 0 ;
+	if( w->act_st == N_SPECIAL || w->act_st == N_SUPER || w->act_st == N_NML_ATCK || w->act_st == N_CMD_ATCK ) return 0 ;
+	if( w->act_st == N_DASH || w->act_st == N_BACK_DASH || w->act_st == N_JUMP || w->act_st == N_SJUMP ) return 0 ;
+	if( w->act_st == N_GET_UP || w->act_st == N_DIZZY || w->act_st == N_ESCAPE || w->act_st == N_FLY ) return 0 ;
+	if( ( w->act_st == N_GUARD && ( w->guard_timer || w->routine_2 == 3 ) )
+	 || ( w->act_st == N_AIR_GUARD && ( w->guard_timer || w->routine_2 == 2 ) ) ) return 0 ;
+	return 1 ;
+}
+
+/*==============================================================*/
 /*			A side's team hyper combo: the partners leave		*/
 /*			once their part is done								*/
 /*==============================================================*/
@@ -634,7 +882,7 @@ static void team_end_ck( PLAYER_WORK *pl_w, PLAYER_WORK *w1, PLAYER_WORK *w2 )
 	bits = vs_sys_work.team_hyper_bit[pl_w->pl_no] ;
 	if( bits & 1 && !pl_w->routine_1 && pl_w->act_st != N_SUPER && pl_w->act_st != N_SPECIAL ) cnt ++ ;
 	if( w1->be_flag && !w1->routine_1 && w1->act_st != N_CHANGE && w1->act_st != N_DOWN ){
-		if( w1->act_st != N_SPECIAL && w1->act_st != N_SUPER && w1->pl_stance != STANCE_AIR ){
+		if( partner_neutral_ck( w1 ) ){
 			if( bits & 2 ) cnt ++ ;
 			if( w1->team_type == 8 ){
 				w1->change_type = 11 ;
@@ -649,7 +897,7 @@ static void team_end_ck( PLAYER_WORK *pl_w, PLAYER_WORK *w1, PLAYER_WORK *w2 )
 		}
 	}
 	if( w2->be_flag && !w2->routine_1 && w2->act_st != N_CHANGE && w2->act_st != N_DOWN ){
-		if( w2->act_st != N_SPECIAL && w2->act_st != N_SUPER && w2->pl_stance != STANCE_AIR ){
+		if( partner_neutral_ck( w2 ) ){
 			if( bits & 4 ) cnt ++ ;
 			if( w2->team_type == 8 ){
 				w2->change_type = 11 ;

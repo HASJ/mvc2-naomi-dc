@@ -6,6 +6,7 @@
 #include "pl_act.h"
 
 extern Uint8 pl_nml_atck_ck( PLAYER_WORK *pl_w );	/* s_pl14 declares it as an int */
+extern int pl_active_tag_out_ck( PLAYER_WORK *pl_w );
 
 static Uint8 nml_atck_frames[2] ;
 
@@ -1492,7 +1493,7 @@ static void act_change_out_hop( PLAYER_WORK *pl_w )
 			pl_w->be_flag = 0 ;
 			pl_w->disp_flag = 0 ;
 			pl_change_out( pl_w ) ;
-			team_mark_set( pl_w ) ;
+			if( !pl_w->vital_red_wait ) team_mark_set( pl_w ) ;
 		}
 	}
 }
@@ -1759,11 +1760,19 @@ static void act_change_assist_end( PLAYER_WORK *pl_w )
 {
 	if( !pl_w->routine_2 ){
 		pl_w->routine_2 ++ ;
+		pl_w->pos.y = pl_w->ground_y ;
+		pl_w->pl_stance = STANCE_STAND ;
 		pl_w->spd.x = 0.0f ;
 		pl_w->spd.y = 0.0f ;
 		pl_w->acc.x = 0.0f ;
 		pl_w->acc.y = 0.0f ;
-		pl_w->timer0 = 40 ;
+		if( pl_active_tag_out_ck( pl_w ) ){
+			pl_w->timer0 = 120 ;
+			pl_w->catch_ng_timer = 0 ;
+			pl_w->dm_flag = -128 ;
+		} else {
+			pl_w->timer0 = 40 ;
+		}
 		pl_char_set( pl_w, Char_Change, 4 ) ;
 	}
 	else {

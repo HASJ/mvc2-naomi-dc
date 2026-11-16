@@ -6,6 +6,11 @@
 
 /* each character's least height for an air dash, in 256ths of 2.142857 */
 extern Sint16 air_dash_y_tbl[];
+extern void pl_assist_extra_set( Uint8 pl_no, Uint8 team_idx, Sint8 assist_type );
+extern int pl_active_tag_ok_ck( PLAYER_WORK *nw );
+extern int pl_active_tag_pending_ck( Uint8 pl_no );
+extern int pl_assist_slot_ok_ck( PLAYER_WORK *nw, int is_assist );
+extern void pl_active_tag_req_set( Uint8 pl_no, Uint8 team_idx );
 
 /* a command's move number, read as the low byte of com[2] */
 #define COM_NO( com )	( ( Uint8 * )&( com )[2] )[0]
@@ -393,6 +398,37 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 			idx -= 2 ;
 		}
 	}
+	if( no >= 3 ){
+		PLAYER_WORK *nw = vs_sys_w->team_w[pl_w->pl_no][idx] ;
+		if( pl_active_tag_pending_ck( pl_w->pl_no ) ) return 0 ;
+		if( !nw->vital_new && !nw->be_flag ) nw = vs_sys_w->team_w[pl_w->pl_no][idx ^ 3] ;
+		if( nw->be_flag && nw->team_type == 8 ){
+			*cnt = 0 ;
+			assist_dir_latched[pl_w->pl_no][slot] = 0 ;
+			if( pl_w->cpu_flag || !( pl_w->pl_now_lvbt & sw ) ) return 0 ;
+			if( vs_sys_work.vs_st >= VS_END_WAIT ) return 0 ;
+#ifdef TARGET_DC
+			if( Sys->partner_ng ) return 0 ;
+#endif
+			if( pl_w->target_w->fly_screen_flag ) return 0 ;
+			if( pl_w->vital_new <= 0 || pl_w->routine_1 != PL_NORM
+			 || pl_w->act_st == N_DOWN || pl_w->act_st == N_DIZZY || pl_w->act_st == N_CHANGE ) return 0 ;
+			if( ( pl_w->act_st == N_GUARD && ( pl_w->guard_timer || pl_w->routine_2 == 3 ) )
+			 || ( pl_w->act_st == N_AIR_GUARD && ( pl_w->guard_timer || pl_w->routine_2 == 2 ) ) ) return 0 ;
+			if( !nw->disp_flag || nw->vital_new <= 0 || nw->routine_1 != PL_NORM
+			 || nw->act_st == N_DOWN || ( nw->act_st == N_CHANGE && nw->change_type == 2 ) ) return 0 ;
+			if( !pl_active_tag_ok_ck( nw ) ) return 0 ;
+			{
+				Sint16 total = (Sint16)( *pl_w->gauge_level ) * 144 + *pl_w->gauge ;
+				if( total < 72 ) return 0 ;
+				total -= 72 ;
+				*pl_w->gauge_level = (Sint8)( total / 144 ) ;
+				*pl_w->gauge = total % 144 ;
+			}
+			pl_active_tag_req_set( pl_w->pl_no, nw->team_no ) ;
+			return 1 ;
+		}
+	}
 	if( pl_w->cpu_flag ) goto cpu ;
 	if( !*cnt ){
 		if( no < 3 ){
@@ -442,7 +478,7 @@ cpu :
 	if( 0 ) goto ng ;
 	if( pl_w->team_ng_timer ) return 0 ;
 	if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag || ( pl_w->delay_change_flag & ( 1 << idx ) ) ) return 0 ;
-	if( vs_sys_w->team_w[pl_w->pl_no][idx]->vital_red_wait ) return 0 ;
+	if( !pl_assist_slot_ok_ck( vs_sys_w->team_w[pl_w->pl_no][idx], no >= 3 ) ) return 0 ;
 	if( no <= 2 ){
 		if( !sp_ok_ck( pl_w ) ) return 0 ;
 	} else {
@@ -452,7 +488,7 @@ cpu :
 		no = ( ( no - 1 ) ^ 1 ) + 1 ;
 		idx = ( ( idx - 1 ) ^ 1 ) + 1 ;
 		if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag || ( pl_w->delay_change_flag & ( 1 << idx ) ) ) return 0 ;
-		if( vs_sys_w->team_w[pl_w->pl_no][idx]->vital_red_wait ) return 0 ;
+		if( !pl_assist_slot_ok_ck( vs_sys_w->team_w[pl_w->pl_no][idx], no >= 3 ) ) return 0 ;
 		if( !vs_sys_w->team_w[pl_w->pl_no][idx]->vital_new ) goto ng ;
 	}
 	if( no < 3 ){
@@ -1094,7 +1130,7 @@ static Sint8 com_time_tbl[32] = {
 } ;
 
 /****************************************************************/
-Uint8 sp_ok_ck( PLAYER_WORK *pl_w )
+static Uint8 sp_ok_common_ck( PLAYER_WORK *pl_w, int allow_fly_screen )
 {
 	if( pl_w->sp_ng_timer ) return 0 ;
 	if( pl_w->atck_ng_timer ) return 0 ;
@@ -1103,7 +1139,7 @@ Uint8 sp_ok_ck( PLAYER_WORK *pl_w )
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL ) return 0 ;
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
-	if( pl_w->target_w->fly_screen_flag ) return 0 ;
+	if( !allow_fly_screen && pl_w->target_w->fly_screen_flag ) return 0 ;
 	if( pl_w->pl_stance == STANCE_AIR ){
 		if( !( pl_w->pos.y > pl_w->ground_y ) ) return 0 ;
 		if( !( pl_w->pos.y < scr_work.stage_top + -DOT_Y( 32.0f ) ) ) return 0 ;
@@ -1112,16 +1148,21 @@ Uint8 sp_ok_ck( PLAYER_WORK *pl_w )
 	return 1 ;
 }
 
+/****************************************************************/
+Uint8 sp_ok_ck( PLAYER_WORK *pl_w )
+{
+	return sp_ok_common_ck( pl_w, 0 ) ;
+}
+
 /*==============================================================*/
 static Uint8 assist_ok_ck( PLAYER_WORK *pl_w )
 {
 	if( pl_w->act_st == N_SPECIAL ){
 		if( pl_w->routine_1 != PL_NORM ) return 0 ;
-		if( pl_w->target_w->fly_screen_flag ) return 0 ;
 		if( pl_w->pl_stance == STANCE_AIR && !( pl_w->pos.y < scr_work.stage_top + -DOT_Y( 32.0f ) ) ) return 0 ;
 		return 1 ;
 	}
-	return sp_ok_ck( pl_w ) ;
+	return sp_ok_common_ck( pl_w, 1 ) ;
 }
 
 /*==============================================================*/

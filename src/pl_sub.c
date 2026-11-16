@@ -34,6 +34,7 @@ extern void pl38_tbl_set( PLAYER_WORK *pl_w ), pl39_tbl_set( PLAYER_WORK *pl_w )
 
 extern void pl_mark_init( void );
 extern void team_w_set( void );
+extern void pl_assist_out_lockout( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls00_00_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls03_02_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *shl0b_00_set( PLAYER_WORK *pl_w );
@@ -465,6 +466,7 @@ void pl_change_out( PLAYER_WORK *pl_w )
 	pl_w->delay_timer = pl_w->delay_flag = 0 ;
 	pl_w->stop_move_flag = 0 ;
 	pl_w->stop_move_timer = 0 ;
+	if( pl_w->team_no ) pl_assist_out_lockout( pl_w ) ;
 }
 
 /****************************************************************/
