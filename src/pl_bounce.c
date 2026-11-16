@@ -33,7 +33,9 @@ typedef struct BOUNCE_RULE {
 static PL_BOUNCE_STATE bounce_state[6] ;
 
 static const BOUNCE_RULE bounce_rules[] = {
-	{ 0, 0, 0, BOUNCE_PROP_NONE, 0 },
+	{ PL_AKUMA,   64,            1, BOUNCE_PROP_GROUND, 1 },	/* Akuma j236p (Zankuu Hadouken fireball) */
+	{ PL_AKUMA,   65,            1, BOUNCE_PROP_GROUND, 1 },	/* Akuma j236p (Zankuu Hadouken level 1) */
+	{ PL_MAGNETO, ATCK_STAND_HP, 1, BOUNCE_PROP_WALL,   1 },	/* Magneto 5HP vs non-grounded opponents */
 } ;
 
 static void bounce_clear_motion( Uint8 work_no )
