@@ -40,8 +40,14 @@ static const struct {
     { "PL00_DAT.BIN", 0 },       { "PL3A_DAT.BIN", 0 },    { "STG00POL.BIN", 173976 }, { "ADX_SELC.BIN", 417792 },
 };
 
-/* the first of those files that is missing from dir or the wrong size, or NULL when all are there */
+/* the first of those files that is missing from dir or the wrong size, or NULL when all are there, or when
+   there is an image of the disc to unpack them from */
 const char* dc_disc_check(const char* dir) {
+    const char* missing = dc_disc_missing(dir);
+    return missing != NULL && dc_image_find(dir) != NULL ? NULL : missing;
+}
+
+const char* dc_disc_missing(const char* dir) {
     char path[1200];
     struct stat st;
     size_t i;

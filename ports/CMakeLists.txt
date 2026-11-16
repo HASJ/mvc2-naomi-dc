@@ -286,6 +286,15 @@ target_include_directories(mvc2_dc PRIVATE ${PORT}/include ${GAME}/include ${POR
 target_compile_options(mvc2_dc PRIVATE -O2 -std=gnu17 -fwrapv -fno-strict-aliasing -fsigned-char -Wall ${HOST_ABI} ${HOST_FLOAT})
 mvc2_program(dc PROGRAM dc SOURCES ${DC_SOURCES} DEFINITIONS TARGET_DC BUILD_DATE=20000529
              HOST mvc2_port mvc2_lib mvc2_dc)
+target_sources(mvc2_dc PRIVATE ${PORT}/dc/dc_image.c)
+# libchdr (port/ext/libchdr), for a disc image in a CHD: its codecs, with dr_flac, and its own LZMA, miniz and zstd
+set(CHDR ${PORT}/ext/libchdr)
+file(GLOB CHDR_SOURCES ${CHDR}/src/*.c)
+add_library(mvc2_chdr STATIC ${CHDR_SOURCES} ${CHDR}/deps/lzma-26.02/src/LzmaDec.c ${CHDR}/deps/miniz-3.1.2/miniz.c
+            ${CHDR}/deps/zstd-1.5.7/zstddeclib.c)
+target_compile_definitions(mvc2_chdr PRIVATE MINIZ_NO_ARCHIVE_APIS MINIZ_NO_DEFLATE_APIS MINIZ_NO_STDIO MINIZ_NO_TIME
+                           WANT_RAW_DATA_SECTOR=1 WANT_SUBCODE=1 VERIFY_BLOCK_CRC=1 LOWRAM_TARGET=0)
+target_compile_options(mvc2_chdr PRIVATE -O2 -w ${HOST_ABI} ${HOST_FLOAT})
 
 if(WIN32 AND NOT NINTENDO_3DS)
     enable_language(CXX)
@@ -390,6 +399,9 @@ function(mvc2_executable TARGET)
         target_include_directories(${TARGET} PRIVATE ${GEN}/patch_api)
     endif()
     target_compile_definitions(${TARGET} PRIVATE ${DEFS})
+    if("dc" IN_LIST ARGN)
+        target_link_libraries(${TARGET} PRIVATE mvc2_chdr)
+    endif()
     target_compile_options(${TARGET} PRIVATE -O2 -std=gnu17 -Wall ${HOST_FLOAT})
     foreach(p ${ARGN})
         # the addresses of the names the program keeps in place (NAME.sys_font_thd)

@@ -111,7 +111,11 @@ int dc_vmu_is_netplay_locked(void);
 int dc_init(const HOST_PROGRAM* program, const char* disc_path);
 int dc_gd_open(const char* disc_path);
 void dc_gd_set_overlay_dir(const char* overlay_dir);
-const char* dc_disc_check(const char* disc_path);  /* a file missing or the wrong size, or NULL */
+const char* dc_disc_check(const char* disc_path);  /* a file missing or the wrong size, or NULL (or an image there) */
+const char* dc_disc_missing(const char* disc_path);   /* the same, the files alone */
+const char* dc_image_find(const char* disc_path);     /* a disc image's name there (dc_image.c), or NULL */
+/* the disc's files from that image, into disc_path, with progress(done, total) in KB; NULL when done, else why not */
+const char* dc_image_unpack(const char* disc_path, void (*progress)(uint32_t done, uint32_t total));
 long dc_gd_read_file(const char* name, void* buf, long max);  /* a whole file; its size, or -1 */
 const char* dc_gd_path(const char* name);   /* a file's path on the host */
 

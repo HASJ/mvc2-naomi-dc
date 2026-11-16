@@ -20,5 +20,9 @@ The PC build links [SDL](https://libsdl.org), and the Windows release carries `S
 devkitPro's [libctru](https://github.com/devkitPro/libctru) and [citro3d](https://github.com/devkitPro/citro3d).
 All three are under the zlib license.
 
+`port/ext/libchdr` is [libchdr](https://github.com/rtissera/libchdr) (BSD-3-Clause), for reading a disc image
+in a CHD, with the decoders it carries: the LZMA SDK's (public domain), miniz (Unlicense), zstd's
+(BSD-3-Clause, or GPLv2) and dr_flac (public domain, or MIT-0). Their licenses are in their files there.
+
 Marvel vs. Capcom 2 and Capcom are trademarks of Capcom; Marvel characters are trademarks of Marvel. This
 project is not affiliated with or endorsed by Capcom, Marvel or Sega.

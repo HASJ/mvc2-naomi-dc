@@ -4,7 +4,7 @@ Both versions run at full speed, 60 fps, on every 3DS and 2DS, the original mode
 (the title, the select screen, the load before a fight) still pause for a moment while they read the SD card.
 
 The arcade game and the Dreamcast version, built for the original 3DS and 2DS (a New 3DS also gets its faster
-CPU). No game data comes with it: you need the MAME `mvsc2` set, the Dreamcast USA disc's files, or both.
+CPU). No game data comes with it: you need the MAME `mvsc2` set, the Dreamcast USA disc, or both.
 
 ## Installing
 
@@ -26,13 +26,29 @@ Sound needs the usual `sdmc:/3ds/dspfirm.cdc`.
     sdmc:/3ds/mvc2/
         mvc2.3dsx
         roms/mvsc2/     MAME's mvsc2.zip, or its files
-        disc/           the USA disc's files (1ST_READ.BIN and the rest)
+        disc/           the USA Dreamcast disc: an image of it, or its files
         mvc2.cfg        settings
         mvc2.log        the last run's log (mvc2_o3ds.log for the Old 3DS test build)
 
 The first start unpacks the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB); the zip or the set's other
-files can be deleted after. With both versions there it asks which to play (touch NAOMI or Dreamcast, or choose with left,
-right and A) and keeps the answer in `mvc2.cfg` as `mode =`.
+files can be deleted after.
+
+For the Dreamcast, put any one of these in `disc/`:
+
+| What                                   | Example                                                 |
+|----------------------------------------|---------------------------------------------------------|
+| a CHD                                  | `Marvel vs. Capcom 2 (USA).chd`                         |
+| a GDI with its tracks                  | `disc.gdi`, `track01.bin`, `track02.raw`, `track03.bin` |
+| a CUE with its BINs (Redump's set)     | `Marvel vs. Capcom 2 (USA).cue` and its three `.bin`s   |
+| track 3 alone, raw or as an ISO        | `Marvel vs. Capcom 2 (USA) (Track 3).bin`, `mvc2.iso`   |
+| the files already extracted            | `1ST_READ.BIN` and the rest                             |
+
+The first start unpacks an image's files into `disc/` (210 MB, with a progress bar on the bottom screen).
+That happens once, and the image can be deleted after; don't turn the 3DS off while it runs, though if it is,
+the next start unpacks it again. Leave room on the SD card for both the image and the files while it unpacks.
+
+With both versions there it asks which to play (touch NAOMI or Dreamcast, or choose with left, right and A) and
+keeps the answer in `mvc2.cfg` as `mode =`.
 
 ## Controls
 

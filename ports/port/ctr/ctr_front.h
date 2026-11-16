@@ -34,6 +34,8 @@ uint32_t ctr_options_keys(uint32_t held);               /* the 3DS's buttons as 
 #define CTR_ROM_BUFFERS (16u << 16)                     /* the read-ahead's memory */
 void ctr_rom_start(void);
 void ctr_rom_poll(void);                                /* between frames */
+void ctr_unpack_screen(const char* text);               /* a long unpack's text on the bottom screen, or NULL to clear it */
+void ctr_unpack_progress(uint32_t done, uint32_t total);   /* its bar */
 extern const char* ctr_rom_error;                       /* or NULL */
 extern int ctr_memcpy_fast;                             /* MVC2_MEMCPY_FAST=1: memcpy by ldm and stm (ctr_memcpy.c) */
 void* ctr_memcpy(void* to, const void* from, size_t n);
