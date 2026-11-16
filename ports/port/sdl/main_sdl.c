@@ -495,21 +495,27 @@ static void first_size(int* w, int* h) {
 #ifdef MVC2_SDL3
 /* when a step fails, nothing is kept and the software renderer draws */
 static void open_gpu(void) {
-    gpu = SDL_CreateGPUDevice(RD_GPU_SHADER_FORMATS | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_SPIRV |
-                                  SDL_GPU_SHADERFORMAT_MSL, false, NULL);
-    if (gpu != NULL && rd_gpu_init(gpu)) {
-        renderer = SDL_CreateGPURenderer(gpu, window);
-        if (renderer != NULL) {
-            host_log("renderer: gpu (%s)", SDL_GetGPUDeviceDriver(gpu));
-            return;
+    /* Vulkan first: Direct3D 12 makes each new texture and buffer on its own, and a hyper combo's can stall a
+       frame by 20 ms or more, enough to run the sound dry */
+    static const char* const drivers[] = { "vulkan", NULL };
+    int i;
+    for (i = 0; i < 2; i++) {
+        gpu = SDL_CreateGPUDevice(RD_GPU_SHADER_FORMATS | SDL_GPU_SHADERFORMAT_DXIL | SDL_GPU_SHADERFORMAT_SPIRV |
+                                      SDL_GPU_SHADERFORMAT_MSL, false, drivers[i]);
+        if (gpu != NULL) {
+            if (rd_gpu_init(gpu)) {
+                renderer = SDL_CreateGPURenderer(gpu, window);
+                if (renderer != NULL) {
+                    host_log("renderer: gpu (%s)", SDL_GetGPUDeviceDriver(gpu));
+                    return;
+                }
+            }
+            rd_gpu_quit();
+            SDL_DestroyGPUDevice(gpu);
+            gpu = NULL;
         }
-        rd_gpu_quit();
     }
     host_log("renderer: no gpu (%s), soft", SDL_GetError());
-    if (gpu != NULL) {
-        SDL_DestroyGPUDevice(gpu);
-        gpu = NULL;
-    }
 }
 
 /* rd_gpu.c's state starts again with the other program */
