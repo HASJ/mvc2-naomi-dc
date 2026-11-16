@@ -7,7 +7,14 @@
 #define PART_LIST( w )	( ( PAUSE_PART * )( w )->work2 )
 
 extern void scr_2d_matrix_set( void ) ;
+#ifdef HOST_PORT
+/* a host would read the VEC3 itself as the pointer, and leave the Float on the x87 stack */
+extern Float obj_scale_max( VEC3 *scale ) ;
+#define OBJ_SCALE_MAX( v )	( ( int )obj_scale_max( &( v ) ) )
+#else
 extern int obj_scale_max() ;	/* handed the VEC3 itself */
+#define OBJ_SCALE_MAX( v )	obj_scale_max( v )
+#endif
 
 void pause_win_move( PLAYER_WORK *w ) ;
 void pause_cursor_move( PLAYER_WORK *w ) ;
@@ -108,7 +115,7 @@ void pause_obj_disp( PLAYER_WORK *w )
 			nlTranslate( p->pos.x, p->pos.y, p->pos.z ) ;
 			if( p->scale ){
 				nlScaleV( &pause_scale[p->scale] ) ;
-				nlSetScaleFactor( obj_scale_max( pause_scale[p->scale] ) ) ;
+				nlSetScaleFactor( OBJ_SCALE_MAX( pause_scale[p->scale] ) ) ;
 			}
 			nlObjPutSetFadeColor( w->fade.r, w->fade.g, w->fade.b ) ;
 			nlObjPutTrnsl( obj_stg->obj[p->model], w->fade.trnsl ) ;
