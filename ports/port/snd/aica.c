@@ -218,9 +218,14 @@ static int next_index(int c, uint32_t i, uint32_t* next, int* looped) {
     return 1;
 }
 
-/* a channel that has ended: its KYONB goes too, so the next KYONEX does not start it again */
+/* a channel that has ended: its KYONB goes too, so the next KYONEX does not start it again. It reads back as
+   released, silent and at address 0, which is how the driver tells that a slot is free again */
 static void channel_stop(int c) {
     ch_on[c] = 0;
+    ch[c].pos = 0;
+    ch[c].frac = 0;
+    ch[c].eg_state = ch[c].feg_state = EG_RELEASE;
+    ch[c].eg = 0x3FF << 16;
     reg[c * 0x80 + 1] &= (uint8_t)~0x40;
 }
 

@@ -315,11 +315,58 @@ static GTEX* entry(const RD_TEXTURE* t) {
     return &gtex[ngtex++];
 }
 
+/* textures let go, kept for the next of their size and format: making or freeing one mid-game stalls the frame */
+#define SPARE_BYTES (64u << 20)
+static GTEX* spare;
+static int nspare, maxspare;
+static uint32_t spare_bytes;
+
+static uint32_t gtex_bytes(const GTEX* e) {
+    return (uint32_t)e->w * (uint32_t)e->h * (e->pal ? 1u : 4u) * (e->levels > 0 ? 4u : 3u) / 3u;
+}
+
+static void keep_spare(const GTEX* e) {
+    if (e->g == NULL) {
+        return;
+    }
+    if (nspare == maxspare) {
+        int n = maxspare ? maxspare * 2 : 256;
+        GTEX* p = realloc(spare, (size_t)n * sizeof *p);
+        if (p == NULL) {
+            SDL_ReleaseGPUTexture(dev, e->g);
+            return;
+        }
+        spare = p, maxspare = n;
+    }
+    spare[nspare++] = *e;
+    spare_bytes += gtex_bytes(e);
+    while (spare_bytes > SPARE_BYTES) {
+        /* the oldest first */
+        spare_bytes -= gtex_bytes(&spare[0]);
+        SDL_ReleaseGPUTexture(dev, spare[0].g);
+        memmove(&spare[0], &spare[1], (size_t)--nspare * sizeof *spare);
+    }
+}
+
+static SDL_GPUTexture* take_spare(int w, int h, int levels, int pal) {
+    int i;
+    for (i = nspare - 1; i >= 0; i--) {
+        if (spare[i].w == w && spare[i].h == h && spare[i].levels == levels && spare[i].pal == pal) {
+            SDL_GPUTexture* g = spare[i].g;
+            spare_bytes -= gtex_bytes(&spare[i]);
+            memmove(&spare[i], &spare[i + 1], (size_t)(nspare - i - 1) * sizeof *spare);
+            nspare--;
+            return g;
+        }
+    }
+    return NULL;
+}
+
 static void evict(void) {
     int i, n = 0;
     for (i = 0; i < ngtex; i++) {
         if (frame_no - gtex[i].used > EVICT_FRAMES) {
-            SDL_ReleaseGPUTexture(dev, gtex[i].g);
+            keep_spare(&gtex[i]);
         } else {
             gtex[n++] = gtex[i];
         }
@@ -343,12 +390,15 @@ static SDL_GPUTexture* texture(const RD_TEXTURE* t) {
         return e->g;
     }
     if (e->g != NULL && (e->w != t->width || e->h != t->height || e->levels != t->levels || e->pal != pal)) {
-        SDL_ReleaseGPUTexture(dev, e->g);
+        keep_spare(e);
         e->g = NULL;
     }
     if (e->g == NULL) {
-        e->g = make_texture(pal ? SDL_GPU_TEXTUREFORMAT_R8_UNORM : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, t->width, t->height,
-                            t->levels + 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        e->g = take_spare(t->width, t->height, t->levels, pal);
+        if (e->g == NULL) {
+            e->g = make_texture(pal ? SDL_GPU_TEXTUREFORMAT_R8_UNORM : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, t->width,
+                                t->height, t->levels + 1, SDL_GPU_TEXTUREUSAGE_SAMPLER);
+        }
         e->w = t->width, e->h = t->height, e->levels = t->levels, e->pal = pal;
     }
     e->serial = t->serial;
@@ -597,6 +647,21 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
         SDL_Log("rd_gpu: %s", SDL_GetError());
         return false;
     }
+    /* every pipeline now, as Vulkan compiles each as it is made */
+    {
+        int a, b;
+        pipeline(P_BACKGROUND, 0, 0);
+        pipeline(P_KEY, 0, 0);
+        pipeline(P_PEEL, 0, 0);
+        for (a = 0; a < 8; a++) {
+            for (b = 0; b < 8; b++) {
+                if (b < 2) {
+                    pipeline(P_OPAQUE, a, b);
+                }
+                pipeline(P_PUNCH, a, b);
+            }
+        }
+    }
     return true;
 }
 
@@ -608,6 +673,11 @@ void rd_gpu_quit(void) {
     for (i = 0; i < (size_t)ngtex; i++) {
         SDL_ReleaseGPUTexture(dev, gtex[i].g);
     }
+    for (i = 0; i < (size_t)nspare; i++) {
+        SDL_ReleaseGPUTexture(dev, spare[i].g);
+    }
+    free(spare);
+    spare = NULL, nspare = maxspare = 0, spare_bytes = 0;
     for (i = 0; i < sizeof own / sizeof own[0]; i++) {
         release(own[i]);
     }
