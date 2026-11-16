@@ -8,13 +8,27 @@ did.
 To play on Windows, unzip a release, put the game's data in `roms/mvsc2` and `disc` beside `mvc2.exe`, and
 run it; `PLAYING.md` has the keys and settings. For the 3DS, see [3DS.md](3DS.md).
 
+For the Dreamcast version, on the PC and the 3DS alike, put any one of these in `disc`:
+
+| What                                   | Example                                                 |
+|----------------------------------------|---------------------------------------------------------|
+| a CHD                                  | `Marvel vs. Capcom 2 (USA).chd`                         |
+| a GDI with its tracks                  | `disc.gdi`, `track01.bin`, `track02.raw`, `track03.bin` |
+| a CUE with its BINs (Redump's set)     | `Marvel vs. Capcom 2 (USA).cue` and its three `.bin`s   |
+| track 3 alone, raw or as an ISO        | `Marvel vs. Capcom 2 (USA) (Track 3).bin`, `mvc2.iso`   |
+| the files already extracted            | `1ST_READ.BIN` and the rest                             |
+
+The first start unpacks an image's files into `disc` (210 MB; a few seconds on a PC, with the progress in the
+window's title). That happens once, and the image can be deleted after.
+
 Library routines the port lacks are stubs that say so in the log (`port/tools/gen_host.py`).
 
 Sound: the AICA's own driver runs on an emulated ARM7 with its DSP; the Dreamcast's ADX music is decoded by
 the port. `MVC2_SOUND=0` turns it off; `MVC2_WAV=file` records it. On the 3DS the DSP is off, and `MVC2_REVERB=1` adds a cheap reverb in its place.
 
 **No game data is included.** You need the MAME `mvsc2` set (the zip or its files), and for the
-Dreamcast the files of your own USA disc, extracted into a folder.
+Dreamcast your own USA disc: an image of it (a `.chd`, a `.gdi` or Redump `.cue` with its tracks, or an `.iso`
+or `.bin` of track 3), which the first start unpacks into the folder, or its files already extracted.
 
 ## How it fits together
 
@@ -173,7 +187,11 @@ At start-up `mvc2` looks for each version's data, checking that the files are th
 
 - the arcade's: the MAME `mvsc2` set (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`), or its
   `mvsc2.zip` in the folder or beside it, which the first start unpacks into `mvsc2.bin`;
-- the Dreamcast's: the files of the USA disc (`1ST_READ.BIN` and the rest).
+- the Dreamcast's: the files of the USA disc (`1ST_READ.BIN` and the rest), or an image of the disc there,
+  which the first start unpacks into the folder (`port/dc/dc_image.c`): a `.chd` (libchdr), a `.gdi` with its
+  tracks, a `.cue` with its `.bin`s, an `.iso` of track 3 or track 3's `.bin` alone. The files of track 3's
+  ISO 9660 file system are written one by one as `NAME.part` and renamed, `1ST_READ.BIN` last, so a stopped
+  unpack starts again.
 
 With one found, that one runs. With both, it asks which to play, once, and keeps the answer in `mvc2.cfg`
 (`mode=arcade` or `mode=dc`); `--arcade` or `--dc` picks one for a run. With neither, it says in its window what each

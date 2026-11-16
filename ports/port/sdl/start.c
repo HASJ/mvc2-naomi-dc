@@ -26,7 +26,7 @@ static const struct {
 } modes[MODES] = {
     { "arcade", "MVC2_ROM", "roms/mvsc2",
       "the arcade's ROM set (MAME's mvsc2.zip, or its files: epr-23085a.ic11 and mpr-23048.ic17s to mpr-23084.ic32s)" },
-    { "dc", "MVC2_DC_DISC", "disc", "the files of the USA Dreamcast disc (1ST_READ.BIN and the rest)" },
+    { "dc", "MVC2_DC_DISC", "disc", "the USA Dreamcast disc: an image of it (.chd, .gdi, .cue or .iso), or its files (1ST_READ.BIN and the rest)" },
 };
 
 static const int built[MODES] = {
@@ -338,6 +338,68 @@ int pick_game(int argc, char** argv) {
     return 1;
 }
 
+#ifdef MVC2_DC
+#ifndef __3DS__
+/* the window's title says how far it is, and the window keeps answering */
+static void unpack_progress(uint32_t done, uint32_t total) {
+    static uint32_t shown = ~0u;
+    uint32_t pct = total > 0 ? (uint32_t)((uint64_t)done * 100 / total) : 0;
+    SDL_Window* w = SDL_GetKeyboardFocus();
+    char title[100];
+    SDL_PumpEvents();
+    if (pct != shown && w != NULL) {
+        shown = pct;
+        snprintf(title, sizeof title, "Marvel vs. Capcom 2: unpacking the disc's files, %u%%", (unsigned)pct);
+        SDL_SetWindowTitle(w, title);
+    }
+}
+#endif
+
+/* the disc's files from the image in dir, once; 0 when they could not be had */
+static int unpack_disc(const char* dir) {
+    const char* image = dc_image_find(dir);
+    const char* err;
+    const char* missing;
+    static char text[1500];
+#ifdef __3DS__
+    snprintf(text, sizeof text,
+             "Marvel vs. Capcom 2\n\nONE-TIME DISC UNPACK\n\nThe disc's files are unpacked from\n%.36s\ninto %.30s\n"
+             "(210 MB), so the game can read them\nquickly.\n\nThis happens only once. Please don't\nturn off the 3DS "
+             "or take out the\nSD card.\n",
+             image != NULL ? image : "", dir);
+    ctr_unpack_screen(text);
+    err = dc_image_unpack(dir, ctr_unpack_progress);
+    ctr_unpack_screen(NULL);
+#else
+    (void)image;
+    err = dc_image_unpack(dir, unpack_progress);
+    if (SDL_GetKeyboardFocus() != NULL) {
+        SDL_SetWindowTitle(SDL_GetKeyboardFocus(), "Marvel vs. Capcom 2");
+    }
+#endif
+    missing = err == NULL ? dc_disc_missing(dir) : NULL;
+    if (err == NULL && missing == NULL) {
+        return 1;
+    }
+    if (err != NULL) {
+        snprintf(text, sizeof text, "The disc image in %s could not be unpacked: %s.", dir, err);
+    } else {
+        snprintf(text, sizeof text,
+                 "The disc image in %s is not the USA Dreamcast disc: %s is missing from it, or the wrong size.", dir,
+                 missing);
+    }
+    host_log("%s", text);
+#ifdef __3DS__
+    ctr_rom_error = text;
+#else
+    if (getenv("MVC2_FRAMES") == NULL) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Marvel vs. Capcom 2", text, NULL);
+    }
+#endif
+    return 0;
+}
+#endif
+
 const char* game_title(void) {
     return mode == DC ? "Marvel vs. Capcom 2 (Dreamcast)" : "Marvel vs. Capcom 2 (Arcade)";
 }
@@ -359,6 +421,9 @@ int start_game(void) {
 #endif
 #ifdef MVC2_DC
     if (mode == DC) {
+        if (dc_disc_missing(path[mode]) != NULL && !unpack_disc(path[mode])) {
+            return 0;
+        }
         host_keep_program(&dc_program);
         return dc_init(&dc_program, path[mode]);
     }

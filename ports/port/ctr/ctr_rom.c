@@ -981,6 +981,25 @@ static void unpack_progress(uint32_t done, uint32_t total) {
     ctr_render_alive();
 }
 
+/* a long unpack's screen: its text, then the bar of unpack_progress */
+void ctr_unpack_screen(const char* text) {
+    consoleClear();
+    if (text != NULL) {
+        printf("%s", text);
+        unpack_progress(0, 1);
+    }
+}
+
+void ctr_unpack_progress(uint32_t done, uint32_t total) {
+    static uint32_t shown = ~0u;
+    uint32_t pct = total > 0 ? done * 100 / total : 0;
+    ctr_render_alive();
+    if (pct != shown || done == 0) {
+        shown = pct;
+        unpack_progress(done, total > 0 ? total : 1);
+    }
+}
+
 const char* ctr_rom_error;
 
 /* MVC2_ROM_BENCH=1: 2 MB read in pieces of 64 KB, 512 KB and 2 MB, each from its own part of the image */

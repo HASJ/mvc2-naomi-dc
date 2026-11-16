@@ -7,7 +7,14 @@ data comes with it.
 
 - The arcade: MAME's `mvsc2.zip` in `roms/mvsc2` beside the executable (or its files, unzipped there). The first
   start unpacks the zip into `roms/mvsc2/mvsc2.bin` (136 MB).
-- The Dreamcast: the files of your own USA disc (`1ST_READ.BIN` and the rest) in `disc`.
+- The Dreamcast: your own USA disc in `disc`, as an image or as its files:
+  - a `.chd`;
+  - a `.gdi` with its track files;
+  - a `.cue` with its `.bin` tracks (Redump's set);
+  - an `.iso` of track 3, or track 3's `.bin` on its own;
+  - or the files already extracted (`1ST_READ.BIN` and the rest).
+
+  The first start unpacks an image's files into `disc` (210 MB). The image can be deleted after.
 
 Other folders can be set in `mvc2.cfg` (`arcade = ...`, `dc = ...`) or given on the command line
 (`mvc2 --dc D:\games\mvc2-disc`). With both found it asks which to play, once. If something is missing,
