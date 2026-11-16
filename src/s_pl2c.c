@@ -1463,7 +1463,7 @@ void pl2c_sp_assist( PLAYER_WORK *pl_w )
 		break ;
 	case 1:
 		pl_w->pl_sp_type = pl2c_sp_grav ;
-		pl_w->atck_level = 0 ;
+		pl_w->atck_level = 1 ;
 		break ;
 	case 2:
 		pl_w->pl_sp_type = pl2c_sp_crouch_hp ;
@@ -1484,7 +1484,7 @@ void pl2c_sp_zero( PLAYER_WORK *pl_w )
 		break ;
 	case 1:
 		pl_w->pl_sp_type = pl2c_sp_grav ;
-		pl_w->atck_level = 0 ;
+		pl_w->atck_level = 1 ;
 		break ;
 	case 2:
 		pl_w->pl_sp_type = pl2c_sp_crouch_hp ;
