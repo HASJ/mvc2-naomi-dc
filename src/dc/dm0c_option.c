@@ -26,7 +26,14 @@ typedef struct DM0C_LABEL {
 
 /* a character of a number drawn by the menu */
 
+#ifdef HOST_PORT
+/* a host would read the VEC3 itself as the pointer, and leave the Float on the x87 stack */
+extern Float obj_scale_max( VEC3 *scale ) ;
+#define OBJ_SCALE_MAX( v )	( ( int )obj_scale_max( &( v ) ) )
+#else
 extern int obj_scale_max() ;	/* menu_obj_disp hands it the VEC3 itself */
+#define OBJ_SCALE_MAX( v )	obj_scale_max( v )
+#endif
 extern void scr_2d_matrix_set( void ) ;
 extern void dm0c_work_free( PLAYER_WORK *w ) ;
 extern void dm0c_work_free2( PLAYER_WORK *w ) ;
@@ -862,7 +869,7 @@ void menu_obj_disp( PLAYER_WORK *w )
 			nlTranslate( x + c->ofs, 0.0f, 0.0f ) ;
 			if( c->scale ){
 				nlScaleV( &menu_one ) ;
-				nlSetScaleFactor( obj_scale_max( menu_one ) ) ;
+				nlSetScaleFactor( OBJ_SCALE_MAX( menu_one ) ) ;
 			}
 			nlObjPutSetFadeColor( w->fade.r, w->fade.g, w->fade.b ) ;
 			nlObjPutTrnsl( obj_dm0c->obj[c->code], w->fade.trnsl ) ;
