@@ -3,6 +3,7 @@
 #include "player.h"
 #include "pl_char.h"
 #include "pl_color_old.h"
+#include "pl_bounce.h"
 
 /* the reaction routines take the attacker too */
 typedef void ( *DM_FUNC )( PLAYER_WORK *dm_w, PLAYER_WORK *at_w );
@@ -282,7 +283,17 @@ armor:
 		dm_w->pl_stance = STANCE_STAND ;
 		dm_w->recover_ng_flag = 0 ;
 	}
-	dm_tbl[dm_w->pl_stance][dm_w->dm_no]( dm_w, at_w ) ;
+	{
+		BOUNCE_PROP bounce_prop ;
+		Uint8 bounce_no_fly ;
+
+		pl_bounce_on_damage_pre( dm_w, at_w, &bounce_prop, &bounce_no_fly ) ;
+		if( at_w->pl_type == PL_AKUMA && ( dm_w->dm_atck_no & ATCK_NO_MASK ) == 51 && dm_w->pl_stance != STANCE_DOWN ){
+			dm_w->dm_no = 2 ;
+		}
+		dm_tbl[dm_w->pl_stance][dm_w->dm_no]( dm_w, at_w ) ;
+		pl_bounce_on_damage_post( dm_w, at_w, bounce_prop, bounce_no_fly ) ;
+	}
 	dm_w->routine_1 = PL_DAMAGE ;
 	dm_w->routine_2 = dm_w->routine_3 = 0 ;
 	dm_w->wall_hit_flag = 0 ;

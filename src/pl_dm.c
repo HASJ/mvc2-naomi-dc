@@ -2,6 +2,7 @@
 #include "player.h"
 #include "pl_char_old.h"
 #include "pl_act.h"
+#include "pl_bounce.h"
 
 /* the start of a player's animation frame, as pl_char.c reads it */
 typedef struct CHAR_FRAME {
@@ -248,6 +249,7 @@ void pl_dm_move( PLAYER_WORK *pl_w )
 		dm_buttobi_move, dm_away_move, dm_freeze_air_move, dm_down_hit_move,
 	} ;
 
+	if( pl_bounce_dm_move( pl_w ) ) return ;
 	dm_jmp[pl_w->dm_no]( pl_w ) ;
 }
 

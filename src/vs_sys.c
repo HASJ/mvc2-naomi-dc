@@ -2,6 +2,7 @@
    the scores, and the arcade's display of each side's score and wins. */
 #include "player.h"
 #include "pl_color.h"
+#include "pl_bounce.h"
 
 #define VS_ROUND_SIZE	0x94	/* the part of vs_sys_work set up again for each fight */
 #define FULL_VITAL	432	/* a team's three vitals, untouched */
@@ -89,6 +90,7 @@ void vs_round_init( void )
 	int i ;
 
 	memset( &vs_sys_work, 0, VS_ROUND_SIZE ) ;
+	pl_bounce_reset_all() ;
 	vs_sys_work.speed_rate = 6 ;
 	vs_sys_work.speed_cnt = 1 ;
 	vs_sys_work.speed_flag = 0 ;

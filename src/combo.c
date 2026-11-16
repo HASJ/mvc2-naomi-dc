@@ -1,6 +1,7 @@
 /* The combo counter, and the score: the points for hits, throws and combos, and the bonuses at
    the end of a round, added up in BCD. */
 #include "player.h"
+#include "pl_bounce.h"
 
 static Uint8 bcd_add( Uint8 a, Uint8 b );
 static Uint32 bcd_conv( Sint32 n );
@@ -113,6 +114,7 @@ void combo_reset( PLAYER_WORK *pl_w )
 	pl_w->assist_dm_cnt = 0 ;
 	pl_w->combo_dm_cnt = 0 ;
 	pl_w->dm_hit_cnt = 0 ;
+	pl_bounce_combo_reset( pl_w ) ;
 	if( !vs_sys_work.combo_total[at_w->pl_no] ) return ;
 	if( !vs_sys_work.combo_hit_total[at_w->pl_no] ) return ;
 	if( ( Uint8 )( vs_sys_work.team_w[pl_w->pl_no][0]->combo_reset_flag
