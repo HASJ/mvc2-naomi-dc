@@ -8,6 +8,14 @@ static PLAYER_WORK *pl_list_top ;	/* the players in the fight, run in this order
 static PLAYER_WORK *pl_list_end ;
 static PLAYER_WORK *pl_list2_top ;	/* those with routine_1 2, run after them */
 static PLAYER_WORK *pl_list2_end ;
+static Uint8 double_assist_pending[2] ;	/* bit (1 << team_no) set when both assists were called together */
+static Sint8 assist_extra_req[2][3] = { { -1, -1, -1 }, { -1, -1, -1 } } ;
+static Sint8 assist_saved_personal[6] = { -1, -1, -1, -1, -1, -1 } ;
+
+void pl_assist_extra_set( Uint8 pl_no, Uint8 team_idx, Sint8 assist_type )
+{
+	if( pl_no < 2 && team_idx < 3 ) assist_extra_req[pl_no][team_idx] = assist_type ;
+}
 
 extern int dbg_flag_ck( int a, int b ) ;
 extern void pl_prio_set( PLAYER_WORK *pl_l, PLAYER_WORK *ef_l ) ;
@@ -228,6 +236,15 @@ static void team_change_ck( void )
 			change_delay( w ) ;
 			w->delay_change_flag = 0 ;
 		}
+		if( !vs_sys_work.team_w[i][1]->be_flag && !vs_sys_work.team_w[i][2]->be_flag ){
+			double_assist_pending[i] = 0 ;
+		}
+	}
+	for( i = 0 ; i < 6 ; i ++ ){
+		if( assist_saved_personal[i] >= 0 && ( !pl_work[i].be_flag || !pl_work[i].team_no || pl_work[i].team_type != 8 ) ){
+			pl_work[i].pl_personal = assist_saved_personal[i] ;
+			assist_saved_personal[i] = -1 ;
+		}
 	}
 }
 
@@ -323,12 +340,23 @@ static void change_next( PLAYER_WORK *pl_w )
 		change_in( nw ) ;
 		pl_change_set( nw, pl_w ) ;
 	} else {
+		Uint8 mask = (Uint8)( 1 << pl_w->team_no ) ;
 		pl_w->be_flag = pl_w->disp_flag = 0 ;
+		if( double_assist_pending[pl_w->pl_no] & mask ){
+			double_assist_pending[pl_w->pl_no] &= (Uint8)~mask ;
+			if( pl_w->vital_new > 0 && pl_w->vital_red_wait < 180 ){
+				pl_w->vital_red_wait = 180 ;
+			}
+		}
 		if( !pl_w->vital_new && pl_w->team_no != 2 ){
 			w2 = vs_sys_work.team_w[pl_w->pl_no][2] ;
 			if( w2->vital_new ){
 				pl_w->team_no = 2 ;
 				w2->team_no = 1 ;
+				if( double_assist_pending[pl_w->pl_no] & ( 1 << 2 ) ){
+					double_assist_pending[pl_w->pl_no] &= (Uint8)~( 1 << 2 ) ;
+					double_assist_pending[pl_w->pl_no] |= (Uint8)( 1 << 1 ) ;
+				}
 			}
 		}
 	}
@@ -483,24 +511,46 @@ static void change_hyper( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void change_delay( PLAYER_WORK *pl_w )
 {
-	PLAYER_WORK *nw = vs_sys_work.team_w[pl_w->pl_no][pl_w->partner_no] ;
+	Uint8 idx ;
+	Uint8 mask = pl_w->delay_change_flag < 0 ? (Uint8)( 1 << pl_w->partner_no ) : (Uint8)pl_w->delay_change_flag ;
 
-	if( nw->vital_new > 0 && !nw->vital_red_wait ){
-		nw->be_flag = 1 ;
-		nw->disp_flag = 0 ;
-		nw->routine_0 = PL_FIGHT ;
-		nw->routine_1 = PL_NORM ;
-		nw->routine_3 = 0 ;
-		nw->routine_2 = 0 ;
-		act_st_set( nw, N_CHANGE ) ;
-		nw->change_type = 7 ;
-		nw->team_type = 8 ;
-		nw->pl_dir = nw->disp_dir = pl_w->pl_dir ;
-		nw->pos = pl_w->pos ;
-		nw->cg_shadow = 255 ;
-		nw->pl_sw_new = nw->pl_sw_now = nw->pl_sw_old = nw->pl_new_lvbt = nw->pl_now_lvbt = nw->pl_last_lvbt = 0 ;
-		vs_sys_work.team_hyper_bit[pl_w->pl_no] |= 1 << nw->team_no ;
-		pl_w->v_combi_cnt = 1 ;
+	for( idx = 1 ; idx <= 2 ; idx ++ ){
+		PLAYER_WORK *nw ;
+		Sint8 req ;
+		if( !( mask & ( 1 << idx ) ) ) continue ;
+		req = assist_extra_req[pl_w->pl_no][idx] ;
+		assist_extra_req[pl_w->pl_no][idx] = -1 ;
+		nw = vs_sys_work.team_w[pl_w->pl_no][idx] ;
+		if( nw->vital_new > 0 && !nw->vital_red_wait ){
+			if( req >= 0 ){
+				if( assist_saved_personal[nw->work_no] < 0 ){
+					assist_saved_personal[nw->work_no] = nw->pl_personal ;
+				}
+				nw->pl_personal = req ;
+			}
+			nw->be_flag = 1 ;
+			nw->disp_flag = 0 ;
+			nw->routine_0 = PL_FIGHT ;
+			nw->routine_1 = PL_NORM ;
+			nw->routine_3 = 0 ;
+			nw->routine_2 = 0 ;
+			act_st_set( nw, N_CHANGE ) ;
+			nw->change_type = 7 ;
+			nw->team_type = 8 ;
+			nw->pl_dir = nw->disp_dir = pl_w->pl_dir ;
+			nw->pos = pl_w->pos ;
+			nw->cg_shadow = 255 ;
+			nw->pl_sw_new = nw->pl_sw_now = nw->pl_sw_old = nw->pl_new_lvbt = nw->pl_now_lvbt = nw->pl_last_lvbt = 0 ;
+			vs_sys_work.team_hyper_bit[pl_w->pl_no] |= 1 << nw->team_no ;
+			pl_w->v_combi_cnt = 1 ;
+		}
+	}
+	{
+		PLAYER_WORK *w1 = vs_sys_work.team_w[pl_w->pl_no][1] ;
+		PLAYER_WORK *w2 = vs_sys_work.team_w[pl_w->pl_no][2] ;
+		if( w1->be_flag && w1->team_type == 8 && w2->be_flag && w2->team_type == 8 ){
+			double_assist_pending[pl_w->pl_no] |= (Uint8)( ( 1 << 1 ) | ( 1 << 2 ) ) ;
+		}
 	}
 }
 

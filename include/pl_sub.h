@@ -17,6 +17,7 @@ extern void act_st_set( PLAYER_WORK *pl_w, Uint8 act );
 
 extern Uint8 pl_v_combi_ck( PLAYER_WORK *pl_w );
 extern Uint8 pl_assist_ck( PLAYER_WORK *pl_w );
+extern void pl_assist_extra_set( Uint8 pl_no, Uint8 team_idx, Sint8 assist_type );
 extern Uint8 pl_change_ck( PLAYER_WORK *pl_w );
 extern Uint8 pl_vcounter_ck( PLAYER_WORK *pl_w );
 extern int pl_snapback_ck( PLAYER_WORK *pl_w );

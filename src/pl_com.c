@@ -20,6 +20,7 @@ extern Sint16 air_dash_y_tbl[];
 
 static Uint8 dash_cancel_ck( PLAYER_WORK *pl_w );
 static Uint8 sjump_ukemi_ck( PLAYER_WORK *pl_w );
+static Uint8 assist_ok_ck( PLAYER_WORK *pl_w );
 static Uint8 cpu_partner_sel( PLAYER_WORK *pl_w );
 static Uint8 cpu_snapback_sel( PLAYER_WORK *pl_w );
 static Uint8 com_nml_start( PLAYER_WORK *pl_w, Uint16 *com, COM_WORK *cw );
@@ -322,12 +323,15 @@ Uint8 pl_v_combi_ck( PLAYER_WORK *pl_w )
 
 /* a partner called in: 1 and 2 tag partner 1 or 2 in, 3 and 4 call them as an assist */
 /*==============================================================*/
+static Uint16 assist_dir_latched[2][2] ;
+
 static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 {
 	Uint8 idx = no ;
+	Uint8 slot = ( no >= 3 ) ? ( no - 3 ) : 0 ;
 	Sint8 *cnt ;
 	Uint16 sw ;
-	Uint8 flag ;
+	Uint16 latched_dir = 0 ;
 
 	if( no == 1 ){
 		cnt = &pl_w->change_timer[0] ;
@@ -351,15 +355,20 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 		if( no < 3 ){
 			if( ( pl_w->pl_now_lvbt & sw ) && !( pl_w->pl_sw_new & ( KEY_FORWARD | KEY_BACK ) ) ) *cnt = 16 ;
 		} else {
-			if( pl_w->pl_now_lvbt & sw ) *cnt = 16 ;
+			if( pl_w->pl_now_lvbt & sw ){
+				*cnt = 16 ;
+				assist_dir_latched[pl_w->pl_no][slot] = pl_w->pl_sw_new & ( KEY_UP | KEY_DOWN ) ;
+			}
 		}
 		return 0 ;
 	}
 	else {
 		if( -- *cnt ){
 			if( pl_w->pl_new_lvbt & sw ) return 0 ;
+			if( no >= 3 ) latched_dir = assist_dir_latched[pl_w->pl_no][slot] ;
 			goto cpu ;
 		}
+		if( no >= 3 ) assist_dir_latched[pl_w->pl_no][slot] = 0 ;
 		return 0 ;
 	}
 cpu :
@@ -371,36 +380,35 @@ cpu :
 	if( no <= 2 ){
 		if( pl_w->pl_stance == STANCE_DOWN || pl_w->pl_stance == STANCE_AIR ) return 0 ;
 	} else {
-		if( pl_w->pl_stance == STANCE_DOWN || pl_w->pl_stance == STANCE_AIR && pl_w->sjump_flag ) return 0 ;
-		if( pl_w->act_st == N_NML_ATCK && pl_w->atck_type == 2 ) return 0 ;
+		if( pl_w->pl_stance == STANCE_DOWN ) return 0 ;
+		if( !pl_w->combo_cnt ){
+			if( pl_w->pl_stance == STANCE_AIR && pl_w->sjump_flag ) return 0 ;
+			if( pl_w->act_st == N_NML_ATCK && pl_w->atck_type == 2 ) return 0 ;
+		}
 	}
-#ifndef TARGET_DC
-	if( 0 ) flag = 0 ;	/* left out of the build */
-#endif
-	flag = vs_sys_w->team_w[pl_w->pl_no ^ 1][0]->assist_dm_cnt ;
-	flag |= vs_sys_w->team_w[pl_w->pl_no ^ 1][1]->assist_dm_cnt ;
-	flag |= vs_sys_w->team_w[pl_w->pl_no ^ 1][2]->assist_dm_cnt ;
 #ifdef TARGET_DC	/* the home rules: no partners, or partners at any time */
-	if( !Sys->partner_free && flag ) return 0 ;
 	if( vs_sys_work.vs_st >= VS_END_WAIT ) return 0 ;
 	if( Sys->partner_ng ) goto ng ;
 	if( !Sys->partner_free ){
-		if( vs_sys_work.be_cnt[pl_w->pl_no] > 1 ) return 0 ;
+		if( vs_sys_work.be_cnt[pl_w->pl_no] > 2 ) return 0 ;
 	}
 #else
-	if( flag ) return 0 ;
 	if( vs_sys_work.vs_st >= VS_END_WAIT ) return 0 ;
-	if( vs_sys_work.be_cnt[pl_w->pl_no] > 1 ) return 0 ;
+	if( vs_sys_work.be_cnt[pl_w->pl_no] > 2 ) return 0 ;
 #endif
 	if( 0 ) goto ng ;
 	if( pl_w->team_ng_timer ) return 0 ;
-	if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag ) return 0 ;
+	if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag || ( pl_w->delay_change_flag & ( 1 << idx ) ) ) return 0 ;
 	if( vs_sys_w->team_w[pl_w->pl_no][idx]->vital_red_wait ) return 0 ;
-	if( !sp_ok_ck( pl_w ) ) return 0 ;
-	else if( !vs_sys_w->team_w[pl_w->pl_no][idx]->vital_new ){
+	if( no <= 2 ){
+		if( !sp_ok_ck( pl_w ) ) return 0 ;
+	} else {
+		if( !assist_ok_ck( pl_w ) ) return 0 ;
+	}
+	if( !vs_sys_w->team_w[pl_w->pl_no][idx]->vital_new ){
 		no = ( ( no - 1 ) ^ 1 ) + 1 ;
 		idx = ( ( idx - 1 ) ^ 1 ) + 1 ;
-		if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag ) return 0 ;
+		if( vs_sys_w->team_w[pl_w->pl_no][idx]->be_flag || ( pl_w->delay_change_flag & ( 1 << idx ) ) ) return 0 ;
 		if( vs_sys_w->team_w[pl_w->pl_no][idx]->vital_red_wait ) return 0 ;
 		if( !vs_sys_w->team_w[pl_w->pl_no][idx]->vital_new ) goto ng ;
 	}
@@ -411,8 +419,33 @@ cpu :
 		if( pl_w->pl_stance != STANCE_AIR ) pl_w->change_type = 0 ;
 		else pl_w->change_type = 1 ;
 	} else {
+		Sint16 cost = 0 ;
+		Sint8 extra = -1 ;
+		if( pl_w->act_st == N_SPECIAL ) cost += 36 ;
+		if( !pl_w->cpu_flag ){
+			Uint16 dir = pl_w->pl_sw_new & ( KEY_UP | KEY_DOWN ) ;
+			if( !dir ) dir = latched_dir ;
+			assist_dir_latched[pl_w->pl_no][slot] = 0 ;
+			if( dir == KEY_UP || dir == KEY_DOWN ){
+				PLAYER_WORK *nw = vs_sys_w->team_w[pl_w->pl_no][idx] ;
+				Sint8 base = nw->pl_personal ;
+				extra = ( dir == KEY_UP ) ? ( ( base == 0 ) ? 1 : 0 ) : ( ( base == 2 ) ? 1 : 2 ) ;
+				cost += 36 ;
+			}
+		}
+		if( cost ){
+			Sint16 total = (Sint16)( *pl_w->gauge_level ) * 144 + *pl_w->gauge ;
+			if( total < cost ){
+				*cnt = 0 ;
+				goto ng ;
+			}
+			total -= cost ;
+			*pl_w->gauge_level = (Sint8)( total / 144 ) ;
+			*pl_w->gauge = total % 144 ;
+		}
+		pl_assist_extra_set( pl_w->pl_no, idx, extra ) ;
 		pl_w->partner_no = idx ;
-		pl_w->delay_change_flag = -1 ;
+		pl_w->delay_change_flag |= 1 << idx ;
 	}
 	*cnt = 0 ;
 	return 1 ;
@@ -475,8 +508,7 @@ Uint8 pl_assist_ck( PLAYER_WORK *pl_w )
 		}
 		return 0 ;
 	}
-	if( partner_ck( pl_w, 3 ) || partner_ck( pl_w, 4 ) ) return 1 ;
-	return 0 ;
+	return partner_ck( pl_w, 3 ) | partner_ck( pl_w, 4 ) ;
 }
 
 /* the variable counter: back, down-back, down and both assist buttons while guarding */
@@ -1035,6 +1067,18 @@ Uint8 sp_ok_ck( PLAYER_WORK *pl_w )
 	}
 	if( sp_ng_act_tbl[pl_w->act_st] ) return 0 ;
 	return 1 ;
+}
+
+/*==============================================================*/
+static Uint8 assist_ok_ck( PLAYER_WORK *pl_w )
+{
+	if( pl_w->act_st == N_SPECIAL ){
+		if( pl_w->routine_1 != PL_NORM ) return 0 ;
+		if( pl_w->target_w->fly_screen_flag ) return 0 ;
+		if( pl_w->pl_stance == STANCE_AIR && !( pl_w->pos.y < scr_work.stage_top + -DOT_Y( 32.0f ) ) ) return 0 ;
+		return 1 ;
+	}
+	return sp_ok_ck( pl_w ) ;
 }
 
 /*==============================================================*/
