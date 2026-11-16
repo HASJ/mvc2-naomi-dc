@@ -30,9 +30,11 @@ void pl1e_sp_zero( PLAYER_WORK *pl_w );
 static Sint8 lp_tbl[4] = {  1,  2,  1,  2 } ;
 static Sint8 mp_tbl[4] = { -1,  2, -1,  2 } ;
 static Sint8 hp_tbl[4] = { -1, -1, -1, -1 } ;
+static Sint8 fwd_hp_tbl[4] = { -1,  2, -1,  2 } ;
 static Sint8 lk_tbl[4] = {  1,  2,  1,  2 } ;
 static Sint8 mk_tbl[4] = { -1,  2, -1,  2 } ;
 static Sint8 hk_tbl[4] = { -1, -1, -1, -1 } ;
+static Sint8 fwd_hk_tbl[4] = { -1,  2, -1,  2 } ;
 static Sint8 j_lp_tbl[4] = {  1,  2,  1,  2 } ;
 static Sint8 j_mp_tbl[4] = { -1,  2, -1,  2 } ;
 static Sint8 j_hp_tbl[4] = { -1, -1, -1, -1 } ;
@@ -202,7 +204,9 @@ static Uint8 catch_com_ck( PLAYER_WORK *pl_w )
 static Uint8 jtatsumaki_ck( PLAYER_WORK *pl_w )
 {
 	if( !com_nml_ck( pl_w, com_jtatsumaki, &pl_w->com_w2 ) ) return 0 ;
-	if( pl_w->spd.y < 0.0f && pl_w->pos.y - pl_w->ground_y < DOT_Y( 48.0f ) ) return 0 ;
+	if( !( pl_w->act_st == N_NML_ATCK && pl_w->atck_no == pl1e_at_fwd_hk ) ){
+		if( pl_w->spd.y < 0.0f && pl_w->pos.y - pl_w->ground_y < DOT_Y( 48.0f ) ) return 0 ;
+	}
 	if( !pl_w->sjump_flag ){
 		if( pl_w->jump_com_cnt ) return 0 ;
 		pl_w->jump_com_cnt ++ ;
@@ -280,8 +284,9 @@ static Uint8 kuujin_ck( PLAYER_WORK *pl_w )
 		if( pl_w->jump_com_cnt ) return 0 ;
 		pl_w->jump_com_cnt ++ ;
 	}
-	if( pl_w->pos.y - pl_w->ground_y < DOT_Y( 48.0f ) ) return 0 ;
-	if( pl_w->spd.y < 0.0f && pl_w->pos.y - pl_w->ground_y < DOT_Y( 48.0f ) ) return 1 ;
+	if( !( pl_w->act_st == N_NML_ATCK && pl_w->atck_no == pl1e_at_fwd_hk ) ){
+		if( pl_w->pos.y - pl_w->ground_y < DOT_Y( 48.0f ) ) return 0 ;
+	}
 	com_sw_set( pl_w, &pl_w->com_w10 ) ;
 	pl_w->pl_sp_type = pl1e_sp_kuujin ;
 	pl_w->routine_1 = PL_NORM ;
@@ -409,6 +414,9 @@ void pl1e_atck_set( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void nml_atck( PLAYER_WORK *pl_w )
 {
+	pl_w->pos.y = pl_w->ground_y ;
+	pl_w->spd.y = 0.0f ;
+	pl_w->acc.y = 0.0f ;
 	pl_brake_set( pl_w ) ;
 	if( pl_w->atck_pk == 1 ){
 		if( pl_w->pl_stance == STANCE_CROUCH ) crouch_kick( pl_w ) ;
@@ -446,13 +454,14 @@ static void stand_punch( PLAYER_WORK *pl_w )
 		pl_w->atck_no = ATCK_STAND_HP ;
 		pl_se_req( pl_w, SE_SWING_H ) ;
 		pl_w->routine_2 = 0 ;
+		pl_w->chain_tbl = hp_tbl ;
 		if( pl_w->atck_lever & KEY_FORWARD ){
 			pl_w->routine_2 = 1 ;
 			pl_w->char_no.b.grp = 20 ;
 			pl_w->char_no.b.no = 0 ;
 			pl_w->atck_no = pl1e_at_fwd_hp_1 ;
+			pl_w->chain_tbl = fwd_hp_tbl ;
 		}
-		pl_w->chain_tbl = hp_tbl ;
 		pl_w->nml_level = 2 ;
 		break ;
 	}
@@ -517,6 +526,7 @@ static void stand_kick( PLAYER_WORK *pl_w )
 		pl_w->atck_no = ATCK_STAND_HK ;
 		pl_se_req( pl_w, SE_SWING_H ) ;
 		pl_w->routine_2 = 0 ;
+		pl_w->chain_tbl = hk_tbl ;
 		if( pl_w->atck_lever & KEY_FORWARD ){
 			pl_w->routine_2 = 1 ;
 			pl_w->spd.x = 0.0f ;
@@ -526,8 +536,8 @@ static void stand_kick( PLAYER_WORK *pl_w )
 			pl_w->char_no.b.grp = 20 ;
 			pl_w->char_no.b.no = 1 ;
 			pl_w->atck_no = pl1e_at_fwd_hk ;
+			pl_w->chain_tbl = fwd_hk_tbl ;
 		}
-		pl_w->chain_tbl = hk_tbl ;
 		pl_w->nml_level = 2 ;
 		break ;
 	}
@@ -724,6 +734,7 @@ static void stand_punch_move( PLAYER_WORK *pl_w )
 			break ;
 		}
 		if( pl_w->routine_2 ){
+			if( pl_w->hit_flag ) pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
 			if( pl_w->cg_type ){
 				pl_w->cg_type = 0 ;
 				pl_w->atck_no = pl1e_at_fwd_hp_2 ;
@@ -739,6 +750,36 @@ static void stand_punch_move( PLAYER_WORK *pl_w )
 static void crouch_punch_move( PLAYER_WORK *pl_w )
 {
 	if( pl_char_move( pl_w ) < 0 ) pl_stand_ret( pl_w ) ;
+}
+
+/*==============================================================*/
+static void fwd_hk_vacuum( PLAYER_WORK *pl_w )
+{
+	PLAYER_WORK *em ;
+	Float tx, dx ;
+
+	if( !( pl_w->hit_flag & HR_HIT ) || !pl_w->em_w ) return ;
+	em = pl_w->em_w ;
+	if( em->pl_stance != STANCE_DOWN && em->dm_no != 24 ) return ;
+	tx = pl_w->pos.x + ( pl_w->pl_dir ? DOT_X( 32.0f ) : -DOT_X( 32.0f ) ) ;
+	dx = tx - em->pos.x ;
+	if( !em->routine_2 ){
+		em->routine_2 = 1 ;
+		pl_dir_set( em ) ;
+		em->spd.y = DOT_Y( 8.0f ) ;
+		em->acc.y = -DOT_Y( 0.75f ) ;
+	}
+	em->acc.x = 0.0f ;
+	if( dx > DOT_X( 24.0f ) ){
+		em->pos.x += DOT_X( 24.0f ) ;
+		em->spd.x = DOT_X( 4.0f ) ;
+	} else if( dx < -DOT_X( 24.0f ) ){
+		em->pos.x -= DOT_X( 24.0f ) ;
+		em->spd.x = -DOT_X( 4.0f ) ;
+	} else {
+		em->pos.x = tx ;
+		em->spd.x = 0.0f ;
+	}
 }
 
 /*==============================================================*/
@@ -769,17 +810,22 @@ static void stand_kick_move( PLAYER_WORK *pl_w )
 		switch( pl_w->routine_3 ){
 		case 0:
 			pl_char_move( pl_w ) ;
+			if( !pl_w->cg_type ) pl_char_move( pl_w ) ;
 			if( pl_w->cg_type ){
 				pl_w->routine_3 ++ ;
 				pl_w->pl_stance = STANCE_AIR ;
 				pl_w->spd.x = pl_w->pl_dir ? DOT_X( 4.0f ) : -DOT_X( 4.0f ) ;
 				pl_w->acc.x = 0.0f ;
-				pl_w->spd.y = DOT_Y( 4.25f ) ;
+				pl_w->spd.y = DOT_Y( 3.0f ) ;
 				pl_w->acc.y = -0.7533482f ;
 			}
 			break ;
 		case 1:
 			pl_char_move( pl_w ) ;
+			if( pl_w->hit_flag ){
+				pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
+				fwd_hk_vacuum( pl_w ) ;
+			}
 			if( pl_land_y_ck( pl_w, pl_w->pos.y ) ){
 				pl_w->routine_3 ++ ;
 				pl_w->pos.y = pl_w->ground_y ;
@@ -793,6 +839,7 @@ static void stand_kick_move( PLAYER_WORK *pl_w )
 			}
 			break ;
 		case 2:
+			fwd_hk_vacuum( pl_w ) ;
 			if( pl_char_move( pl_w ) < 0 ){
 				pl_w->target_w->nml_catch_ng_timer = 5 ;
 				pl_stand_ret( pl_w ) ;
@@ -1258,6 +1305,9 @@ static void shouryuu_start( PLAYER_WORK *pl_w, PL1E_LOCAL_W *lw )
 {
 	pl_char_move( pl_w ) ;
 	shouryuu_hit( pl_w, lw ) ;
+	if( pl_w->atck_level && ( pl_w->hit_flag & HR_HIT ) && ( lw->hit_cnt == 2 || lw->guard_cnt == 2 ) ){
+		pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
+	}
 	if( !pl_w->cg_type ){
 		pl_w->routine_2 ++ ;
 		pl_air_set( pl_w ) ;
@@ -1709,7 +1759,7 @@ static void tenma_beam( PLAYER_WORK *pl_w )
 static void tenma_end( PLAYER_WORK *pl_w )
 {
 	tenma_xy_move( pl_w ) ;
-	if( pl_char_move( pl_w ) < 0 ) pl_jump_ret( pl_w ) ;
+	if( pl_char_move( pl_w ) < 0 || pl_char_move( pl_w ) < 0 ) pl_jump_ret( pl_w ) ;
 }
 
 static void ashura_init( PLAYER_WORK *pl_w );
@@ -1771,6 +1821,8 @@ static void ashura_move( PLAYER_WORK *pl_w )
 	pl_dir_set( pl_w ) ;
 	ashura_ef_set( pl_w ) ;
 	pl_w->push_ng_timer = 2 ;
+	pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
+	pl_w->cancel_timer = 2 ;
 	pl_char_move( pl_w ) ;
 	if( pl_w->cg_prm ){
 		x = pl_w->cg_prm ;
@@ -1792,6 +1844,8 @@ static void ashura_stop( PLAYER_WORK *pl_w )
 	pl_dir_set( pl_w ) ;
 	ashura_ef_set( pl_w ) ;
 	pl_w->push_ng_timer = 2 ;
+	pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
+	pl_w->cancel_timer = 2 ;
 	pl_w->pos.x += pl_w->spd.x ;
 	pl_w->spd.x += pl_w->acc.x ;
 	pl_w->pos.y += pl_w->spd.y ;
@@ -1809,7 +1863,12 @@ static void ashura_stop( PLAYER_WORK *pl_w )
 /*--------------------------------------------------------------*/
 static void ashura_end( PLAYER_WORK *pl_w )
 {
-	if( pl_char_move( pl_w ) < 0 ) pl_stand_ret( pl_w ) ;
+	pl_w->cg_atck_flag &= ~CG_ATCK_NG ;
+	pl_w->cancel_timer = 2 ;
+	if( pl_char_move( pl_w ) < 0 ){
+		pl_w->cancel_timer = 0 ;
+		pl_stand_ret( pl_w ) ;
+	}
 }
 
 static void ashura_b_init( PLAYER_WORK *pl_w );
@@ -2408,6 +2467,8 @@ static void sp_kuujin( PLAYER_WORK *pl_w )
 static void kuujin_init( PLAYER_WORK *pl_w )
 {
 	pl_w->routine_2 ++ ;
+	pl_w->routine_3 = 0 ;
+	pl_w->timer0 = 0 ;
 	pl_dir_set( pl_w ) ;
 	pl_gauge_add( pl_w, 10 ) ;
 	pl_w->acc.x = 0.0f ;
@@ -2426,8 +2487,39 @@ static void kuujin_init( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void kuujin_move( PLAYER_WORK *pl_w )
 {
+	if( pl_w->timer0 < 12 ) pl_w->timer0 ++ ;
+	if( !pl_w->routine_3 ){
+		if( pl_w->pl_now_lvbt & KEY_BACK ){
+			Float sx = pl_w->atck_level ? DOT_X( 4.0f ) : DOT_X( 2.0f ) ;
+			pl_w->spd.x = pl_w->pl_dir ? sx : -sx ;
+			pl_w->spd.y = -DOT_Y( 10.0f ) ;
+			pl_w->routine_3 = 1 ;
+		} else if( pl_w->timer0 >= 4 && ( pl_w->pl_now_lvbt & KEY_FORWARD ) ){
+			Float sx = pl_w->atck_level ? DOT_X( 16.0f ) : DOT_X( 13.0f ) ;
+			Float sy = pl_w->atck_level ? -DOT_Y( 4.5f ) : -DOT_Y( 5.0f ) ;
+			pl_w->spd.x = pl_w->pl_dir ? sx : -sx ;
+			pl_w->spd.y = sy ;
+			pl_w->routine_3 = pl_w->atck_level ? 2 : 1 ;
+		} else if( pl_w->timer0 >= 12 ){
+			pl_w->routine_3 = 1 ;
+		}
+	}
 	pl_char_move( pl_w ) ;
 	if( !pl_w->cg_type ){
+		if( !pl_w->atck_level && pl_air_jump_ck( pl_w ) ){
+			pl_w->routine_3 = 0 ;
+			pl_w->cg_type = 0 ;
+			pl_w->disp_flag = 1 ;
+			if( pl_w->sjump_flag ){
+				act_st_set( pl_w, N_SJUMP_AIR ) ;
+				pl_w->sjump_flag = pl_w->spd.y > 0.0f ? 1 : 2 ;
+			} else {
+				act_st_set( pl_w, N_JUMP_AIR ) ;
+			}
+			pl_w->routine_2 = 1 ;
+			return ;
+		}
+		if( pl_w->routine_3 == 2 ) pl_w->push_ng_timer = 2 ;
 		pl_w->pos.x += pl_w->spd.x ;
 		pl_w->spd.x += pl_w->acc.x ;
 		pl_w->pos.y += pl_w->spd.y ;
@@ -2446,7 +2538,7 @@ static void kuujin_move( PLAYER_WORK *pl_w )
 /*--------------------------------------------------------------*/
 static void kuujin_end( PLAYER_WORK *pl_w )
 {
-	if( pl_char_move( pl_w ) < 0 ){
+	if( ( pl_w->atck_level && pl_char_move( pl_w ) < 0 ) || pl_char_move( pl_w ) < 0 ){
 		pl_w->spd.x = 0.0f ;
 		pl_w->spd.y = 0.0f ;
 		pl_w->acc.x = 0.0f ;
@@ -2454,6 +2546,7 @@ static void kuujin_end( PLAYER_WORK *pl_w )
 		pl_stand_ret( pl_w ) ;
 		return ;
 	}
+	if( !pl_w->atck_level && pl_jump_ck( pl_w ) ) return ;
 	cg_hit( pl_w ) ;
 }
 

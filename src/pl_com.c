@@ -2,6 +2,7 @@
    combos, counters and snapbacks), the taunt, and the readers for motion, charge and button
    commands. */
 #include "player.h"
+#include "pl1e_def.h"
 #include "pl_act.h"
 
 /* each character's least height for an air dash, in 256ths of 2.142857 */
@@ -1137,7 +1138,10 @@ static Uint8 sp_ok_common_ck( PLAYER_WORK *pl_w, int allow_fly_screen )
 	if( ( pl_w->act_st == N_GUARD || pl_w->act_st == N_AIR_GUARD ) && pl_w->guard_timer ) return 0 ;
 	if( pl_w->cg_atck_flag & CG_ATCK_NG ) return 0 ;
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
-	if( pl_w->act_st == N_SPECIAL ) return 0 ;
+	if( pl_w->act_st == N_SPECIAL ){
+		if( !( pl_w->pl_type == PL_AKUMA && pl_w->pl_sp_type == pl1e_sp_shouryuu && pl_w->atck_level && pl_w->routine_2 == 1 && ( pl_w->hit_flag & HR_HIT )
+		 && ( PL1E_LW( pl_w )->hit_cnt == 2 || PL1E_LW( pl_w )->guard_cnt == 2 ) ) ) return 0 ;
+	}
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
 	if( !allow_fly_screen && pl_w->target_w->fly_screen_flag ) return 0 ;
 	if( pl_w->pl_stance == STANCE_AIR ){
