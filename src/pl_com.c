@@ -52,6 +52,25 @@ static Uint8 sp_ok_cut_ck( PLAYER_WORK *pl_w );
 static void com_timer_set( PLAYER_WORK *pl_w, COM_WORK *cw );
 static int cpu_renda_ck( PLAYER_WORK *pl_w );
 
+#ifdef HOST_PORT
+#include "naomi_input.h"
+#define host_dash_now( pl )		( ( pl_host_ext_now( pl ) & HOST_DASH ) != 0 )
+#define host_sjump_now( pl )	( ( pl_host_ext_now( pl ) & HOST_SJUMP ) != 0 )
+#else
+#define host_dash_now( pl )		0
+#define host_sjump_now( pl )	0
+#endif
+
+static Uint8 sw_pair_ck( PLAYER_WORK *pl_w, Uint16 sw, Uint16 *now )
+{
+	if( pl_w->cpu_flag ) return 0 ;
+	if( ( pl_w->pl_new_lvbt & sw ) != sw ) return 0 ;
+	if( ( pl_w->pl_last_lvbt & sw ) == sw ) return 0 ;
+	if( pl_w->pl_old2_lvbt & sw ) return 0 ;
+	if( now ) *now = pl_w->pl_sw_new ;
+	return 1 ;
+}
+
 /****************************************************************/
 Uint8 pl_dash_ck( PLAYER_WORK *pl_w )
 {
@@ -63,7 +82,7 @@ Uint8 pl_dash_ck( PLAYER_WORK *pl_w )
 		if( !dash_cancel_ck( pl_w ) ) return 0 ;
 	}
 	if( pl_w->target_w->fly_screen_flag ) return ;	/* no value, as in the arcade build */
-	if( sw_now_ck( pl_w, 0x0300, &sw, 0 ) ){
+	if( host_dash_now( pl_w ) || sw_pair_ck( pl_w, 0x0300, &sw ) || sw_now_ck( pl_w, 0x0300, &sw, 0 ) ){
 		cw->sw = pl_w->pl_sw_new ;
 	} else {
 		if( !cw->step ){
@@ -120,10 +139,13 @@ Uint8 pl_air_dash_ck( PLAYER_WORK *pl_w, COM_WORK *cw )
 	Uint16 lever ;
 	Float y ;
 
+	int kara_dash ;
+
 	if( pl_w->target_w->fly_screen_flag ) return 0 ;
 	y = pl_w->ground_y + air_dash_y_tbl[pl_w->pl_type] * 2.142857f / 256.0f ;
 	if( pl_w->pos.y < y ) return 0 ;
-	if( sw_now_ck( pl_w, 0x0300, &sw, 0 ) ){
+	kara_dash = host_dash_now( pl_w ) || sw_pair_ck( pl_w, 0x0300, &sw ) ;
+	if( kara_dash || sw_now_ck( pl_w, 0x0300, &sw, 0 ) ){
 		cw->sw = pl_w->pl_sw_new ;
 	} else {
 		sw = 0x0800 ;
@@ -143,7 +165,9 @@ Uint8 pl_air_dash_ck( PLAYER_WORK *pl_w, COM_WORK *cw )
 	cw->step = 0 ;
 	if( pl_w->pl_stance != STANCE_AIR ) return 0 ;
 	if( pl_w->routine_1 ) return 0 ;
-	if( pl_w->cg_atck_flag & CG_ATCK_ALL ) return 0 ;
+	if( pl_w->cg_atck_flag & CG_ATCK_ALL ){
+		if( !( kara_dash && pl_nml_atck_kara_ok( pl_w ) ) ) return 0 ;
+	}
 	if( pl_w->jump_dash_cnt ) return 0 ;
 	if( pl_w->act_st == N_AIR_DASH ) return 0 ;
 	if( pl_w->act_st == N_AIR_GUARD ) return 0 ;
@@ -151,6 +175,11 @@ Uint8 pl_air_dash_ck( PLAYER_WORK *pl_w, COM_WORK *cw )
 	if( pl_w->act_st == N_SUPER ) return 0 ;
 	if( pl_w->act_st == N_ESCAPE ) return 0 ;
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
+	if( pl_w->act_st == N_NML_ATCK ){
+		if( !( kara_dash && pl_nml_atck_kara_ok( pl_w ) ) ) return 0 ;
+		pl_w->cg_atck_flag = 0 ;
+		pl_w->atck_flag = 0 ;
+	}
 	if( !pl_w->fly_flag ) pl_w->jump_dash_cnt ++ ;
 	sw = 0x0800 ;
 	if( DASH8_CK( pl_w ) ) sw = 0x3c00 ;
@@ -165,6 +194,8 @@ Uint8 pl_air_dash_sw_ck( PLAYER_WORK *pl_w )
 	Uint16 sw ;
 	Float y ;
 
+	int kara_ok ;
+
 	if( pl_w->target_w->fly_screen_flag ) return 0 ;
 	if( pl_w->pl_stance != STANCE_AIR ) return 0 ;
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
@@ -176,9 +207,15 @@ Uint8 pl_air_dash_sw_ck( PLAYER_WORK *pl_w )
 		y = pl_w->ground_y + air_dash_y_tbl[pl_w->pl_type] * 2.142857f / 256.0f ;
 		if( pl_w->pos.y < y ) return 0 ;
 	}
-	if( !sw_now_ck( pl_w, 0x0300, &sw, 0 ) ) return 0 ;
-	if( ( pl_w->cg_atck_flag & CG_ATCK_ALL ) && pl_w->fly_flag ) return 0 ;
-	if( !sp_ok_ck( pl_w ) ) return 0 ;
+	if( !( host_dash_now( pl_w ) || sw_pair_ck( pl_w, 0x0300, &sw ) || sw_now_ck( pl_w, 0x0300, &sw, 0 ) ) ) return 0 ;
+	kara_ok = pl_nml_atck_kara_ok( pl_w ) ;
+	if( !kara_ok ){
+		if( ( pl_w->cg_atck_flag & CG_ATCK_ALL ) && pl_w->fly_flag ) return 0 ;
+		if( !sp_ok_ck( pl_w ) ) return 0 ;
+	} else {
+		pl_w->cg_atck_flag = 0 ;
+		pl_w->atck_flag = 0 ;
+	}
 	pl_w->dir = ( pl_w->pl_sw_new & KEY_LEVER ) >> 10 ;
 	if( !pl_w->fly_flag ) pl_w->jump_dash_cnt ++ ;
 	pl_act_set( pl_w, N_AIR_DASH ) ;
@@ -193,7 +230,7 @@ static Uint8 dash_cancel_ck( PLAYER_WORK *pl_w )
 	Uint16 sw ;
 
 	if( pl_w->guard_back_flag > 0 ){
-		if( !sw_now_ck( pl_w, 0x0300, &sw, 0 ) ) return 1 ;
+		if( !( host_dash_now( pl_w ) || sw_pair_ck( pl_w, 0x0300, &sw ) || sw_now_ck( pl_w, 0x0300, &sw, 0 ) ) ) return 1 ;
 		pl_w->guard_back_flag = -1 ;
 	}
 	memset( &pl_w->dash_w, 0, sizeof( COM_WORK ) ) ;
@@ -204,6 +241,7 @@ static Uint8 dash_cancel_ck( PLAYER_WORK *pl_w )
 Uint8 pl_sjump_ck( PLAYER_WORK *pl_w )
 {
 	COM_WORK *cw = &pl_w->sjump_w ;
+	Uint16 sw ;
 
 	if( pl_w->routine_1 != PL_NORM ) return sjump_ukemi_ck( pl_w ) ;
 	if( !pl_w->hit_stop ) cw->ok_flag = 0 ;
@@ -214,6 +252,11 @@ Uint8 pl_sjump_ck( PLAYER_WORK *pl_w )
 		return 1 ;
 	}
 #endif
+	if( host_sjump_now( pl_w ) || sw_pair_ck( pl_w, 0x0060, &sw ) ){
+		cw->step = 0 ;
+		cw->ok_flag = 2 ;
+		return 1 ;
+	}
 	if( !cw->step ){
 		if( pl_w->pl_sw_now & KEY_DOWN ){
 			cw->step = 1 ;

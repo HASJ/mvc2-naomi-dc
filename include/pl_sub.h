@@ -113,6 +113,10 @@ extern int hold_renda_ck( PLAYER_WORK *pl_w );
 extern int hold_renda_move_ck( PLAYER_WORK *pl_w );
 extern int catch_renda_ck( PLAYER_WORK *pl_w );
 extern Uint8 sw_now_ck( PLAYER_WORK *pl_w, Uint16 sw, Uint16 *now, Uint8 no );
+extern int pl_nml_atck_kara_ok( const PLAYER_WORK *pl_w );
+#ifdef HOST_PORT
+extern Uint32 pl_host_ext_now( const PLAYER_WORK *pl_w );
+#endif
 extern Uint8 sp_ok_hyper_ck( PLAYER_WORK *pl_w );
 extern Uint8 sp_ok_ck( PLAYER_WORK *pl_w );
 extern void dir_spd_move( PLAYER_WORK *pl_w, Sint16 no );

@@ -7,6 +7,8 @@
 
 extern Uint8 pl_nml_atck_ck( PLAYER_WORK *pl_w );	/* s_pl14 declares it as an int */
 
+static Uint8 nml_atck_frames[2] ;
+
 void player_move( PLAYER_WORK *pl_w );
 static void pl_move_appear( PLAYER_WORK *pl_w );
 static void pl_move_fight( PLAYER_WORK *pl_w );
@@ -331,6 +333,7 @@ static void pl_normal( PLAYER_WORK *pl_w )
 	if( pl_w->stun_reset_timer && !--pl_w->stun_reset_timer ) pl_w->stun_cnt = 80 ;
 	pl_w->dm_elem_now = 0 ;
 	if( !act_23a_tbl[pl_w->act_st] ) pl_w->catch_cnt = 0 ;
+	if( pl_w->act_st != N_NML_ATCK && pl_w->pl_no < 2 ) nml_atck_frames[pl_w->pl_no] = 0 ;
 	act_jmp[pl_w->act_st]( pl_w ) ;
 }
 
@@ -1117,9 +1120,31 @@ static void act_air_guard_back( PLAYER_WORK *pl_w )
 	if( !( wk->wall_flag & 1 << wk->disp_dir ) ) wk->pos.x += x ;
 }
 
+int pl_nml_atck_kara_ok( const PLAYER_WORK *pl_w )
+{
+	return pl_w->act_st == N_NML_ATCK && !pl_w->hit_flag && !pl_w->hit_stop && pl_w->pl_no < 2 && nml_atck_frames[pl_w->pl_no] <= 2 ;
+}
+
 /*==============================================================*/
 static void act_nml_atck( PLAYER_WORK *pl_w )
 {
+	if( pl_nml_atck_kara_ok( pl_w ) ){
+		Uint8 saved_cg = pl_w->cg_atck_flag ;
+		if( pl_w->sjump_w.ok_flag == 2 ){
+			pl_w->cg_atck_flag = 0 ;
+			if( pl_sjump_set( pl_w ) ){
+				pl_w->atck_flag = 0 ;
+				return ;
+			}
+			pl_w->cg_atck_flag = saved_cg ;
+		}
+		if( pl_w->dash_w.ok_flag && pl_dash_set( pl_w ) ){
+			pl_w->cg_atck_flag = 0 ;
+			pl_w->atck_flag = 0 ;
+			return ;
+		}
+	}
+	if( pl_w->pl_no < 2 && nml_atck_frames[pl_w->pl_no] < 255 ) nml_atck_frames[pl_w->pl_no] ++ ;
 	if( pl_sjump_set( pl_w ) ) return ;
 	if( pl_w->pl_stance != STANCE_AIR && pl_w->atck_level != 1 && pl_w->hit_flag && !( pl_w->hit_flag & ( HR_GUARD | HR_ONCE ) ) ){
 		pl_w->hit_flag |= HR_ONCE ;

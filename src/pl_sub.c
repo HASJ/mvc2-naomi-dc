@@ -6,6 +6,9 @@
 #include "pl_char.h"
 #include "pl_color.h"
 #include "pl_act.h"
+#ifdef HOST_PORT
+#include "naomi_input.h"
+#endif
 
 /* the routine tables pl_char_set() and the character modules fill, one for each work */
 extern Uint8 weight_tbl[];
@@ -714,12 +717,32 @@ void pl_prio_set( PLAYER_WORK *pl_l, PLAYER_WORK *ef_l )
 	}
 }
 
+#ifdef HOST_PORT
+static Uint32 host_ext_new[2] ;
+static Uint32 host_ext_last[2] ;
+static Uint32 host_ext_now[2] ;
+
+Uint32 pl_host_ext_now( const PLAYER_WORK *pl_w )
+{
+	if( pl_w->cpu_flag || pl_w->team_no || pl_w->pl_no >= 2 ) return 0 ;
+	return host_ext_now[pl_w->pl_no] ;
+}
+#endif
+
 /****************************************************************/
 /*			Read the stick and buttons for this frame, back		*/
 /*			and forward by the facing							*/
 /****************************************************************/
 void pl_sw_set( PLAYER_WORK *pl_w )
 {
+#ifdef HOST_PORT
+	if( !pl_w->team_no && pl_w->pl_no < 2 ){
+		Uint32 ext = pl_w->cpu_flag ? 0 : ( host_input()->player[pl_w->pl_no] & ( HOST_DASH | HOST_SJUMP ) ) ;
+		host_ext_last[pl_w->pl_no] = host_ext_new[pl_w->pl_no] ;
+		host_ext_new[pl_w->pl_no] = ext ;
+		host_ext_now[pl_w->pl_no] = ext & ~host_ext_last[pl_w->pl_no] ;
+	}
+#endif
 	pl_w->pl_old2_lvbt = pl_w->pl_old_lvbt ;
 	pl_w->pl_old_lvbt = pl_w->pl_last_lvbt ;
 	pl_w->pl_last_lvbt = pl_w->pl_sw_old = pl_w->pl_new_lvbt ;
