@@ -522,6 +522,61 @@ Float nlTan( int ang )
 	return FLT_MAX;
 }
 
+#ifdef HOST_PORT
+/* Angle of (x, y) in 256ths of a turn (0..255), matching nlmatha.src's table and octants. */
+Sint32 nlAtan256( Float y, Float x )
+{
+	static const Uint8 nlAtan256tbl[129] = {
+		0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 5,
+		5, 5, 6, 6, 6, 7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 10,
+		10, 10, 11, 11, 11, 11, 12, 12, 12, 13, 13, 13, 13, 14, 14, 14,
+		15, 15, 15, 15, 16, 16, 16, 17, 17, 17, 17, 18, 18, 18, 18, 19,
+		19, 19, 19, 20, 20, 20, 20, 21, 21, 21, 21, 22, 22, 22, 22, 23,
+		23, 23, 23, 23, 24, 24, 24, 24, 25, 25, 25, 25, 25, 26, 26, 26,
+		26, 26, 27, 27, 27, 27, 27, 28, 28, 28, 28, 28, 29, 29, 29, 29,
+		29, 29, 30, 30, 30, 30, 30, 31, 31, 31, 31, 31, 31, 32, 32, 32,
+		32
+	};
+	static const Uint16 octant[8] = {
+		0x0000, 0x0101, 0x0081, 0x0080, 0x0201, 0x0100, 0x0180, 0x0181
+	};
+	Float ax, ay, num, den;
+	Sint32 oct, idx, ang, base;
+
+	oct = 0;
+	if( y < 0.0f ){
+		oct |= 4;
+		ay = -y;
+	} else {
+		ay = y;
+	}
+	if( x < 0.0f ){
+		oct |= 1;
+		ax = -x;
+	} else {
+		ax = x;
+	}
+	if( ay > ax ){
+		oct |= 2;
+		num = ax;
+		den = ay;
+	} else {
+		num = ay;
+		den = ax;
+	}
+	if( den == 0.0f )
+		return 0;
+	idx = (Sint32)( 128.0f * ( num / den ) + 0.5f );
+	if( idx > 128 )
+		idx = 128;
+	ang = nlAtan256tbl[idx];
+	base = octant[oct] >> 1;
+	if( octant[oct] & 1 )
+		ang = -ang;
+	return ( base + ang ) & 0xff;
+}
+#endif
+
 Float nlTanh( Uint16 ang )
 {
 	Float x = (Float)ang * TWO_PI / 65536.0f;
