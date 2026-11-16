@@ -9,7 +9,7 @@
 
 #include "naomi_input.h"
 
-enum { ACTIONS = 12, MAX_BINDINGS = 6 };
+enum { ACTIONS = 14, MAX_BINDINGS = 6 };
 
 typedef struct {
     const char* name;

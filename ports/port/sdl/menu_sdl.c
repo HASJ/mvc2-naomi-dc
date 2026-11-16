@@ -48,7 +48,7 @@ static const struct {
     { '\\', { 0x00, 0x10, 0x08, 0x04, 0x02, 0x01, 0x00 } }, { '"', { 0x0A, 0x0A, 0x00, 0x00, 0x00, 0x00, 0x00 } },
 };
 
-enum { SCALE = 2, CW = 6 * SCALE, CH = 10 * SCALE, LEFT = 32, TOP = 24 };
+enum { SCALE = 2, CW = 6 * SCALE, CH = 9 * SCALE, LEFT = 32, TOP = 16 };
 
 #define WHITE 0xFFFFFFFFu
 #define YELLOW 0xFFFFE040u
@@ -103,12 +103,13 @@ void menu_text(uint32_t* buf, int w, int h, int x, int y, const char* s, uint32_
 static const char* const labels[ACTIONS] = {
     "UP", "DOWN", "LEFT", "RIGHT", "LIGHT PUNCH", "HEAVY PUNCH", "ASSIST 1",
     "LIGHT KICK", "HEAVY KICK", "ASSIST 2", "START", "COIN",
+    "DASH", "SUPER JUMP",
 };
 
 enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_DEFAULTS, ROW_DONE, ROWS };
 
 static int row_line(int a) {
-    return 3 + a + (a >= ROW_RENDERER);
+    return 2 + a + (a >= ROW_RENDERER);
 }
 
 static const char* const pictures[] = { "exact", "fast", "fast+half" };
@@ -282,8 +283,8 @@ void menu_draw(uint32_t* frame, int w, int h) {
         }
         draw_text(13, row_line(a), n > 0 ? line : "-", color);
     }
-    draw_text(0, 21, "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
-    draw_text(0, 22, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
+    draw_text(0, row_line(ROWS), "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
+    draw_text(0, row_line(ROWS) + 1, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
 }
 
 static void close_menu(void) {

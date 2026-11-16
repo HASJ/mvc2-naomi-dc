@@ -16,6 +16,7 @@ const INPUT_ACTION input_actions[ACTIONS] = {
     { "up", JVS_UP },      { "down", JVS_DOWN }, { "left", JVS_LEFT }, { "right", JVS_RIGHT },
     { "b1", JVS_B1 },      { "b2", JVS_B2 },     { "b3", JVS_B3 },     { "b4", JVS_B4 },
     { "b5", JVS_B5 },      { "b6", JVS_B6 },     { "start", JVS_START }, { "coin", 0 },
+    { "dash", HOST_DASH }, { "superjump", HOST_SJUMP },
 };
 
 BINDING bindings[2][ACTIONS][MAX_BINDINGS];
@@ -40,11 +41,13 @@ static const BINDING pad_defaults[ACTIONS][4] = {
     { AXIS(RIGHT_TRIGGER, 1), AXIS(LEFT_TRIGGER, 1) },
     { BUTTON(START) },
     { BUTTON(BACK) },
+    { { BIND_NONE } },
+    { { BIND_NONE } },
 };
 
 static const BINDING key_defaults[2][ACTIONS] = {
-    { KEY(UP), KEY(DOWN), KEY(LEFT), KEY(RIGHT), KEY(A), KEY(S), KEY(D), KEY(Z), KEY(X), KEY(C), KEY(1), KEY(5) },
-    { KEY(I), KEY(K), KEY(J), KEY(L), KEY(R), KEY(T), KEY(Y), KEY(F), KEY(G), KEY(H), KEY(2), { BIND_NONE } },
+    { KEY(UP), KEY(DOWN), KEY(LEFT), KEY(RIGHT), KEY(A), KEY(S), KEY(D), KEY(Z), KEY(X), KEY(C), KEY(1), KEY(5), KEY(F), KEY(V) },
+    { KEY(I), KEY(K), KEY(J), KEY(L), KEY(R), KEY(T), KEY(Y), KEY(B), KEY(G), KEY(H), KEY(2), { BIND_NONE }, { BIND_NONE }, { BIND_NONE } },
 };
 
 void input_defaults(int pl, int action) {
