@@ -203,11 +203,10 @@ static void read_input(void) {
         if (down & KEY_Y) {
             dump_req = 1;
         }
-        if (held & (KEY_START | KEY_L | KEY_B | KEY_Y)) {
+        if (held & (KEY_START | KEY_B | KEY_Y)) {
             select_used = 1;
         }
-        input.test = (held & KEY_L) != 0;
-        held &= ~(u32)(KEY_START | KEY_L | KEY_B | KEY_Y);
+        held &= ~(u32)(KEY_START | KEY_B | KEY_Y);
     } else if (hidKeysUp() & KEY_SELECT) {
         input.coin = !select_used;      /* SELECT let go on its own */
         select_used = 0;

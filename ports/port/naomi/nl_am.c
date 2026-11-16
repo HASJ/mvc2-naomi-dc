@@ -38,7 +38,10 @@ NLA_SYSTEM_FLAG* nlaGetSystemFlag(void) {
     return &system_flag;
 }
 
+int host_freeplay;
+
 NLA_CREDIT_CONF* nlaGetCreditConf(void) {
+    credit_conf_data.CoinFlag = host_freeplay ? NLA_FREEPLAY : NLA_COINOPE;
     return &credit_conf_data;
 }
 
@@ -203,6 +206,14 @@ void nlaUpdateUserEEPROM(void) {
 }
 
 void nlaUpdateSystemBackup(void) {
+}
+
+void* host_user_eeprom(void) {
+    return user_eeprom;
+}
+
+void* host_user_backup(void) {
+    return user_backup;
 }
 
 void nlaGetBackupData(NLA_BACKUP_BANK* bank) {

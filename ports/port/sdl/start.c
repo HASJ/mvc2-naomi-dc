@@ -413,6 +413,12 @@ int start_game(void) {
         unlock = getenv("MVC2_FRAMES") == NULL ? config_get("unlock") : NULL;
         host_unlock = unlock != NULL && strcmp(unlock, "all") == 0;
     }
+    if (getenv("MVC2_FREEPLAY") != NULL) {
+        host_freeplay = atoi(getenv("MVC2_FREEPLAY")) != 0;
+    } else {
+        host_freeplay = getenv("MVC2_FRAMES") == NULL && config_get("freeplay") != NULL &&
+                        strcmp(config_get("freeplay"), "on") == 0;
+    }
 #ifdef MVC2_ARCADE
     if (mode == ARCADE) {
         host_keep_program(&arc_program);

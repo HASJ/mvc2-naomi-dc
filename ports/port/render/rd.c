@@ -225,10 +225,20 @@ static int quad_culled(const RD_STATE* s, const RD_VTX* a, const RD_VTX* b, cons
 #define quad_culled(s, a, b, c) 0
 #endif
 
+int rd_snap_x;
+
 void rd_quad(const RD_STATE* s, const RD_VTX* v) {
+    RD_VTX q[4];
     int st, first;
     if (rd_discard || (st = add_state(s)) < 0) {
         return;
+    }
+    if (rd_snap_x && v[0].x == v[3].x && v[1].x == v[2].x) {
+        /* each side to the first column whose centre is at or past it */
+        memcpy(q, v, sizeof q);
+        q[0].x = q[3].x = ceilf(v[0].x - 0.5f);
+        q[1].x = q[2].x = ceilf(v[1].x - 0.5f);
+        v = q;
     }
     first = add_tri(s->list, st, &v[0], &v[1], &v[2], 0, s->cull == 0, quad_culled(s, &v[0], &v[1], &v[2]));
     add_tri(s->list, st, &v[0], &v[2], &v[3], first ? RD_SHARE(0, 2) : 0, s->cull == 0, quad_culled(s, &v[0], &v[2], &v[3]));

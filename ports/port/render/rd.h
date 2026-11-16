@@ -72,6 +72,10 @@ void rd_fog_density(uint32_t reg);
 void rd_begin_frame(void);
 /* set by a front end for a frame it won't show: its strips are dropped, and the library's models not made */
 extern int rd_discard;
+/* set by a front end whose pixels' centres aren't the game's columns' (the 3DS stretched): an upright quad's sides
+   are moved to the game's pixel edges, so that it covers the columns it does at 640 wide and tiles the game puts a
+   fraction apart meet as they do there */
+extern int rd_snap_x;
 /* three vertices whose plane covers the screen */
 void rd_background_plane(const RD_VTX* v);
 void rd_background(uint32_t argb);

@@ -20,14 +20,16 @@
 #include "switch_lz.h"
 #include "controls_lz.h"
 #include "unlock_lz.h"
+#include "dip_lz.h"
+#include "test_mode.h"
 
 volatile int ctr_bottom_lost;
 
 enum { BUTTON_W = 116, BUTTON_H = 29, DIM = 110 };
-enum { B_SCALE, B_VERSION, B_CONTROLS, B_UNLOCK, BUTTONS };
+enum { B_SCALE, B_VERSION, B_CONTROLS, B_UNLOCK, B_DIP, BUTTONS };
 static const struct {
     int x, y;
-} place[BUTTONS] = { { 28, 84 }, { 176, 84 }, { 102, 137 }, { 102, 190 } };
+} place[BUTTONS] = { { 28, 84 }, { 176, 84 }, { 28, 137 }, { 102, 190 }, { 176, 137 } };
 
 static int shown;           /* the screen is ours: drawn once, and again only when it changes */
 static int pressed = -1;    /* the button under a touch held */
@@ -47,7 +49,7 @@ static int arcade(void) {
 }
 
 static int visible(int b) {
-    return b != B_CONTROLS || arcade();
+    return (b != B_CONTROLS && b != B_DIP) || arcade();
 }
 
 static int at_button(int x, int y) {
@@ -122,7 +124,8 @@ static void draw_button(u16* fb, int b, int dim) {
         const unsigned char* lz;
         const unsigned int* size;
     } art[] = { { native_lz, &native_lz_size }, { stretch_lz, &stretch_lz_size }, { switch_lz, &switch_lz_size },
-                { controls_lz, &controls_lz_size }, { unlock_lz, &unlock_lz_size } };
+                { controls_lz, &controls_lz_size }, { unlock_lz, &unlock_lz_size },
+                { dip_lz, &dip_lz_size } };
     int i = b == B_SCALE ? stretch : b + 1, x, y;
     u32* px = ctr_art_unpack(art[i].lz, *art[i].size, 128 * 32 * 4);
     if (px == NULL) {
@@ -142,7 +145,7 @@ static void draw(void) {
     int b;
     if (!draw_back(fb)) {
         consoleClear();
-        printf("Marvel vs. Capcom 2\n\nSELECT coin, SELECT+START other version\nSELECT+L test, SELECT+B quit\n"
+        printf("Marvel vs. Capcom 2\n\nSELECT coin, SELECT+START other version\nSELECT+B quit\n"
                "SELECT+Y the sound's channels to the log\n");
         shown = 0;
         return;
@@ -312,6 +315,43 @@ static void controls(void) {
     save_keys();
 }
 
+/* the arcade's test menu: its 40 by 30 characters in the console's font, on black */
+static void draw_test(void) {
+    const TEST_SCREEN* s = test_mode_screen();
+    u16* fb = bottom();
+    int x, y;
+    memset(fb, 0, 320 * 240 * 2);
+    for (y = 0; y < TM_ROWS; y++) {
+        for (x = 0; x < TM_COLS; x++) {
+            char c[2] = { s->ch[y][x], 0 };
+            if (c[0] != ' ') {
+                text(fb, x * 8, y * 8, c, s->color[y][x]);
+            }
+        }
+    }
+    flush_bottom();
+}
+
+static int test_menu(void) {
+    int r = TM_OPEN, keys = -1;
+    test_mode_open("A", "B");
+    while (aptMainLoop() && r == TM_OPEN) {
+        u32 down;
+        if (keys != 0 || ctr_bottom_lost) {
+            ctr_bottom_lost = 0;
+            draw_test();
+        }
+        hidScanInput();
+        down = hidKeysDown();
+        keys = (down & KEY_UP ? TM_UP : 0) | (down & KEY_DOWN ? TM_DOWN : 0) | (down & KEY_LEFT ? TM_LEFT : 0) |
+               (down & KEY_RIGHT ? TM_RIGHT : 0) | (down & KEY_A ? TM_OK : 0) | (down & KEY_B ? TM_BACK : 0);
+        r = test_mode_keys(keys);
+        gspWaitForVBlank();
+        ctr_render_alive();
+    }
+    return r == TM_RESTART ? OPT_RESTART : OPT_NONE;
+}
+
 void ctr_options_show(void) {
     if (!apt_hooked) {
         aptHook(&apt_cookie, apt_event, NULL);
@@ -365,6 +405,11 @@ int ctr_options_input(void) {
         case B_CONTROLS:
             ctr_audio_idle();
             controls();
+            wait_release();
+            break;
+        case B_DIP:
+            ctr_audio_idle();
+            act = test_menu();
             wait_release();
             break;
         case B_UNLOCK:

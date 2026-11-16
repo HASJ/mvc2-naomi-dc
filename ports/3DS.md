@@ -62,10 +62,13 @@ keeps the answer in `mvc2.cfg` as `mode =`.
 | START             | start                             |
 | SELECT            | coin                              |
 | SELECT + START    | switch to the other version       |
-| SELECT + L        | the arcade's test menu            |
 | SELECT + B        | quit                              |
 
 On the Dreamcast, Y X L B A R are its X Y L A B R.
+
+The bottom screen's DIP button (the arcade only) opens the arcade's test menu: its game data, and its
+settings (difficulty, damage, timer, continue, game speed and the rest) with free play added. The D-pad
+chooses, A sets and B goes back; SAVE & EXIT keeps them, and the game starts again with them on leaving.
 
 ## Settings
 
@@ -74,6 +77,7 @@ On the Dreamcast, Y X L B A R are its X Y L A B R.
 - `scale = stretch` fills the top screen (the default is 1:1, 320 by 240, between Marvel and Capcom pillars).
 - `pillars = off` leaves the sides black.
 - `render = exact` draws at 640 by 480 and halves it: sharper, slower.
+- `freeplay = on` plays the arcade without coins (the DIP menu sets it).
 - `arcade =` and `dc =` set other data folders.
 
 ## Building it

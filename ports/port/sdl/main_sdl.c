@@ -19,6 +19,7 @@
 #endif
 #include "input_sdl.h"
 #include "menu_sdl.h"
+#include "test_mode.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
 void sdl_audio_frame(void);
@@ -90,7 +91,6 @@ static void read_input(void) {
         if (key_held(SDL_SCANCODE_9)) {
             input.player[0] |= JVS_SERVICE;
         }
-        input.test = key_held(SDL_SCANCODE_F2);
     }
     if (coin_req) {
         input.coin = 1;
@@ -605,6 +605,54 @@ static void save_window(void) {
     }
 }
 
+/* the arcade's test menu (F2, the arcade only): its 40 by 30 characters, 16 pixels each, on black */
+static int test_open, restart_req;
+
+static int test_key(const SDL_Event* e) {
+    static int axis[2];
+    if (e->type == SDL_EVENT_KEY_DOWN) {
+        SDL_Scancode k = key_scancode(e);
+        int first = !e->key.repeat;
+        return k == SDL_SCANCODE_UP ? TM_UP : k == SDL_SCANCODE_DOWN ? TM_DOWN : k == SDL_SCANCODE_LEFT ? TM_LEFT
+               : k == SDL_SCANCODE_RIGHT ? TM_RIGHT
+               : (k == SDL_SCANCODE_RETURN || k == SDL_SCANCODE_KP_ENTER) && first ? TM_OK
+               : (k == SDL_SCANCODE_ESCAPE || k == SDL_SCANCODE_F2) && first ? TM_BACK : 0;
+    }
+    if (e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        int b = e->gbutton.button;
+        return b == SDL_GAMEPAD_BUTTON_DPAD_UP ? TM_UP : b == SDL_GAMEPAD_BUTTON_DPAD_DOWN ? TM_DOWN
+               : b == SDL_GAMEPAD_BUTTON_DPAD_LEFT ? TM_LEFT : b == SDL_GAMEPAD_BUTTON_DPAD_RIGHT ? TM_RIGHT
+               : b == SDL_GAMEPAD_BUTTON_SOUTH ? TM_OK : b == SDL_GAMEPAD_BUTTON_EAST ? TM_BACK : 0;
+    }
+    if (e->type == SDL_EVENT_GAMEPAD_AXIS_MOTION &&
+        (e->gaxis.axis == SDL_GAMEPAD_AXIS_LEFTX || e->gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY)) {
+        int y = e->gaxis.axis == SDL_GAMEPAD_AXIS_LEFTY, way = e->gaxis.value > 24000 ? 1 : e->gaxis.value < -24000 ? -1 : 0;
+        int moved = way != 0 && way != axis[y];
+        axis[y] = way;
+        return !moved ? 0 : y ? (way < 0 ? TM_UP : TM_DOWN) : (way < 0 ? TM_LEFT : TM_RIGHT);
+    }
+    return 0;
+}
+
+static void present_test(void) {
+    static uint32_t shown[RD_WIDTH * RD_HEIGHT];
+    const TEST_SCREEN* s = test_mode_screen();
+    int i, x, y;
+    for (i = 0; i < RD_WIDTH * RD_HEIGHT; i++) {
+        shown[i] = 0xFF000000u;
+    }
+    for (y = 0; y < TM_ROWS; y++) {
+        for (x = 0; x < TM_COLS; x++) {
+            char c[2] = { s->ch[y][x], 0 };
+            if (c[0] != ' ') {
+                menu_text(shown, RD_WIDTH, RD_HEIGHT, x * 16 + 3, y * 16 + 1, c, 0xFF000000u | s->color[y][x], 2);
+            }
+        }
+    }
+    SDL_UpdateTexture(screen, NULL, shown, RD_WIDTH * 4);
+    show(screen);
+}
+
 static void present_menu(void) {
     static uint32_t shown[RD_WIDTH * RD_HEIGHT];
     read_frame();
@@ -741,7 +789,24 @@ int main(int argc, char** argv) {
                 continue;
             }
             input_event(&e);
-            if (window_key(&e) || menu_event(&e)) {
+            if (window_key(&e)) {
+                continue;
+            }
+            if (test_open && e.type != SDL_EVENT_QUIT) {
+                int r = test_mode_keys(test_key(&e));
+                if (r != TM_OPEN) {
+                    test_open = 0;
+                    restart_req = r == TM_RESTART;
+                }
+                continue;
+            }
+            if (e.type == SDL_EVENT_KEY_DOWN && key_scancode(&e) == SDL_SCANCODE_F2 && !e.key.repeat &&
+                !menu_active() && strstr(game_title(), "Dreamcast") == NULL) {
+                test_mode_open("ENTER", "ESC");
+                test_open = 1;
+                continue;
+            }
+            if (menu_event(&e)) {
                 continue;
             }
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && key_sym(&e) == SDLK_ESCAPE)) {
@@ -751,15 +816,20 @@ int main(int argc, char** argv) {
                 switch_req = 1;
             }
         }
+        if (test_open) {
+            present_test();
+            continue;
+        }
         if (menu_active()) {
             present_menu();
             continue;
         }
         read_input();
-        if (switch_req) {
-            switch_req = 0;
+        if (switch_req || restart_req) {
+            int other = switch_req;
+            switch_req = restart_req = 0;
             gpu_restart(1);
-            if (!switch_game()) {
+            if (other ? !switch_game() : (host_restart(), !start_game())) {
                 quit = 1;
                 continue;
             }

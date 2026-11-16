@@ -31,7 +31,8 @@ it says what and where; put it there and press Enter.
 | assist 2        | C               | H               |
 | start           | 1               | 2               |
 
-5 is a coin, 9 service, F2 the arcade's test menu.
+5 is a coin, 9 service. F2 opens the arcade's test menu: its game data and settings (difficulty, timer,
+free play and the rest). Arrows choose, Enter sets, Escape goes back; SAVE & EXIT keeps them for the next game.
 
 - F1: the controls screen (or Back with the right shoulder held). Enter sets a control from the next key
   or button, Delete puts it back, Escape closes. It also sets the renderer, the picture and the sprites.

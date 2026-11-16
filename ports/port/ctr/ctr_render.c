@@ -6398,6 +6398,8 @@ static void layout(int stretch) {
     game_y0 = stretch ? 0 : GAME_X * target_h / VIEW_W;
     game_h = stretch ? target_h : RD_WIDTH * target_h / VIEW_W;
     stretch_now = stretch;
+    /* stretched, the pixels' centres fall between the game's: sprites' tiles a fraction apart would show the gaps */
+    rd_snap_x = stretch;
 }
 
 /* the pillars' pictures when the game is between them, and how they are put */

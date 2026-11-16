@@ -89,7 +89,7 @@ draws in software; test runs draw in software unless `mvc2.cfg` names a renderer
 - `MVC2_PRESS=n:key,...` has player 1 press start, up, down, left, right or b1 to b6 at frame n, and
   `n:coin` and `n:switch` put a coin in or switch versions;
 - the arcade's unless `--dc`; no memory card unless `MVC2_VMU=FILE` (a missing file is a blank card);
-  `eeprom.bin` and `backup.bin` in the current folder; only `MVC2_UNLOCK`, not `unlock =`;
+  `eeprom.bin` and `backup.bin` in the current folder; only `MVC2_UNLOCK` and `MVC2_FREEPLAY`, not `unlock =` or `freeplay =`;
 - `MVC2_CLOCK=seconds` (UTC) fixes the clocks.
 
 ### Controls
@@ -126,7 +126,7 @@ controllers SDL doesn't know.
 | Key                          |                                                                   |
 |------------------------------|-------------------------------------------------------------------|
 | F1, or Back + right shoulder | the controls screen, over the paused game                         |
-| F2                           | the arcade's test button (its test menu)                          |
+| F2                           | the arcade's test menu (the arcade only)                          |
 | 9                            | the arcade's service button                                       |
 | F3                           | the game's and the drawing's time a frame, and the frame rate     |
 | F9                           | switch to the other version                                       |
@@ -137,6 +137,11 @@ controllers SDL doesn't know.
 On the controls screen, Enter sets a control from the next key or button, Delete puts its default back, and
 Escape closes; it also switches the renderer and the picture quality. `mvc2.cfg` keeps the controls, a line
 each (`p1 b1 = key:A, pad:x`), and the settings, the scaling and the window's size.
+
+F2 opens the arcade's test menu: its game data, and its settings (difficulty, damage, timer, continue, game
+speed and the rest) with free play added. The arrows choose, Enter sets and Escape goes back; SAVE & EXIT
+writes `eeprom.bin` (and `freeplay = on` or `off` in `mvc2.cfg`), and the game starts again with them on
+leaving. On the 3DS, the bottom screen's DIP button opens it.
 
 `unlock = all` in `mvc2.cfg` (or `MVC2_UNLOCK=1`) offers every character, colour and stage. Only the select
 scene sees it (a `HOST_PORT` arm in the decomp's `select.c`), so the saved unlocks stay the game's own.
