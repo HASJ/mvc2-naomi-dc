@@ -1,0 +1,65 @@
+{
+  "schema": "agent-repo-knowledge/v1",
+  "records": [
+    {
+      "id": "build-32bit-mingw32",
+      "text": "ports/CMakeLists.txt requires a 32-bit target (CMAKE_SIZEOF_VOID_P == 4) and links Windows targets (mvc2.exe, mvc2dc.exe) with -Wl,--disable-dynamicbase so 0x0C000000 stays free for naomi_map_ram(). Build on Windows under MSYS2 MINGW32 (i686-w64-mingw32) with SDL3 i686 CMake prefix: cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH=<sdl3>/i686-w64-mingw32, ninja -C build, cmake --install build --prefix build-dist (build/ and build-*/ are ignored by ports/.gitignore).",
+      "sources": [
+        {
+          "path": "ports/CMakeLists.txt",
+          "sha256": "93bbcfe836f22733e571e64e0c68483bc7f84f489377d939af05446dcff52f30"
+        },
+        {
+          "path": "ports/.gitignore",
+          "sha256": "94af7dee27a2760b9a25eae6d8c8c241c3649d307b9a5f786238f898aeb91eeb"
+        },
+        {
+          "path": "ports/port/sdl/main_sdl.c",
+          "sha256": "db9da47222ad863ccd41003159b4797ba7a77672170ad850586b26f073373f89"
+        }
+      ],
+      "verified_at": "2026-11-15T22:54:21Z"
+    },
+    {
+      "id": "runtime-data-lookup",
+      "text": "ports/port/sdl/start.c locates game data relative to SDL_GetBasePath(): roms/mvsc2 for arcade (or arcade= in mvc2.cfg / MVC2_ROM) and disc for Dreamcast (or dc= in mvc2.cfg / MVC2_DC_DISC / CLI arg). Setting unlock = all in mvc2.cfg unlocks all characters, colors, and stages without altering saves (vmu_save_A1.bin, eeprom.bin, backup.bin).",
+      "sources": [
+        {
+          "path": "ports/port/sdl/start.c",
+          "sha256": "929fc3591fba105bde2eb1d7b3543290cc1c292bf6a5020dfc184a238979ed4f"
+        },
+        {
+          "path": "ports/port/dist/PLAYING.md",
+          "sha256": "515a0b175d125bfc1d23fa51b06475d76e1f6427f4b84b0f937826a57ea0efe1"
+        },
+        {
+          "path": "ports/port/dist/mvc2.cfg",
+          "sha256": "ec24e9ef2923e54e5ce623392167513ed6e484cf08b0284f0ee1d698c805fb53"
+        }
+      ],
+      "verified_at": "2026-11-15T22:54:21Z"
+    },
+    {
+      "id": "dc-disc-validation",
+      "text": "Dreamcast mode validates USA disc files via dc_disc_check() in ports/port/dc/dc_gd.c: 1ST_READ.BIN (1809817), AICADRV.BIN (59264), FONT.BIN (73792), SELTEX.BIN (1591990), PL00_DAT.BIN (557408), PL3A_DAT.BIN (464448), STG00POL.BIN (173976), ADX_SELC.BIN (417792).",
+      "sources": [
+        {
+          "path": "ports/port/dc/dc_gd.c",
+          "sha256": "29f6dc8631c23f8a9ef1e382020333bd7fd4326643454260a3c4745608b49137"
+        }
+      ],
+      "verified_at": "2026-11-15T22:54:21Z"
+    },
+    {
+      "id": "headless-test-env",
+      "text": "Setting MVC2_FRAMES=<N> switches ports/port/sdl/main_sdl.c into deterministic test_run mode (no gamepad init, skips missing_screen dialog on missing data, no audio device opened, defaults renderer to soft rules unless configured gpu, supports MVC2_PRESS=frame:key,... and exits after N frames).",
+      "sources": [
+        {
+          "path": "ports/port/sdl/main_sdl.c",
+          "sha256": "db9da47222ad863ccd41003159b4797ba7a77672170ad850586b26f073373f89"
+        }
+      ],
+      "verified_at": "2026-11-15T22:54:21Z"
+    }
+  ]
+}
