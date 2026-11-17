@@ -119,6 +119,7 @@ extern Uint32 pl_host_ext_now( const PLAYER_WORK *pl_w );
 #endif
 extern Uint8 sp_ok_hyper_ck( PLAYER_WORK *pl_w );
 extern Uint8 sp_ok_ck( PLAYER_WORK *pl_w );
+extern Uint8 pl_cancel_jump_ck( PLAYER_WORK *pl_w );
 extern void dir_spd_move( PLAYER_WORK *pl_w, Sint16 no );
 extern int ground_ck( PLAYER_WORK *pl_w );
 extern void pl_color_trans( PLAYER_WORK *pl_w, int no, Uint16 col, int cnt );

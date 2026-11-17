@@ -302,21 +302,69 @@ static Uint8 sjump_ukemi_ck( PLAYER_WORK *pl_w )
 	return 0 ;
 }
 
+/* Custom per-move cancel overrides (bit 0: Jump, bit 1: Special, bit 2: Hyper) */
+typedef struct CANCEL_RULE {
+	Uint8 pl_type;
+	Uint8 act_kind;	/* 0 = atck_no, 1 = pl_sp_type */
+	Uint8 move_id;
+	Uint8 flags;
+} CANCEL_RULE;
+
+static const CANCEL_RULE cancel_rules[] = {
+	/* CANCEL_RULES_BEGIN */
+	/* CANCEL_RULES_END */
+	{ 0xff, 0, 0, 0 },
+} ;
+
+static Uint8 cancel_rule_flags( const PLAYER_WORK *pl_w )
+{
+	Uint8 atck_no = ( Uint8 )( pl_w->atck_no & ATCK_NO_MASK ) ;
+	Uint8 out = 0 ;
+	int i ;
+	int n = ( int )( sizeof( cancel_rules ) / sizeof( cancel_rules[0] ) ) ;
+
+	for( i = 0 ; i < n ; i ++ ){
+		const CANCEL_RULE *r = &cancel_rules[i] ;
+		if( r->pl_type == 0xff ) break ;
+		if( r->pl_type != pl_w->pl_type ) continue ;
+		if( r->act_kind == 1 ){
+			if( pl_w->act_st == N_SPECIAL && r->move_id == pl_w->pl_sp_type ) out |= r->flags ;
+		} else {
+			if( r->move_id == atck_no ) out |= r->flags ;
+		}
+	}
+	return out ;
+}
+
+Uint8 pl_cancel_jump_ck( PLAYER_WORK *pl_w )
+{
+	if( pl_w->routine_1 != PL_NORM ) return 0 ;
+	if( !( cancel_rule_flags( pl_w ) & 0x01 ) ) return 0 ;
+	if( !pl_w->hit_flag || ( pl_w->hit_flag & HR_GUARD ) ) return 0 ;
+	if( pl_w->target_w && pl_w->target_w->fly_screen_flag ) return 0 ;
+	if( pl_w->pl_stance == STANCE_AIR ){
+		return ( Uint8 )pl_air_jump_ck( pl_w ) ;
+	}
+	if( !( pl_w->pl_sw_new & KEY_UP ) ) return 0 ;
+	return pl_act_set( pl_w, N_SJUMP ) ;
+}
+
 /****************************************************************/
 Uint8 pl_sjump_set( PLAYER_WORK *pl_w )
 {
 	COM_WORK *cw = &pl_w->sjump_w ;
 	HIT_DATA *hd ;
 	PLAYER_WORK *em ;
+	Uint8 custom_jump = ( Uint8 )( cancel_rule_flags( pl_w ) & 0x01 ) ;
 
 	if( cw->ok_flag != 2 ){
-		if( ( Sint8 )( pl_w->cg_atck_flag & CG_ATCK_ALL ) >= 0 ) return 0 ;
+		if( !custom_jump && ( Sint8 )( pl_w->cg_atck_flag & CG_ATCK_ALL ) >= 0 ) return 0 ;
 		if( !pl_w->hit_flag ) return 0 ;
 		if( pl_w->hit_flag & HR_GUARD ) return 0 ;
 		if( !( pl_w->pl_sw_new & KEY_UP ) ) return 0 ;
 		if( 1 ) hd = &pl_w->hit_data_tbl[pl_w->atck_no & ATCK_NO_MASK] ;
 		else hd = &pl_w->hit_data_tbl[pl_w->atck_no & ATCK_NO_MASK] ;
-		if( !( hd->hit_flag & BLACK_COMBO ) ){
+		if( !custom_jump && !( hd->hit_flag & BLACK_COMBO ) ){
 			if( hd->power <= 10 ) return 0 ;
 			if( ( ( ( Uint8 )hd->vector + 3 ) & 31 ) > 5 ) return 0 ;
 			em = pl_w->em_w ;
@@ -326,7 +374,7 @@ Uint8 pl_sjump_set( PLAYER_WORK *pl_w )
 	}
 	if( vs_sys_work.vs_st < VS_FIGHT ) return 0 ;
 	if( pl_w->pl_stance == STANCE_AIR ) return 0 ;
-	if( pl_w->cg_atck_flag & CG_ATCK_ALL ){
+	if( !custom_jump && ( pl_w->cg_atck_flag & CG_ATCK_ALL ) ){
 		if( ( pl_w->cg_atck_flag & CG_ATCK_ALL ) != CG_ATCK_ON ) return 0 ;
 		if( !pl_w->hit_flag || ( pl_w->hit_flag & HR_GUARD ) ) return 0 ;
 	}
@@ -1133,13 +1181,17 @@ static Sint8 com_time_tbl[32] = {
 /****************************************************************/
 static Uint8 sp_ok_common_ck( PLAYER_WORK *pl_w, int allow_fly_screen )
 {
+	Uint8 custom_sp = ( Uint8 )( cancel_rule_flags( pl_w ) & 0x02 ) ;
+
 	if( pl_w->sp_ng_timer ) return 0 ;
 	if( pl_w->atck_ng_timer ) return 0 ;
 	if( ( pl_w->act_st == N_GUARD || pl_w->act_st == N_AIR_GUARD ) && pl_w->guard_timer ) return 0 ;
-	if( pl_w->cg_atck_flag & CG_ATCK_NG ) return 0 ;
+	if( !custom_sp && ( pl_w->cg_atck_flag & CG_ATCK_NG ) ) return 0 ;
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL ){
-		if( !( pl_w->pl_type == PL_AKUMA && pl_w->pl_sp_type == pl1e_sp_shouryuu && pl_w->atck_level && pl_w->routine_2 == 1 && ( pl_w->hit_flag & HR_HIT )
+		if( custom_sp && pl_w->hit_flag ){
+			/* custom special-cancellable special move */
+		} else if( !( pl_w->pl_type == PL_AKUMA && pl_w->pl_sp_type == pl1e_sp_shouryuu && pl_w->atck_level && pl_w->routine_2 == 1 && ( pl_w->hit_flag & HR_HIT )
 		 && ( PL1E_LW( pl_w )->hit_cnt == 2 || PL1E_LW( pl_w )->guard_cnt == 2 ) ) ) return 0 ;
 	}
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
@@ -1193,15 +1245,19 @@ static Uint8 sp_ok_cut_ck( PLAYER_WORK *pl_w )
 /****************************************************************/
 Uint8 sp_ok_hyper_ck( PLAYER_WORK *pl_w )
 {
+	Uint8 custom_hyp = ( Uint8 )( cancel_rule_flags( pl_w ) & 0x04 ) ;
+
 	if( pl_w->sp_ng_timer ) return 0 ;
 	if( pl_w->atck_ng_timer ) return 0 ;
 	if( ( pl_w->act_st == N_GUARD || pl_w->act_st == N_AIR_GUARD ) && pl_w->guard_timer ) return 0 ;
-	if( pl_w->cg_atck_flag & CG_ATCK_NG ) return 0 ;
+	if( !custom_hyp && ( pl_w->cg_atck_flag & CG_ATCK_NG ) ) return 0 ;
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
 	if( pl_w->act_st == N_SUPER ) return 0 ;
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL ){
-		if( pl_w->cancel_timer < 0 ){
+		if( custom_hyp && pl_w->hit_flag ){
+			/* custom hyper-cancellable special move */
+		} else if( pl_w->cancel_timer < 0 ){
 			if( ( pl_w->cg_atck_flag & CG_ATCK_ALL ) != CG_ATCK_ON ) return 0 ;
 		} else if( !pl_w->cancel_timer ) return 0 ;
 	}

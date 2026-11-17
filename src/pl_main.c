@@ -1161,6 +1161,7 @@ static void act_nml_atck( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void act_special( PLAYER_WORK *pl_w )
 {
+	if( pl_cancel_jump_ck( pl_w ) ) return ;
 	pl_w->pl_tbl[TBL_SP_ATCK]( pl_w ) ;
 }
 
