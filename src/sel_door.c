@@ -93,14 +93,14 @@ static void sel_door_main( PLAYER_WORK *ew )
 static void sel_door_turn( PLAYER_WORK *ew )
 {
 	if( ew->type ){
-		ew->rot[2] -= 0x200 ;
+		ew->rot[2] -= 0x800 ;
 		if( ew->rot[2] <= 0 ){
 			ew->routine_0 ++ ;
 			ew->rot[2] = 0 ;
 		}
 	}
 	else{
-		ew->rot[2] += 0x200 ;
+		ew->rot[2] += 0x800 ;
 		if( ew->rot[2] >= 0x10000 ){
 			ew->routine_0 ++ ;
 			ew->rot[2] = 0 ;
@@ -118,9 +118,14 @@ static void sel_door_ready( PLAYER_WORK *ew )
 /*--------------------------------------------------------------*/
 static void sel_door_wait( PLAYER_WORK *ew )
 {
+	if( !( sel_w.pick_flag[ew->type] & ( 1 << ew->sub_type ) ) ){
+		ew->routine_0 = 4 ;
+		ew->timer0 = 0 ;
+		return ;
+	}
 	if( sel_w.pick_flag[ew->type] & ( 16 << ew->sub_type ) ){
 		ew->routine_0 ++ ;
-		ew->timer0 = 10 ;
+		ew->timer0 = 2 ;
 	}
 }
 
@@ -135,14 +140,14 @@ static void sel_door_delay( PLAYER_WORK *ew )
 static void sel_door_close( PLAYER_WORK *ew )
 {
 	if( ew->type ){
-		ew->rot[2] += 0x200 ;
+		ew->rot[2] += 0x800 ;
 		if( ew->rot[2] >= 0x2000 ){
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
 		}
 	}
 	else{
-		ew->rot[2] -= 0x200 ;
+		ew->rot[2] -= 0x800 ;
 		if( ew->rot[2] <= -0x2000 ){
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
@@ -189,7 +194,7 @@ static void sel_door_speed_wait( PLAYER_WORK *ew )
 {
 	if( sel_w.speed_flag ){
 		ew->routine_0 ++ ;
-		ew->timer0 = 10 ;
+		ew->timer0 = 2 ;
 	}
 }
 

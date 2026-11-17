@@ -287,6 +287,18 @@ static void sel_turn_main( PLAYER_WORK *ew )
 		if( Sys->exit_flag ){
 			ew->routine_0 ++ ;
 			ew->disp_flag = 0 ;
+		} else {
+			int i, keep = 0 ;
+			for( i = 0 ; i < 3 ; i ++ ){
+				if( ( sel_w.pick_flag[ew->type] & ( 1 << i ) ) && pl_work[i * 2 + ew->type].load_type == ew->pl_type ){
+					keep = 1 ;
+					break ;
+				}
+			}
+			if( !keep ){
+				ew->routine_0 ++ ;
+				ew->disp_flag = 0 ;
+			}
 		}
 		break ;
 	case 1:

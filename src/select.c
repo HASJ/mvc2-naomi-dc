@@ -531,7 +531,7 @@ speed_end :
 		scr_work.target[0].y = 95.0f ;
 		scr_work.target[0].z = 0.0f ;
 		scr_work.shift_y = 0.0f ;
-		Sys->timer0 = 100 ;
+		Sys->timer0 = 20 ;
 	}
 	sel_w.join_flag = 0 ;
 	sel_w.cur_go_flag = 0 ;

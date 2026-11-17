@@ -43,7 +43,7 @@ void sel_face_set( PLAYER_WORK *pl_w )
 		if( !ew->type ) ew->rot[1] = 0x8000 ;
 		if( Sys->stage_cnt == 7 || ew->sub_type == 2 ) sel_w.work_step[ew->type] = 1 ;
 	}
-	else ew->timer0 = pl_w->sub_type * 10 ;
+	else ew->timer0 = pl_w->sub_type * 2 ;
 }
 
 static void sel_face_wait( PLAYER_WORK *ew );
