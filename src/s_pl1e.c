@@ -2489,24 +2489,26 @@ static void kuujin_move( PLAYER_WORK *pl_w )
 {
 	if( pl_w->timer0 < 12 ) pl_w->timer0 ++ ;
 	if( !pl_w->routine_3 ){
-		if( pl_w->pl_now_lvbt & KEY_BACK ){
-			Float sx = pl_w->atck_level ? DOT_X( 4.0f ) : DOT_X( 2.0f ) ;
+		Uint32 back_key = pl_w->pl_dir ? KEY_BACK : KEY_FORWARD ;
+		Uint32 fwd_key = pl_w->pl_dir ? KEY_FORWARD : KEY_BACK ;
+		if( pl_w->pl_now_lvbt & back_key ){
+			Float sx = pl_w->atck_level ? DOT_X( 6.0f ) : DOT_X( 4.0f ) ;
 			pl_w->spd.x = pl_w->pl_dir ? sx : -sx ;
-			pl_w->spd.y = -DOT_Y( 10.0f ) ;
+			pl_w->spd.y = -DOT_Y( 12.0f ) ;
 			pl_w->routine_3 = 1 ;
-		} else if( pl_w->timer0 >= 4 && ( pl_w->pl_now_lvbt & KEY_FORWARD ) ){
+		} else if( pl_w->timer0 >= 4 && ( pl_w->pl_now_lvbt & fwd_key ) ){
 			Float sx = pl_w->atck_level ? DOT_X( 16.0f ) : DOT_X( 13.0f ) ;
 			Float sy = pl_w->atck_level ? -DOT_Y( 4.5f ) : -DOT_Y( 5.0f ) ;
 			pl_w->spd.x = pl_w->pl_dir ? sx : -sx ;
 			pl_w->spd.y = sy ;
-			pl_w->routine_3 = pl_w->atck_level ? 2 : 1 ;
+			pl_w->routine_3 = pl_w->atck_level ? 2 : 3 ;
 		} else if( pl_w->timer0 >= 12 ){
 			pl_w->routine_3 = 1 ;
 		}
 	}
 	pl_char_move( pl_w ) ;
 	if( !pl_w->cg_type ){
-		if( !pl_w->atck_level && pl_air_jump_ck( pl_w ) ){
+		if( !pl_w->atck_level && !( pl_w->hit_flag & HR_HIT ) && pl_air_jump_ck( pl_w ) ){
 			pl_w->routine_3 = 0 ;
 			pl_w->cg_type = 0 ;
 			pl_w->disp_flag = 1 ;
@@ -2519,11 +2521,24 @@ static void kuujin_move( PLAYER_WORK *pl_w )
 			pl_w->routine_2 = 1 ;
 			return ;
 		}
-		if( pl_w->routine_3 == 2 ) pl_w->push_ng_timer = 2 ;
+		if( pl_w->routine_3 == 2 || ( !pl_w->atck_level && ( pl_w->hit_flag & HR_HIT ) ) ) pl_w->push_ng_timer = 2 ;
 		pl_w->pos.x += pl_w->spd.x ;
 		pl_w->spd.x += pl_w->acc.x ;
 		pl_w->pos.y += pl_w->spd.y ;
 		pl_w->spd.y += pl_w->acc.y ;
+		if( !pl_w->atck_level && ( pl_w->hit_flag & HR_HIT ) ){
+			PLAYER_WORK *em = vs_sys_work.team_w[pl_w->pl_no ^ 1][0] ;
+			if( em && em->act_st == N_DAMAGE ){
+				em->pos.x += pl_w->spd.x ;
+				em->pos.y += pl_w->spd.y ;
+				if( em->pos.y < em->ground_y ) em->pos.y = em->ground_y ;
+				em->spd.x = 0.0f ;
+				em->spd.y = 0.0f ;
+				em->acc.x = 0.0f ;
+				em->acc.y = 0.0f ;
+				em->recover_ng_flag = 1 ;
+			}
+		}
 	}
 	if( pl_w->pos.y <= pl_w->ground_y ){
 		pl_w->routine_2 ++ ;
@@ -2531,6 +2546,19 @@ static void kuujin_move( PLAYER_WORK *pl_w )
 		pl_w->pl_stance = STANCE_STAND ;
 		pl_char_set( pl_w, Char_Special, pl_w->atck_level + 27 ) ;
 		pl_land_ef_set( pl_w ) ;
+		if( !pl_w->atck_level && ( pl_w->hit_flag & HR_HIT ) ){
+			PLAYER_WORK *em = vs_sys_work.team_w[pl_w->pl_no ^ 1][0] ;
+			if( em && em->act_st == N_DAMAGE ){
+				em->pos.y = em->ground_y + DOT_Y( 4.0f ) ;
+				em->spd.x = pl_w->pl_dir ? DOT_X( 2.0f ) : -DOT_X( 2.0f ) ;
+				em->spd.y = -DOT_Y( 6.0f ) ;
+				em->acc.y = -DOT_Y( 0.5f ) ;
+				em->recover_ng_flag = 1 ;
+				em->ukemi_flag = 0 ;
+				em->dm_no = 11 ;
+				pl_char_set( em, Char_Damage, 29 ) ;
+			}
+		}
 	}
 	cg_hit( pl_w ) ;
 }
@@ -2538,7 +2566,7 @@ static void kuujin_move( PLAYER_WORK *pl_w )
 /*--------------------------------------------------------------*/
 static void kuujin_end( PLAYER_WORK *pl_w )
 {
-	if( ( pl_w->atck_level && pl_char_move( pl_w ) < 0 ) || pl_char_move( pl_w ) < 0 ){
+	if( ( pl_w->atck_level && ( pl_char_move( pl_w ) < 0 || pl_char_move( pl_w ) < 0 ) ) || pl_char_move( pl_w ) < 0 ){
 		pl_w->spd.x = 0.0f ;
 		pl_w->spd.y = 0.0f ;
 		pl_w->acc.x = 0.0f ;
@@ -2546,7 +2574,7 @@ static void kuujin_end( PLAYER_WORK *pl_w )
 		pl_stand_ret( pl_w ) ;
 		return ;
 	}
-	if( !pl_w->atck_level && pl_jump_ck( pl_w ) ) return ;
+	if( !pl_w->atck_level && !( pl_w->hit_flag & HR_HIT ) && pl_jump_ck( pl_w ) ) return ;
 	cg_hit( pl_w ) ;
 }
 
