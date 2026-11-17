@@ -1,4 +1,5 @@
 /build/
+/backups/
 /rom/*
 !/rom/README
 __pycache__/

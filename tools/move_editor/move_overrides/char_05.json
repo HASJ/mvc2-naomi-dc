@@ -1,0 +1,83 @@
+{
+  "moves": {
+    "sp_murakumo": {
+      "name": "Ame no Murakumo",
+      "notes": [
+        "LP (0x30) and HP (0x32) share the same animation states (21:00 start-up, 21:01 dash/slash).",
+        "Code timer0 (s_pl05.c:1537) sets dash delay: 1F for LP, 12F for HP."
+      ],
+      "hits_remove": ["0x34"]
+    },
+    "sp_warp": {
+      "name": "Warp (Teleport)",
+      "notes": [
+        "Warp has NO attack hitbox — Move Hit Data is intentionally N/A.",
+        "Button selects destination: LP = behind near, HP = behind far, LK = above near, HK = above far.",
+        "Startup wait uses timer0 = 20F in s_pl05.c:1601; vanish/reappear/land use animation frame durations."
+      ],
+      "state_order": ["21:02", "21:03", "21:04", "1:03"]
+    },
+    "sp_vajra": {
+      "name": "Vajra",
+      "notes": [
+        "LK vs HK only changes horizontal reappear distance in code (s_pl05.c:3201); both share Hit Data 0x4b and all animation states.",
+        "States 21:29, 30, 32, 33, 34, 36, 41, 42, 44, 45, 46, 48 are Strider's 3 shadow clones (visual only, no hitbox/hurtbox)."
+      ],
+      "state_order": [
+        "21:28", "21:31", "21:35", "21:47", "21:39", "1:03",
+        "21:29", "21:30", "21:32", "21:33", "21:34", "21:36",
+        "21:45", "21:46", "21:48", "21:41", "21:42", "21:44"
+      ]
+    },
+    "sp_formation_a": {
+      "name": "Formation A (Animal / Robot)",
+      "notes": [
+        "21:17 is Strider's summon animation. LK spawns the running tiger (23:16..23:21, Hit 0x44); HK spawns the flying robot (23:35, Hit 0x5d)."
+      ],
+      "state_order": ["21:17", "23:16", "23:17", "23:18", "23:19", "23:21", "23:35"]
+    },
+    "sp_formation_b_shot": {
+      "name": "Formation B (Send Panther)",
+      "states_add": [
+        [21, 51, "Formation B Shot: ground command"],
+        [21, 52, "Formation B Shot: air command"]
+      ]
+    }
+  },
+  "state_labels": {
+    "21:00": "Ame no Murakumo: start-up (shared LP/HP)",
+    "21:01": "Ame no Murakumo: dash & slash (shared LP/HP)",
+    "21:02": "Warp: start-up (before vanish)",
+    "21:03": "Warp: vanish (at origin)",
+    "21:04": "Warp: reappear (at destination)",
+    "21:17": "Formation A: Strider summon pose",
+    "23:16": "Formation A (LK): tiger enters [projectile]",
+    "23:17": "Formation A (LK): tiger runs [projectile]",
+    "23:21": "Formation A (LK): tiger leaps off on hit [projectile]",
+    "23:35": "Formation A (HK): robot swoops [projectile]",
+    "21:28": "Vajra: start-up crouch",
+    "21:31": "Vajra: leap up",
+    "21:35": "Vajra: vanish at top",
+    "21:47": "Vajra: reappear above opponent",
+    "21:39": "Vajra: dive kick (active hitbox)",
+    "21:29": "Vajra: shadow clone 1 rising start (visual only)",
+    "21:30": "Vajra: shadow clone 2 rising start (visual only)",
+    "21:32": "Vajra: shadow clone 3 rising start (visual only)",
+    "21:33": "Vajra: shadow clone 1 rising leap (visual only)",
+    "21:34": "Vajra: shadow clone 2 rising leap (visual only)",
+    "21:36": "Vajra: shadow clone 3 rising leap (visual only)",
+    "21:45": "Vajra: shadow clone 1 falling start (visual only)",
+    "21:46": "Vajra: shadow clone 2 falling start (visual only)",
+    "21:48": "Vajra: shadow clone 3 falling start (visual only)",
+    "21:41": "Vajra: shadow clone 1 falling wait (visual only)",
+    "21:42": "Vajra: shadow clone 2 falling wait (visual only)",
+    "21:44": "Vajra: shadow clone 3 falling wait (visual only)"
+  },
+  "hit_labels": {
+    "0x30": "Ame no Murakumo – Light Punch (LP)",
+    "0x32": "Ame no Murakumo – Heavy Punch (HP)",
+    "0x44": "Formation A (LK) – Running Tiger [projectile]",
+    "0x5d": "Formation A (HK) – Flying Robot [projectile]",
+    "0x4b": "Vajra – Dive Kick (LK & HK)"
+  }
+}
