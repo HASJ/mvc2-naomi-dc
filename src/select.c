@@ -1057,6 +1057,37 @@ static void sel_pl_pick_char( PLAYER_WORK *pl_w )
 		sel_char_w->pl_type = sel_char_w->load_type ;
 		goto decide ;
 	}
+	if( ( sel_sw_on[pl_w->pl_index] & KEY_START ) && pl_w->timer1 > 0 ){
+		Sint8 cur ;
+
+		na_req( pl_w->pl_index * 2 + 64 ) ;
+		pl_w->timer1 -- ;
+		sel_char_w = &pl_work[pl_w->timer1 * 2 + pl_w->pl_index] ;
+		sel_w.pick_flag[pl_w->pl_index] &= ~( ( 1 << pl_w->timer1 ) | ( 16 << pl_w->timer1 ) ) ;
+		sel_w.end_flag[pl_w->pl_index] &= ~0x80 ;
+		if( sel_w.same_flag == 0 ){
+			Uint32 bit ;
+			Uint8 hi = char_bit_get( &bit, sel_char_w->load_type ) ;
+			sel_w.char_free[pl_w->pl_index][hi] |= bit ;
+		}
+		cur = sel_cursor_char( pl_w->pl_index ) ;
+		if( cur >= 0 ){
+			Sint8 old_type = sel_char_w->load_type ;
+			sel_char_w->load_type = cur ;
+			if( !sel_char_ck( sel_char_w, pl_w->pl_index ) ) sel_char_w->load_type = old_type ;
+			sel_char_w->pl_type = sel_char_w->load_type ;
+		}
+		sel_w.pick_no[pl_w->pl_index] = pl_w->timer1 + 1 ;
+		tex_req_flag = 1 ;
+		tex_req_no |= pl_w->pl_index + 1 ;
+		face_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
+		face2_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
+		pl_w->routine_1 = 1 ;
+		pl_w->routine_2 = 0 ;
+		sel_w.work_step[pl_w->pl_index] = 1 ;
+		sel_w.cur_char[pl_w->pl_index] = 1 ;
+		return ;
+	}
 	if( sel_sw_on[pl_w->pl_index] & KEY_LEVER ){
 		na_req( pl_w->pl_index * 2 + 64 ) ;
 		while( 1 ){
@@ -1108,12 +1139,40 @@ static void sel_pl_pick_type( PLAYER_WORK *pl_w )
 	case 0:
 		if( sel_w.work_step[pl_w->pl_index] == 2 ){
 			pl_w->routine_2 ++ ;
+			sel_type_w = &pl_work[pl_w->timer1 * 2 + pl_w->pl_index] ;
+			if( sel_sw_now[pl_w->pl_index] & KEY_LP ){
+				sel_type_w->pl_personal = 0 ;
+				goto decide ;
+			}
+			if( sel_sw_now[pl_w->pl_index] & KEY_LK ){
+				sel_type_w->pl_personal = 1 ;
+				goto decide ;
+			}
+			if( sel_sw_now[pl_w->pl_index] & KEY_HP ){
+				sel_type_w->pl_personal = 2 ;
+				goto decide ;
+			}
 			na_req( pl_w->pl_index * 3 + 52 ) ;
 		}
 		break ;
 	case 1:
 		sel_type_w = &pl_work[pl_w->timer1 * 2 + pl_w->pl_index] ;
 		sel_type = sel_type_w->pl_personal ;
+		if( sel_sw_on[pl_w->pl_index] & KEY_START ){
+			na_req( pl_w->pl_index * 2 + 64 ) ;
+			sel_w.pick_flag[pl_w->pl_index] &= ~( 1 << pl_w->timer1 ) ;
+			if( sel_w.same_flag == 0 ){
+				Uint32 bit ;
+				Uint8 hi = char_bit_get( &bit, sel_type_w->load_type ) ;
+				sel_w.char_free[pl_w->pl_index][hi] |= bit ;
+			}
+			pl_w->timer0 -- ;
+			pl_w->routine_1 = 1 ;
+			pl_w->routine_2 = 0 ;
+			sel_w.work_step[pl_w->pl_index] = 1 ;
+			sel_w.cur_char[pl_w->pl_index] = 1 ;
+			break ;
+		}
 		if( sel_w.sel_timer == 0 ){
 			sel_sw_on[pl_w->pl_index] = KEY_LP ;
 			goto decide ;
