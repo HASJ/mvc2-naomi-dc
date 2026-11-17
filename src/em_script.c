@@ -1760,9 +1760,9 @@ static int sp_cmd_move( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
 }
 
 /*==============================================================*/
-/*			42: sets unk_45f									*/
+/*			42: sets cpu_vcounter_cnt (0x45f)					*/
 /*==============================================================*/
-static int unk45f_set( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
+static int vcounter_cnt_set( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
 {
 	cmd_read( pl_w, sc, 0 ) ;
 	cmd_read( pl_w, sc, 1 ) ;
@@ -1772,9 +1772,9 @@ static int unk45f_set( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
 }
 
 /*==============================================================*/
-/*			71: sets unk_4a7									*/
+/*			71: sets cpu_guard_back_cnt (0x4a7)					*/
 /*==============================================================*/
-static int unk4a7_set( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
+static int guard_back_cnt_set( PLAYER_WORK *pl_w, CPU_SCRIPT *sc )
 {
 	cmd_read( pl_w, sc, 0 ) ;
 	cmd_read( pl_w, sc, 1 ) ;
@@ -2319,14 +2319,14 @@ static CMD_FUNC cmd_start_jmp[128] = {
 	air_wait, cmd_dummy, jump_rnd, cancel_clr,	/* 28 */
 	jump_em, jump_level, jump_flag_clr, lock_set,	/* 32 */
 	lock_clr, guard_cont, walk_rnd, jump_dist,	/* 36 */
-	timer2_set, cmd_nop, unk45f_set, nag_vflip_adj,	/* 40 */
+	timer2_set, cmd_nop, vcounter_cnt_set, nag_vflip_adj,	/* 40 */
 	nag_vflip_adj2, cmd_nop, cmd_nop, catch_ng_set,	/* 44 */
 	cmd_nop, walk_dist, walk_f2, walk_b2,	/* 48 */
 	walk_f3, walk_b3, walk_f4, walk_b4,	/* 52 */
 	cmd_nop, nag_vflip_adj3, nag_vflip_adj4, cmd_nop,	/* 56 */
 	guard, cmd_nop, fly_flag_clr, walk_em2,	/* 60 */
 	walk_pos, fly, walk_pos_y, cmd_next2,	/* 64 */
-	sp_change, sp_v_combi, sjump3, unk4a7_set,	/* 68 */
+	sp_change, sp_v_combi, sjump3, guard_back_cnt_set,	/* 68 */
 	partner_call, cmd_endif, btn_hold, btn_hold,	/* 72 */
 	cmd_stop, partner_change, sp_cmd_set, cmd_nop,	/* 76 */
 	cmd_nop, cmd_nop, cmd_nop, cmd_nop,	/* 80 */

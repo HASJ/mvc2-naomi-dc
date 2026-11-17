@@ -93,7 +93,7 @@ typedef struct FRAME_BOX {
 	Sint16	body_box2;	/* 008: the third body box */
 	Uint16	body_box3;	/* 00a: the fourth body box, 0 none */
 	Uint16	catch_box;	/* 00c: the box a throw can catch, 0 none */
-	Sint16	unk_0e;		/* 00e */
+	Sint16	catch_box2;	/* 00e: with 0x8000, -(Uint8)catch_box2 / 2 lift while turned (pl_rot_ofs_set); > 0, extra catch box */
 } FRAME_BOX;
 
 /* each box word: a box in hit_box_tbl in the low 13 bits, its type above */
@@ -102,7 +102,16 @@ typedef struct FRAME_BOX {
 /* a player's animation frame, copied whole to cg_prm */
 typedef struct CHAR_DATA {
 	Sint32	loop_ofs;	/* 000: the frame's first codes (cg_prm on); after a last frame, the offset in char_adrs the animation goes on from */
-	Uint8	unk_04[0x12 - 0x04];
+	Sint32	spr_no;		/* 004: the sprite drawn (SPR_NO_MASK), -1 for none */
+	Sint8	cg_prio;	/* 008: added to the draw priority */
+	Uint8	cg_shadow;	/* 009: the shadow's offset and size, 0xff none */
+	Uint8	cg_atck_flag;	/* 00a: the attack's phase (CG_ATCK_ALL) */
+	Uint8	cg_flag1;	/* 00b: set by the animation */
+	Uint8	cg_se;		/* 00c: the sound asked for: voice (1 to 63) or sound effect (0x80 on) */
+	Uint8	cg_zoom;	/* 00d: SPR_PRM record in char_adrs, 0 none */
+	Uint8	unk_14e;	/* 00e: unused animation frame byte (PLAYER_WORK.unk_14e) */
+	Uint8	cg_flag2;	/* 00f: a second code for the character's effects */
+	Sint16	cg_rival;	/* 010: the hold position (low byte), and a code (high) */
 	Uint16	frame_box_no;	/* 012: the frame's entry in frame_box_tbl */
 } CHAR_DATA;
 

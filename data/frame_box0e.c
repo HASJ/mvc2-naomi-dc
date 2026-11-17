@@ -10,7 +10,7 @@
              kind above its number: 0x2000, 0x4000 or 0x6000 make a hit on it hit_box_no 5, 6 or 7
              (4 with none; the first three boxes are 1 to 3)
      catch   where the character can be caught by a throw
-     0e      a word the program is not seen to read */
+     0e      with 0x8000, -(Uint8)catch_box2 / 2 lift while turned (pl_rot_ofs_set); > 0, extra catch box (catch_ck) */
 #include "player.h"
 
 const FRAME_BOX frame_box_0e[] = {

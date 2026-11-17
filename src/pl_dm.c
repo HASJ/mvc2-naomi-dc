@@ -28,7 +28,7 @@ void pl_rot_ofs_set( PLAYER_WORK *pl_w )
 		tbl = ( Uint32 * )( pl_w->char_adrs + tbl[16] ) ;
 		cg = ( CHAR_FRAME * )( pl_w->char_adrs + tbl[pl_w->char_no.b.no] ) ;
 		box = &pl_w->frame_box_tbl[( Uint8 )cg->frame_box_no] ;
-		pl_w->rot_ofs_y = -( Uint8 )box->unk_0e / 2 ;
+		pl_w->rot_ofs_y = -( Uint8 )box->catch_box2 / 2 ;
 	}
 }
 

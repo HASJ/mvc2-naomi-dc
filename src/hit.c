@@ -338,8 +338,8 @@ static int catch_ck( PLAYER_WORK *pl_w, PLAYER_WORK *em, Sint16 no )
 	else if( em->frame_box->catch_box ){
 		if( catch_box_ck( pl_w, em, no, em->frame_box->catch_box ) ) return 1 ;
 	}
-	if( em->frame_box->unk_0e > 0 ){
-		if( catch_box_ck( pl_w, em, no, em->frame_box->unk_0e ) ) return 1 ;
+	if( em->frame_box->catch_box2 > 0 ){
+		if( catch_box_ck( pl_w, em, no, em->frame_box->catch_box2 ) ) return 1 ;
 	}
 	return 0 ;
 }

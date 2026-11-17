@@ -170,7 +170,7 @@ typedef struct PLAYER_WORK {
 	struct PLAYER_WORK *catch_w;	/* 1c8: the player being thrown */
 	union {
 		struct PLAYER_WORK *w;	/* 1cc: the other player in a throw (set both ways by pl_catch_set) */
-		struct { Uint8 unk_00[2] ; Uint8 unk_1ce ; Uint8 unk_1cf ; } b;	/* 1ce read as a byte by s_pl00 */
+		struct { Uint8 unk_00[2] ; Uint8 unk_1ce ; Uint8 unk_1cf ; } b;	/* 1ce: unused byte field in catch_pair */
 	} catch_pair;	/* 1cc: the other side of a hold (the thrower's victim, the victim's thrower), set both ways */
 	Uint8	act_st;	/* 1d0: the player's act, the state act_st_set() sets */
 	Uint8	old_act_st;	/* 1d1: the act before, kept by act_st_set() */
