@@ -283,6 +283,7 @@ typedef struct PLAYER_WORK {
 	Sint16	combo_dm_cnt_old;	/* 26e: combo_dm_cnt before the last hit */
 	Sint16	dm_hit_cnt;		/* 270: the hits taken in the combo, cleared by the opponent */
 	Uint8	air_combo_cnt;	/* 272: the super jump juggle hits in the combo; cleared when it ends */
+	Uint8	fwd_hk_cancel_used;	/* Akuma 6HK -> jumping normal cancel used once per combo */
 	Uint8	combo_hit_type;	/* 273: the last hit: 1 from the air, 2 two air hits in a row, 4 on a player in the air, 8 no kind */
 	Uint8	combo_hit_type_old;	/* 274: combo_hit_type before it */
 	Uint8	combo_reset_flag;	/* 275: set while combo_add's hits go on */

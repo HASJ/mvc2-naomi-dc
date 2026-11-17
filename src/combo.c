@@ -123,6 +123,7 @@ void combo_reset( PLAYER_WORK *pl_w )
 	at_w->combo_cnt = 0 ;
 	at_w->combo_kind = 0 ;
 	at_w->air_combo_cnt = 0 ;
+	at_w->fwd_hk_cancel_used = 0 ;
 	at_w->combo_hit_types = 0 ;
 	at_w->combo_hit_type_old = at_w->combo_hit_type ;
 	at_w->combo_hit_type = 0 ;

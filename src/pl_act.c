@@ -4,6 +4,7 @@
 #include "pl_char.h"
 #include "pl_color_old.h"
 #include "pl_act.h"
+#include "pl1e_def.h"
 
 static void jump_ret_set( PLAYER_WORK *pl_w );
 static void atck_type_set( PLAYER_WORK *pl_w );
@@ -171,6 +172,7 @@ Uint8 pl_nml_atck_ck( PLAYER_WORK *pl_w )
 	if( pl_w->act_st == N_NML_ATCK ){
 		if( !pl_w->chain_tbl ) return 0 ;
 		if( pl_w->cg_atck_flag & CG_ATCK_NG || !pl_w->hit_flag ) return 0 ;
+		if( pl_w->pl_type == PL_AKUMA && pl_w->atck_no == pl1e_at_fwd_hk && pl_w->fwd_hk_cancel_used && pl_w->combo_cnt ) return 0 ;
 		tbl = pl_w->chain_tbl ;
 		if( sw & KEY_LP ){ no = tbl[0] ; bit = KEY_LP ; }
 		if( sw & KEY_LK ){ no = tbl[2] ; bit = KEY_LK ; }
@@ -186,6 +188,7 @@ Uint8 pl_nml_atck_ck( PLAYER_WORK *pl_w )
 		if( sw & KEY_HK ){ no = 2 ; bit = KEY_HK ; }
 	}
 	if( !jump_atck_ck( pl_w ) ) return 0 ;
+	if( pl_w->act_st == N_NML_ATCK && pl_w->pl_type == PL_AKUMA && pl_w->atck_no == pl1e_at_fwd_hk ) pl_w->fwd_hk_cancel_used = 1 ;
 	pl_w->nml_no = no ;
 	pl_w->atck_lever = pl_w->pl_sw_new & KEY_LEVER ;
 	if( bit & KEY_PUNCH ) pl_w->atck_pk = 0 ;
@@ -237,6 +240,7 @@ int pl_cmd_atck_ck( PLAYER_WORK *pl_w )
 	if( !( sw = pl_w->pl_now_lvbt & cmd_atck_sw_tbl[pl_w->pl_type] ) ) return 0 ;
 	if( ( pl_w->pl_sw_new & KEY_LEVER ) != ( KEY_DOWN | KEY_FORWARD ) ) return 0 ;
 	if( !jump_atck_ck( pl_w ) ) return 0 ;
+	if( pl_w->act_st == N_NML_ATCK && pl_w->pl_type == PL_AKUMA && pl_w->atck_no == pl1e_at_fwd_hk ) pl_w->fwd_hk_cancel_used = 1 ;
 	if( sw & KEY_HP ) pl_w->atck_pk = 0 ;
 	else pl_w->atck_pk = 1 ;
 	atck_type_set( pl_w ) ;
