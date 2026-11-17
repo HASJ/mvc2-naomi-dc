@@ -61,7 +61,7 @@ static void shock1_main( PLAYER_WORK *ew )
 }
 
 /*==============================================================*/
-static void shock1_set( VEC3 *pos )
+static void shock1_set( VEC3 *pos, Sint32 rot_z )
 {
 	PLAYER_WORK *ew ;
 
@@ -69,7 +69,8 @@ static void shock1_set( VEC3 *pos )
 		ew->disp_flag = 1 ;
 		ew->work_func = shock1_main ;
 		ew->obj = obj_efky->obj[66] ;
-		ew->obj_flag = OBJ_POS | OBJ_SCALE ;
+		ew->obj_flag = rot_z ? ( OBJ_POS | OBJ_ROT_Z | OBJ_SCALE ) : ( OBJ_POS | OBJ_SCALE ) ;
+		ew->rot[2] = rot_z ;
 		ew->pos = *pos ;
 		ew->scale = shock_scale ;
 		ew->fade.trnsl = 0.0f ;
@@ -96,7 +97,7 @@ static void shock2_main( PLAYER_WORK *ew )
 }
 
 /*==============================================================*/
-static void shock2_set( VEC3 *pos )
+static void shock2_set( VEC3 *pos, Sint32 rot_z )
 {
 	PLAYER_WORK *ew ;
 
@@ -104,7 +105,8 @@ static void shock2_set( VEC3 *pos )
 		ew->disp_flag = 1 ;
 		ew->work_func = shock2_main ;
 		ew->obj = obj_efky->obj[67] ;
-		ew->obj_flag = OBJ_POS | OBJ_SCALE ;
+		ew->obj_flag = rot_z ? ( OBJ_POS | OBJ_ROT_Z | OBJ_SCALE ) : ( OBJ_POS | OBJ_SCALE ) ;
+		ew->rot[2] = rot_z ;
 		ew->pos = *pos ;
 		ew->scale = shock_scale ;
 		ew->fade.trnsl = 0.0f ;
@@ -131,7 +133,7 @@ static void shock3_main( PLAYER_WORK *ew )
 }
 
 /*==============================================================*/
-static void shock3_set( VEC3 *pos )
+static void shock3_set( VEC3 *pos, Sint32 rot_z )
 {
 	PLAYER_WORK *ew ;
 
@@ -139,7 +141,8 @@ static void shock3_set( VEC3 *pos )
 		ew->disp_flag = 1 ;
 		ew->work_func = shock3_main ;
 		ew->obj = obj_efky->obj[68] ;
-		ew->obj_flag = OBJ_POS | OBJ_SCALE ;
+		ew->obj_flag = rot_z ? ( OBJ_POS | OBJ_ROT_Z | OBJ_SCALE ) : ( OBJ_POS | OBJ_SCALE ) ;
+		ew->rot[2] = rot_z ;
 		ew->pos = *pos ;
 		ew->scale = shock_scale ;
 		ew->fade.trnsl = 0.0f ;
@@ -166,7 +169,7 @@ static void shock4_main( PLAYER_WORK *ew )
 }
 
 /*==============================================================*/
-static void shock4_set( VEC3 *pos )
+static void shock4_set( VEC3 *pos, Sint32 rot_z )
 {
 	PLAYER_WORK *ew ;
 
@@ -174,7 +177,8 @@ static void shock4_set( VEC3 *pos )
 		ew->disp_flag = 1 ;
 		ew->work_func = shock4_main ;
 		ew->obj = obj_efky->obj[69] ;
-		ew->obj_flag = OBJ_POS | OBJ_SCALE ;
+		ew->obj_flag = rot_z ? ( OBJ_POS | OBJ_ROT_Z | OBJ_SCALE ) : ( OBJ_POS | OBJ_SCALE ) ;
+		ew->rot[2] = rot_z ;
 		ew->pos = *pos ;
 		ew->scale = shock_scale ;
 		ew->fade.trnsl = 0.0f ;
@@ -197,7 +201,7 @@ static void shock_spark_main( PLAYER_WORK *ew )
 }
 
 /*==============================================================*/
-static void shock_spark_set( VEC3 *pos, int no )
+static void shock_spark_set( VEC3 *pos, int no, Sint8 wall_dir )
 {
 	PLAYER_WORK *ew ;
 
@@ -208,8 +212,13 @@ static void shock_spark_set( VEC3 *pos, int no )
 		ew->obj_flag = OBJ_POS | OBJ_TRNSL ;
 		ew->pos = *pos ;
 		ew->scale = shock_scale ;
-		ew->spd.x = nlSin( ( int )( no * 36 * 65536.0f / 360.0f + 0.5f ) & 0xffff ) * 10.0f ;
-		ew->spd.y = nlRand() % 20 + 30 ;
+		if( wall_dir ){
+			ew->spd.x = -wall_dir * ( Float )( nlRand() % 20 + 30 ) ;
+			ew->spd.y = nlSin( ( int )( no * 36 * 65536.0f / 360.0f + 0.5f ) & 0xffff ) * 10.0f ;
+		} else {
+			ew->spd.x = nlSin( ( int )( no * 36 * 65536.0f / 360.0f + 0.5f ) & 0xffff ) * 10.0f ;
+			ew->spd.y = nlRand() % 20 + 30 ;
+		}
 		ew->spd.z = nlCos( ( int )( no * 36 * 65536.0f / 360.0f + 0.5f ) & 0xffff ) * 10.0f ;
 		ew->acc.x = -ew->spd.x / 30.0f ;
 		ew->acc.y = -ew->spd.y / 30.0f ;
@@ -219,21 +228,33 @@ static void shock_spark_set( VEC3 *pos, int no )
 }
 
 /*==============================================================*/
-static void shock_sparks_set( VEC3 *pos )
+static void shock_sparks_set( VEC3 *pos, Sint8 wall_dir )
 {
 	int i ;
 
-	for( i = 0 ; i < 10 ; i ++ ) shock_spark_set( pos, i ) ;
+	for( i = 0 ; i < 10 ; i ++ ) shock_spark_set( pos, i, wall_dir ) ;
 }
 
 /****************************************************************/
 void shock_set( VEC3 *pos, int no )
 {
-	shock1_set( pos ) ;
-	shock2_set( pos ) ;
-	shock3_set( pos ) ;
-	shock4_set( pos ) ;
-	shock_sparks_set( pos ) ;
+	shock1_set( pos, 0 ) ;
+	shock2_set( pos, 0 ) ;
+	shock3_set( pos, 0 ) ;
+	shock4_set( pos, 0 ) ;
+	shock_sparks_set( pos, 0 ) ;
+}
+
+/****************************************************************/
+void shock_wall_set( VEC3 *pos, Sint8 wall_dir )
+{
+	Sint32 rot_z = wall_dir > 0 ? 0x4000 : 0xc000 ;
+
+	shock1_set( pos, rot_z ) ;
+	shock2_set( pos, rot_z ) ;
+	shock3_set( pos, rot_z ) ;
+	shock4_set( pos, rot_z ) ;
+	shock_sparks_set( pos, wall_dir ) ;
 }
 
 /*==============================================================*/

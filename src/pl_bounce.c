@@ -2,7 +2,10 @@
 #include "player.h"
 #include "pl_char.h"
 #include "pl_act.h"
+#include "effect.h"
 #include "pl_bounce.h"
+
+extern void dm_voice_req( PLAYER_WORK *pl_w );
 
 typedef enum BOUNCE_MODE {
 	BOUNCE_MODE_NONE = 0,
@@ -19,7 +22,8 @@ typedef struct PL_BOUNCE_STATE {
 	Uint8 wb_used;		/* 1 once a wall bounce has been used in the current combo */
 	Uint8 mode;			/* active BOUNCE_MODE while in PL_DAMAGE */
 	Sint8 wall_dir;		/* +1 moving toward WALL_RIGHT, -1 moving toward WALL_LEFT */
-	Uint8 char_switched;/* 1 once airborne rebound anim transitioned 28 -> 29 */
+	Uint8 char_switched;/* 1 once airborne rebound anim transitioned rising -> falling */
+	Float bounce_height;/* configured rebound Y velocity in DOT_Y units (0 = default) */
 } PL_BOUNCE_STATE;
 
 typedef struct BOUNCE_RULE {
@@ -28,14 +32,15 @@ typedef struct BOUNCE_RULE {
 	Uint8 need_air;			/* 1: trigger only against airborne / non-grounded targets */
 	Uint8 prop;				/* BOUNCE_PROP */
 	Uint8 no_fly_screen;	/* 1: suppress flying screen on matching hit */
+	Float bounce_height;	/* rebound Y velocity in DOT_Y units (0 = default) */
 } BOUNCE_RULE;
 
 static PL_BOUNCE_STATE bounce_state[6] ;
 
 static const BOUNCE_RULE bounce_rules[] = {
-	{ PL_AKUMA,   64,            1, BOUNCE_PROP_GROUND, 1 },	/* Akuma j236p (Zankuu Hadouken fireball) */
-	{ PL_AKUMA,   65,            1, BOUNCE_PROP_GROUND, 1 },	/* Akuma j236p (Zankuu Hadouken level 1) */
-	{ PL_MAGNETO, ATCK_STAND_HP, 1, BOUNCE_PROP_WALL,   1 },	/* Magneto 5HP vs non-grounded opponents */
+	{ PL_AKUMA,   64,            1, BOUNCE_PROP_GROUND, 1, 8.0f },	/* Akuma j236p (Zankuu Hadouken fireball) */
+	{ PL_AKUMA,   65,            1, BOUNCE_PROP_GROUND, 1, 8.0f },	/* Akuma j236p (Zankuu Hadouken level 1) */
+	{ PL_MAGNETO, ATCK_STAND_HP, 1, BOUNCE_PROP_WALL,   1, 6.5f },	/* Magneto 5HP vs non-grounded opponents */
 } ;
 
 static void bounce_clear_motion( Uint8 work_no )
@@ -44,6 +49,7 @@ static void bounce_clear_motion( Uint8 work_no )
 	bounce_state[work_no].mode = BOUNCE_MODE_NONE ;
 	bounce_state[work_no].wall_dir = 0 ;
 	bounce_state[work_no].char_switched = 0 ;
+	bounce_state[work_no].bounce_height = 0.0f ;
 }
 
 static void bounce_quake( const PLAYER_WORK *pl_w )
@@ -79,10 +85,27 @@ static const BOUNCE_RULE *bounce_rule_find( const PLAYER_WORK *dm_w, const PLAYE
 
 static Float bounce_away_dir( const PLAYER_WORK *dm_w, const PLAYER_WORK *at_w )
 {
-	if( dm_w->spd.x > 0.0f ) return 1.0f ;
-	if( dm_w->spd.x < 0.0f ) return -1.0f ;
-	if( at_w && dm_w->pos.x != at_w->pos.x ) return dm_w->pos.x > at_w->pos.x ? 1.0f : -1.0f ;
-	return !dm_w->pl_dir ? 1.0f : -1.0f ;
+	( void )at_w ;
+	if( dm_w->back_spd_x > 0.0f ) return 1.0f ;
+	if( dm_w->back_spd_x < 0.0f ) return -1.0f ;
+	return dm_w->dm_at_dir ? -1.0f : 1.0f ;
+}
+
+/* Orient spinning damage sprite so the head points toward the direction of travel. */
+static void bounce_spin_face_dir( PLAYER_WORK *pl_w )
+{
+	if( pl_w->spd.x > 0.0f ) pl_w->disp_dir = 1 ;
+	else if( pl_w->spd.x < 0.0f ) pl_w->disp_dir = 0 ;
+}
+
+static void bounce_wall_vfx( PLAYER_WORK *pl_w, Sint8 wall_dir )
+{
+	VEC3 vfx_pos ;
+
+	vfx_pos.x = ( pl_w->wall_flag & WALL_RIGHT ) ? scr_work.scr_right : scr_work.scr_left ;
+	vfx_pos.y = pl_w->pos.y + ( pl_w->size_top / 2 ) * pl_w->scale.y * 2.142857f ;
+	vfx_pos.z = pl_w->pos.z ;
+	shock_wall_set( &vfx_pos, wall_dir ) ;
 }
 
 static void bounce_wall_check_sfx( PLAYER_WORK *pl_w )
@@ -106,7 +129,7 @@ static void bounce_finish_to_down( PLAYER_WORK *pl_w )
 	pl_char_set( pl_w, Char_Damage, 26 ) ;
 }
 
-static void bounce_arc_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int apply_x_drag )
+static void bounce_arc_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int apply_x_drag, Uint8 fall_char )
 {
 	dm_blow_move( pl_w ) ;
 	if( apply_x_drag ){
@@ -114,9 +137,9 @@ static void bounce_arc_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int apply_x
 	}
 	pl_char_move( pl_w ) ;
 	bounce_wall_check_sfx( pl_w ) ;
-	if( !st->char_switched && pl_w->spd.y > 0.0f ){
+	if( !st->char_switched && pl_w->spd.y <= 0.0f ){
 		st->char_switched = 1 ;
-		pl_char_set( pl_w, Char_Damage, 29 ) ;
+		pl_char_set( pl_w, Char_Damage, fall_char ) ;
 	}
 	if( pl_w->spd.y <= 0.0f && pl_land_ck( pl_w ) ){
 		land_se_req( pl_w ) ;
@@ -132,19 +155,29 @@ static void bounce_wall_fly_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int do
 	hit_expected_wall = ( st->wall_dir > 0 && ( pl_w->wall_flag & WALL_RIGHT ) )
 	                 || ( st->wall_dir < 0 && ( pl_w->wall_flag & WALL_LEFT ) ) ;
 	if( hit_expected_wall ){
+		Float rebound_y ;
+
 		pl_w->wall_hit_flag = 1 ;
 		down_se_req( pl_w ) ;
+		pl_se_req( pl_w, 50 ) ;
+		dm_voice_req( pl_w ) ;
 		wall_dust_set( pl_w ) ;
+		bounce_wall_vfx( pl_w, st->wall_dir ) ;
+		/* Stop spinning and face back into the stage with a natural knockback pose. */
+		pl_w->disp_dir = st->wall_dir > 0 ? 1 : 0 ;
 		if( do_bounce ){
 			bounce_quake( pl_w ) ;
 			pl_w->spd.x = st->wall_dir > 0 ? -DOT_X( 6.5f ) : DOT_X( 6.5f ) ;
 			pl_w->acc.x = 0.0f ;
-			pl_w->spd.y = pl_w->pos.y > pl_w->ground_y + DOT_Y( 90.0f ) ? DOT_Y( 5.5f ) : DOT_Y( 7.5f ) ;
+			rebound_y = st->bounce_height > 0.0f
+			          ? st->bounce_height
+			          : ( pl_w->pos.y > pl_w->ground_y + DOT_Y( 90.0f ) ? 5.5f : 7.5f ) ;
+			pl_w->spd.y = DOT_Y( rebound_y ) ;
 			pl_w->acc.y = -DOT_Y( 0.375f ) ;
 			pl_w->pl_stance = STANCE_AIR ;
 			st->mode = BOUNCE_MODE_WALL_REBOUND ;
 			st->char_switched = 0 ;
-			pl_char_set( pl_w, Char_Damage, 28 ) ;
+			pl_char_set( pl_w, Char_Damage, 17 ) ;
 		} else {
 			/* Wall bounce already used: drop down from the wall into a soft knockdown. */
 			pl_w->spd.x = 0.0f ;
@@ -153,8 +186,8 @@ static void bounce_wall_fly_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int do
 			pl_w->acc.y = -DOT_Y( 0.375f ) ;
 			pl_w->ukemi_flag = 120 ;
 			st->mode = BOUNCE_MODE_WALL_NO_BOUNCE_FALL ;
-			st->char_switched = 0 ;
-			pl_char_set( pl_w, Char_Damage, 28 ) ;
+			st->char_switched = 1 ;
+			pl_char_set( pl_w, Char_Damage, 22 ) ;
 		}
 		dm_blow_move( pl_w ) ;
 		pl_char_move( pl_w ) ;
@@ -162,6 +195,11 @@ static void bounce_wall_fly_move( PLAYER_WORK *pl_w, PL_BOUNCE_STATE *st, int do
 	}
 	dm_blow_move( pl_w ) ;
 	pl_char_move( pl_w ) ;
+	if( pl_w->spd.y <= 0.0f && pl_land_ck( pl_w ) ){
+		land_se_req( pl_w ) ;
+		land_dust_set( &pl_w->pos, pl_w->pl_no ) ;
+		bounce_finish_to_down( pl_w ) ;
+	}
 }
 
 void pl_bounce_reset_all( void )
@@ -198,6 +236,7 @@ int pl_bounce_on_damage_pre( PLAYER_WORK *dm_w, const PLAYER_WORK *at_w, BOUNCE_
 
 	if( prop_out ) *prop_out = ( BOUNCE_PROP )rule->prop ;
 	if( no_fly_screen_out ) *no_fly_screen_out = rule->no_fly_screen ;
+	bounce_state[dm_w->work_no].bounce_height = rule->bounce_height ;
 	/* Use dm_buttobi_ng (2) so dm_air_combo_ck cannot set fly_screen_flag on AERIAL_FINISH hits. */
 	if( rule->prop != BOUNCE_PROP_NONE ){
 		dm_w->dm_no = 2 ;
@@ -230,6 +269,7 @@ void pl_bounce_on_damage_post( PLAYER_WORK *dm_w, const PLAYER_WORK *at_w, BOUNC
 		dm_w->acc.x = 0.0f ;
 		dm_w->spd.y = -DOT_Y( 5.0f ) ;
 		dm_w->acc.y = -DOT_Y( 0.375f ) ;
+		bounce_spin_face_dir( dm_w ) ;
 		if( is_forced || !st->gb_used ){
 			st->gb_used = 1 ;
 			st->mode = BOUNCE_MODE_GROUND_FALL ;
@@ -251,13 +291,14 @@ void pl_bounce_on_damage_post( PLAYER_WORK *dm_w, const PLAYER_WORK *at_w, BOUNC
 		if( dm_w->pos.y < dm_w->ground_y + 8.0f ){
 			dm_w->pos.y = dm_w->ground_y + 8.0f ;
 		}
-		dm_w->spd.x = dir * DOT_X( 12.0f ) ;
+		dm_w->spd.x = dm_w->back_spd_x ;
 		dm_w->acc.x = 0.0f ;
-		dm_w->spd.y = 0.0f ;
-		dm_w->acc.y = 0.0f ;
+		dm_w->spd.y = dm_w->back_spd_y ;
+		dm_w->acc.y = -DOT_Y( 0.375f ) ;
 		st->wall_dir = dir > 0.0f ? 1 : -1 ;
 		st->char_switched = 0 ;
-		pl_char_set( dm_w, Char_Damage, 16 ) ;
+		bounce_spin_face_dir( dm_w ) ;
+		pl_char_set( dm_w, Char_Damage, 28 ) ;
 		if( is_forced || !st->wb_used ){
 			st->wb_used = 1 ;
 			st->mode = BOUNCE_MODE_WALL_FLY ;
@@ -294,22 +335,28 @@ int pl_bounce_dm_move( PLAYER_WORK *pl_w )
 		pl_char_move( pl_w ) ;
 		bounce_wall_check_sfx( pl_w ) ;
 		if( pl_w->spd.y <= 0.0f && pl_land_ck( pl_w ) ){
-			land_se_req( pl_w ) ;
+			Float rise_y = st->bounce_height > 0.0f ? st->bounce_height : 8.0f ;
+
+			down_se_req( pl_w ) ;
+			pl_se_req( pl_w, 50 ) ;
+			dm_voice_req( pl_w ) ;
 			land_dust_set( &pl_w->pos, pl_w->pl_no ) ;
+			shock_set( &pl_w->pos, 0 ) ;
 			bounce_quake( pl_w ) ;
 			pl_w->spd.x *= 0.4f ;
 			pl_w->acc.x = 0.0f ;
-			pl_w->spd.y = DOT_Y( 8.0f ) ;
+			pl_w->spd.y = DOT_Y( rise_y ) ;
 			pl_w->acc.y = -DOT_Y( 0.375f ) ;
 			pl_w->pl_stance = STANCE_AIR ;
 			st->mode = BOUNCE_MODE_GROUND_RISE ;
 			st->char_switched = 0 ;
+			bounce_spin_face_dir( pl_w ) ;
 			pl_char_set( pl_w, Char_Damage, 28 ) ;
 		}
 		return 1 ;
 
 	case BOUNCE_MODE_GROUND_RISE:
-		bounce_arc_move( pl_w, st, 0 ) ;
+		bounce_arc_move( pl_w, st, 0, 29 ) ;
 		return 1 ;
 
 	case BOUNCE_MODE_WALL_FLY:
@@ -321,11 +368,11 @@ int pl_bounce_dm_move( PLAYER_WORK *pl_w )
 		return 1 ;
 
 	case BOUNCE_MODE_WALL_REBOUND:
-		bounce_arc_move( pl_w, st, 1 ) ;
+		bounce_arc_move( pl_w, st, 1, 22 ) ;
 		return 1 ;
 
 	case BOUNCE_MODE_WALL_NO_BOUNCE_FALL:
-		bounce_arc_move( pl_w, st, 0 ) ;
+		bounce_arc_move( pl_w, st, 0, 22 ) ;
 		return 1 ;
 
 	default:

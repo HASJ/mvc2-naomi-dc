@@ -46,6 +46,7 @@ extern void one_spark_set( VEC3 *pos, Uint8 dir );
 extern void dust_set( PLAYER_WORK *pl_w, Uint8 x, Uint8 y, Float a, Float b );
 extern void nage_nuke( VEC3 *pos );
 extern void shock_set( VEC3 *pos, int no );
+extern void shock_wall_set( VEC3 *pos, Sint8 wall_dir );
 
 /* a point on an effect's curve: the frame it is reached at and its value; get_motion gives the value
    between points for a frame and steps the point number on (hit_mark.c) */
