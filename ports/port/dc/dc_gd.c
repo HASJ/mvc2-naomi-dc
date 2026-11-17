@@ -37,8 +37,8 @@ static const struct {
     const char* name;
     long size;
 } disc_files[] = {
-    { "1ST_READ.BIN", 1809817 }, { "AICADRV.BIN", 59264 },   { "FONT.BIN", 73792 },     { "SELTEX.BIN", 1591990 },
-    { "PL00_DAT.BIN", 557408 },  { "PL3A_DAT.BIN", 464448 }, { "STG00POL.BIN", 173976 }, { "ADX_SELC.BIN", 417792 },
+    { "1ST_READ.BIN", 1809817 }, { "AICADRV.BIN", 59264 }, { "FONT.BIN", 73792 },     { "SELTEX.BIN", 1591990 },
+    { "PL00_DAT.BIN", 0 },       { "PL3A_DAT.BIN", 0 },    { "STG00POL.BIN", 173976 }, { "ADX_SELC.BIN", 417792 },
 };
 
 /* the first of those files that is missing from dir or the wrong size, or NULL when all are there */
@@ -48,7 +48,7 @@ const char* dc_disc_check(const char* dir) {
     size_t i;
     for (i = 0; i < sizeof disc_files / sizeof disc_files[0]; i++) {
         snprintf(path, sizeof path, "%s/%s", dir, disc_files[i].name);
-        if (stat(path, &st) != 0 || st.st_size != disc_files[i].size) {
+        if (stat(path, &st) != 0 || (disc_files[i].size > 0 ? st.st_size != disc_files[i].size : st.st_size <= 0)) {
             return disc_files[i].name;
         }
     }
