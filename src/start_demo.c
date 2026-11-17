@@ -48,7 +48,7 @@ static void st_demo_init( void )
 	if( !load_ck() ) return ;
 #endif
 	Sys->routine_1 ++ ;
-	Sys->timer0 = 300 ;
+	Sys->timer0 = 120 ;
 	Sys->timer3 = 0 ;
 	Sys->entry_stop = Sys->play_side ? 0 : 1 ;
 	if( pl_work[0].load_type == 24 && pl_work[2].load_type == 24 && pl_work[4].load_type == 24 ){
@@ -123,23 +123,23 @@ static void st_demo_move( void )
 	sw_work[0].now &= 0xfc9f ;
 	sw_work[1].now &= 0xfc9f ;
 #ifdef TARGET_DC	/* no button ends it early, and it waits for the files */
-	if( Sys->timer0 == 60 ){
+	if( Sys->timer0 == 30 ){
 		if( !load_ck() ) Sys->timer0 ++ ;
 		else {
 			Sys->routine_1 ++ ;
-			Sys->timer0 = 60 ;
+			Sys->timer0 = 20 ;
 			Sys->timer3 = 2 ;
 		}
 	}
 #else
 	if( ( Sys->play_side & 1 && sw_work[0].now & SKIP_SW )
-	 || ( Sys->play_side & 2 && sw_work[1].now & SKIP_SW ) || Sys->timer0 == 60 ){
+	 || ( Sys->play_side & 2 && sw_work[1].now & SKIP_SW ) || Sys->timer0 == 30 ){
 		Sys->routine_1 ++ ;
-		Sys->timer0 = 60 ;
+		Sys->timer0 = 20 ;
 		Sys->timer3 = 2 ;
 	}
 #endif
-	if( Sys->timer0 == 150 ) Sys->timer3 = 1 ;
+	if( Sys->timer0 == 75 ) Sys->timer3 = 1 ;
 	scr_work.eye[1] = scr_work.eye[0] ;
 	scr_work.target[1] = scr_work.target[0] ;
 	light_dummy() ;
@@ -152,11 +152,11 @@ static void st_demo_move( void )
 static void st_demo_out( void )
 {
 	if( !--Sys->timer0 ) Sys->routine_1 ++ ;
-	if( Sys->timer0 <= 30 ) se_vol_down( 1, 30 ) ;
-	if( Sys->timer0 == 10 ) Sys->timer3 = 3 ;
+	if( Sys->timer0 <= 15 ) se_vol_down( 1, 15 ) ;
+	if( Sys->timer0 == 5 ) Sys->timer3 = 3 ;
 	if( Sys->timer3 >= 2 ){
-		fog_work.density -= 140.0f ;
-		fog_work.b += 2 ;
+		fog_work.density -= 420.0f ;
+		fog_work.b += 6 ;
 		if( fog_work.density < 0.0f ){
 			Sys->timer3 = 3 ;
 			fog_work.density = 0.0f ;

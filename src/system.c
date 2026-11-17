@@ -762,7 +762,7 @@ void warning_disp( void )
 		book_clear_ck() ;
 		nlWaitVSync() ;
 	}
-	i = 180 ;
+	i = 1 ;
 	msg = title_tbl[sys_flag->Country] ;
 	do {
 		if( test_sw_ck() ) test_mode_jump() ;
@@ -796,7 +796,7 @@ void warning_disp( void )
 			nlWaitVSync() ;
 		}
 	}
-	i = 180 ;
+	i = 1 ;
 	msg = warning_tbl[sys_flag->Country] ;
 	do {
 		if( test_sw_ck() ) test_mode_jump() ;

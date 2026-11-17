@@ -70,11 +70,11 @@ static void coin_disp( void ) ;
 /* the light's direction for the attract's scenes */
 /* the frames the copyright stays, and each scene's song and textures */
 #ifdef TARGET_DC
-#define COPYRIGHT_TIME	60
+#define COPYRIGHT_TIME	1
 #define LOGO_STREAM	21
 #define TITLE_TEX	25
 #else
-#define COPYRIGHT_TIME	180
+#define COPYRIGHT_TIME	1
 #define LOGO_STREAM	13
 #define TITLE_TEX	11
 #endif
@@ -202,6 +202,8 @@ static void attract_init( void )
 	if( Sys->attract_step ){
 		Sys->task_step = Sys->attract_step ;
 		Sys->attract_step = 0 ;
+	} else {
+		Sys->task_step = 7 ;
 	}
 	coin_blink = 1 ;
 	coin_timer = 20 ;

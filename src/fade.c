@@ -19,6 +19,7 @@ void fade_set( int col, int time, int out )
 {
 	FADE_WORK *fw = &fade_work ;
 
+	if( time > 1 ) time = ( time + 1 ) / 2 ;
 	fw->on = 1 ;
 	fw->col = col ;
 	fw->cnt = time ;

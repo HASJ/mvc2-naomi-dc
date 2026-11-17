@@ -131,7 +131,7 @@ void home_menu_select( void )
 	if( !Sys->scene_no ){
 		if( fade_cnt() ) return ;
 		Sys->scene_no ++ ;
-		Sys->timer1 = 8 ;
+		Sys->timer1 = 2 ;
 		Sys->timer0 = Sys->home_mode ;
 	} else if( Sys->scene_no == 1 ){
 		if( !Sys->timer1 ){
@@ -146,7 +146,7 @@ void home_menu_select( void )
 					if( Sys->timer0 < 0 ) Sys->timer0 = 4 ;
 				}
 				na_req( 1 ) ;
-				Sys->timer1 = 4 ;
+				Sys->timer1 = 1 ;
 			}
 			if( menu_trg & KEY_RIGHT ){
 				if( Sys->timer0 >= 5 ){
@@ -159,7 +159,7 @@ void home_menu_select( void )
 					if( Sys->timer0 >= 5 ) Sys->timer0 = 0 ;
 				}
 				na_req( 1 ) ;
-				Sys->timer1 = 4 ;
+				Sys->timer1 = 1 ;
 			}
 			if( ( menu_trg & KEY_UP ) || ( menu_trg & KEY_DOWN ) ){
 				if( Sys->timer0 >= 5 ){
@@ -169,7 +169,7 @@ void home_menu_select( void )
 					Sys->timer0 = ud_tbl[Sys->timer0 + 5] ;
 				}
 				na_req( 1 ) ;
-				Sys->timer1 = 4 ;
+				Sys->timer1 = 1 ;
 			}
 			if( Sys->timer0 == 1 && home_menu_2p_ck() ) Sys->timer0 = 0 ;
 			Sys->home_mode = Sys->timer0 ;
