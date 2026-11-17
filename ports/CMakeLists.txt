@@ -81,7 +81,8 @@ endif()
 set_source_files_properties(${GAME}/src/main.c PROPERTIES COMPILE_DEFINITIONS main=naomi_main)
 
 # the decomp's plain-C library modules, one copy for both programs
-set(LIB_SOURCES ${GAME}/src/lib/libnaomi/nlmath.c ${GAME}/src/lib/libnaomi/nlproj.c ${PORT}/nl/nl_work.c)
+set(LIB_SOURCES ${GAME}/src/lib/libnaomi/nlmath.c ${GAME}/src/lib/libnaomi/nlproj.c ${PORT}/nl/nl_work.c
+    ${PORT}/nl/nl_matha.c)
 add_library(mvc2_lib OBJECT ${LIB_SOURCES})
 target_include_directories(mvc2_lib PRIVATE ${GAME}/src/lib/libnaomi ${GAME}/include ${PORT}/include)
 target_compile_options(mvc2_lib PRIVATE ${GAME_OPTIONS})
