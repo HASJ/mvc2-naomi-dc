@@ -9,6 +9,7 @@ extern void scr_far_matrix_set( void ) ;	/* the camera for the far stage */
 extern void scr_2d_matrix_set( void ) ;	/* the camera for the front */
 extern void scr_matrix_set3( void ) ;
 extern void sel_mes_disp( void ) ;
+extern void sel_preview_disp( void ) ;
 extern void spr_mark_disp( void ) ;
 extern int sprite_disp( PLAYER_WORK *w ) ;
 #ifdef TARGET_DC
@@ -251,6 +252,7 @@ void disp_all( void )
 	obj_disp_list( 7 ) ;
 	obj_calc_list( 1 ) ;
 	obj_disp_list( 1 ) ;
+	sel_preview_disp() ;
 #ifdef TARGET_DC
 	vs_record_disp() ;
 #else

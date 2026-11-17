@@ -2,6 +2,17 @@
    stage; its states run from SelectMainMove_yu. */
 #include "player.h"
 #include "select.h"
+#include "load.h"
+
+#define SEL_FILE_PART( p, n )	( ( void * )&( ( Uint8 * )( p ) )[( ( Sint32 * )( p ) )[n]] )
+
+extern void *host_malloc( Uint32 size );
+extern void col_set( void *col, int no, int cnt );
+extern int sprite_tex_set( PLAYER_WORK *w );
+extern int sprite_disp( PLAYER_WORK *w );
+extern void pl_char_set( PLAYER_WORK *pl_w, Uint8 group, Uint8 no );
+extern Sint8 pl_char_move( PLAYER_WORK *pl_w );
+static Uint8 char_bit_get( Uint32 *bit, Sint8 no );
 
 extern void disp_all( void );
 extern void stage_decide( void );
@@ -167,6 +178,128 @@ Sint32 def_team_tbl[2][3] = {
 	{ 0x17, 0x16, 0x06 }
 } ;
 
+static Uint8 *sel_char_cache[64];
+static PLAYER_WORK sel_preview_w[2];
+static Sint8 sel_preview_type[2] = { -1, -1 };
+static Sint8 sel_preview_col[2] = { -1, -1 };
+static Uint8 sel_preview_active[2] = { 0, 0 };
+
+static Uint8 *sel_preview_load( Uint8 type )
+{
+	Uint8 *buf ;
+#ifndef TARGET_DC
+	Sint16 *src ;
+#endif
+
+	if( type >= 64 ) return NULL ;
+	if( sel_char_cache[type] ) return sel_char_cache[type] ;
+	buf = ( Uint8 * )host_malloc( 0x160000 ) ;
+	if( !buf ) return NULL ;
+#ifdef TARGET_DC
+	file_load2( type + FILE_PL_DAT, buf, 1 ) ;
+#else
+	file_load2( pl_file_tbl[type], buf, 1 ) ;
+	src = SEL_FILE_PART( 0x0dd00000, type ) ;
+	lz_unpack16( src, ( Uint16 * )( buf + 0x130000 ) ) ;
+#endif
+	sel_char_cache[type] = buf ;
+	return buf ;
+}
+
+static void sel_preview_set( Uint8 side, Sint8 type, Sint8 color )
+{
+	Uint8 *buf ;
+	PLAYER_WORK *w ;
+#ifndef TARGET_DC
+	Uint8 *chr ;
+#endif
+
+	if( type < 0 || type >= 64 ) return ;
+	buf = sel_preview_load( ( Uint8 )type ) ;
+	if( !buf ) return ;
+	w = &sel_preview_w[side] ;
+	if( sel_preview_type[side] != type ){
+		memset( w, 0, sizeof( PLAYER_WORK ) ) ;
+		w->pl_index = side ;
+		w->load_type = type ;
+		w->pl_type = type ;
+		w->load_color = color ;
+		w->cell_adrs = SEL_FILE_PART( buf, 0 ) ;
+		w->spr_adrs = SEL_FILE_PART( buf, 1 ) ;
+		w->col_adrs = SEL_FILE_PART( buf, 2 ) ;
+		w->col_flag = 1 ;
+		w->col_no = 16 + side * 8 ;
+		w->char_ofs = ( type == 0x34 ) ? 0x200 : 0x100 ;
+#ifdef TARGET_DC
+		w->char_adrs = SEL_FILE_PART( buf, 5 ) ;
+		w->frame_box_tbl = SEL_FILE_PART( buf, 6 ) ;
+#else
+		chr = buf + 0x130000 ;
+		w->char_adrs = SEL_FILE_PART( chr, 0 ) ;
+		w->frame_box_tbl = SEL_FILE_PART( chr, 1 ) ;
+#endif
+		pl_char_set( w, Char_Stand, 0 ) ;
+		w->cg_se = 0 ;
+		sel_preview_type[side] = type ;
+		sel_preview_col[side] = -1 ;
+	}
+	if( sel_preview_col[side] != color ){
+		w->load_color = color ;
+		col_set( ( Uint16 * )w->col_adrs + color * 0x80, w->col_no, 8 ) ;
+		sel_preview_col[side] = color ;
+	}
+	sel_preview_active[side] = 1 ;
+}
+
+static void sel_preview_update( void )
+{
+	Uint8 side ;
+
+	for( side = 0 ; side < 2 ; side ++ ){
+		PLAYER_WORK *pw = &pl_work[side] ;
+		PLAYER_WORK *cw ;
+		Sint8 col ;
+
+		if( !( ( Sys->new_side | Sys->play_side ) & ( 1 << side ) ) || Sys->routine_0 < 3 || Sys->routine_0 > 4 || pw->routine_0 < 4 || pw->routine_0 >= 10 ){
+			sel_preview_active[side] = 0 ;
+			continue ;
+		}
+		cw = &pl_work[pw->timer1 * 2 + side] ;
+		col = ( pw->routine_1 >= 2 ) ? cw->load_color : 0 ;
+		sel_preview_set( side, cw->load_type, col ) ;
+		if( sel_preview_active[side] ){
+			pl_char_move( &sel_preview_w[side] ) ;
+			sel_preview_w[side].cg_se = 0 ;
+			sprite_tex_set( &sel_preview_w[side] ) ;
+		}
+	}
+}
+
+void sel_preview_disp( void )
+{
+	Uint8 side ;
+
+	if( Sys->task_no != 2 || Sys->task_step != 1 || Sys->scene_no != 1 ) return ;
+	for( side = 0 ; side < 2 ; side ++ ){
+		PLAYER_WORK *w ;
+
+		if( !sel_preview_active[side] ) continue ;
+		w = &sel_preview_w[side] ;
+		w->disp_x = side ? 535.0f : 105.0f ;
+		w->disp_y = 415.0f ;
+		w->disp_z = 26.0f ;
+		w->disp_zm_x = 1.35f ;
+		w->disp_zm_y = 1.35f ;
+		w->disp_ang = 0 ;
+		w->disp_flip = side ? 0 : 1 ;
+		w->disp_list = 0 ;
+		w->disp_ofs_x = 0 ;
+		w->disp_ofs_y = 0 ;
+		w->alpha = 0xff ;
+		sprite_disp( w ) ;
+	}
+}
+
 /****************************************************************/
 void SelectMainMove_yu( void )
 {
@@ -190,6 +323,7 @@ void SelectMainMove_yu( void )
 		sel_sw_now[1] = pl_work[1].side_sw.now ;
 	}
 	sel_jmp[Sys->routine_0]() ;
+	sel_preview_update() ;
 }
 
 /*==============================================================*/
@@ -270,6 +404,15 @@ static void sel_init( void )
 	if( !( Sys->play_side & 1 ) ) pl_data_no_init( 0 ) ;
 	if( !( Sys->play_side & 2 ) ) pl_data_no_init( 1 ) ;
 #endif
+	sel_preview_type[0] = sel_preview_type[1] = -1 ;
+	sel_preview_col[0] = sel_preview_col[1] = -1 ;
+	sel_preview_active[0] = sel_preview_active[1] = 0 ;
+	{
+		int s, k ;
+		for( s = 0 ; s < 2 ; s ++ ){
+			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )def_team_tbl[s][k] ) ;
+		}
+	}
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
 	Sys->routine_2 = 0 ;
@@ -1737,6 +1880,15 @@ static void sel_main_fade( void )
 /*--------------------------------------------------------------*/
 static void sel_main_end( void )
 {
+	sel_preview_type[0] = sel_preview_type[1] = -1 ;
+	sel_preview_col[0] = sel_preview_col[1] = -1 ;
+	sel_preview_active[0] = sel_preview_active[1] = 0 ;
+	{
+		int s, k ;
+		for( s = 0 ; s < 2 ; s ++ ){
+			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )def_team_tbl[s][k] ) ;
+		}
+	}
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
 	Sys->routine_2 = 0 ;

@@ -381,6 +381,10 @@ int nlaCheckWaitROMDMA(void) {
     return 1;
 }
 
+void* host_malloc(uint32_t size) {
+    return calloc(1, size);
+}
+
 /* The frame's CPU time so far, in microseconds: the load queue reads (15000 - it) / 256 blocks of 2 KB a frame, 116 KB
    at 0. MVC2_LOAD_KB=n gives the time that reads n KB, so a stream from the SD card keeps behind its read-ahead. Its
    value never changes, so the game's measure of the ROM's speed still comes out 0 and the queue's divisor 256.
