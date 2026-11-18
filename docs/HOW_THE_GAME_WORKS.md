@@ -383,6 +383,13 @@ walk. Two of the rules behind them:
   an attack out. Holding back with nothing coming is just walking back.
 - **Normal attacks.** `pl_nml_atck_ck` takes the button, then gives the throw the first chance: if the character's throw
   check finds someone in reach, the button becomes a throw.
+- **Super Hop.** Pressing down (`1`, `2` or `3`, checked via `KEY_DOWN` in `pl_sw_new`) while rising in a super jump
+  (`sjump_flag != 0` and `spd.y > 0`) calls `pl_hop_ck` (`src/pl_sub.c`) to ease `spd.y` down to zero over
+  `HOP_STOP_FRAMES` (5) frames after passing `HOP_MIN_RISE` (60.0 units), tracked in `PLAYER_WORK.hop_stop_cnt`. It hooks
+  at the top of `pl_sjump_ctrl` (so it runs before the early returns and during air attacks and air jumps) and in
+  `act_jump_air` (`src/pl_main.c`) for wall jumps that kept `sjump_flag`. Normal jumps (`sjump_flag == 0`), the
+  computer (`cpu_flag`), and Felicia's custom wall jump (`TBL_TJUMP`) are excluded, and `hop_stop_cnt` resets when a
+  new jump, wall jump, air recovery, hit, landing or tag-in starts.
 
 **Chains and the missing medium buttons.** A light button gives a light attack. Each normal attack sets a small table,
 `chain_tbl`, that says what each button gives *next* if it is pressed while this attack has connected. These are Ryu's:
