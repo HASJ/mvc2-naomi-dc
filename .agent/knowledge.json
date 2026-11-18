@@ -3,11 +3,11 @@
   "records": [
     {
       "id": "build-32bit-mingw32",
-      "text": "ports/CMakeLists.txt requires a 32-bit target (CMAKE_SIZEOF_VOID_P == 4) and links Windows targets (mvc2.exe, mvc2dc.exe) with -Wl,--disable-dynamicbase so 0x0C000000 stays free for naomi_map_ram(). Build on Windows under MSYS2 MINGW32 (i686-w64-mingw32) with SDL3 i686 CMake prefix: cmake -G Ninja -B build -DCMAKE_C_COMPILER=gcc -DCMAKE_PREFIX_PATH=<sdl3>/i686-w64-mingw32, ninja -C build, cmake --install build --prefix build-dist (build/ and build-*/ are ignored by ports/.gitignore).",
+      "text": "ports/CMakeLists.txt requires a 32-bit target (CMAKE_SIZEOF_VOID_P == 4), enables CXX for static pond3r/ggpo (mvc2_ggpo), links -Wl,--disable-dynamicbase, winhttp, ws2_32, and -Wl,-Bstatic -lstdc++ -lpthread so build-dist/mvc2dc.exe depends only on Windows system DLLs + SDL3.dll. Build with C:/msys64/mingw32/bin (gcc/g++ Ninja) and always sync build-dist via cmake --install ports/build --prefix ports/build-dist (plus patches/<id>/dc_game.dll + manifest.sig).",
       "sources": [
         {
           "path": "ports/CMakeLists.txt",
-          "sha256": "93bbcfe836f22733e571e64e0c68483bc7f84f489377d939af05446dcff52f30"
+          "sha256": "1fd990bbbb104f69e8434738950ae0630a93dd932db64d95f6d98fab8e1e884e"
         },
         {
           "path": "ports/.gitignore",
@@ -15,18 +15,18 @@
         },
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "db9da47222ad863ccd41003159b4797ba7a77672170ad850586b26f073373f89"
+          "sha256": "de413278e3e447d3b4303cd8e8e4a015edfe348d2dec256dff262ca044d22d9f"
         }
       ],
-      "verified_at": "2026-11-15T22:54:21Z"
+      "verified_at": "2026-11-18T11:04:28Z"
     },
     {
       "id": "runtime-data-lookup",
-      "text": "ports/port/sdl/start.c locates game data relative to SDL_GetBasePath(): roms/mvsc2 for arcade (or arcade= in mvc2.cfg / MVC2_ROM) and disc for Dreamcast (or dc= in mvc2.cfg / MVC2_DC_DISC / CLI arg). Setting unlock = all in mvc2.cfg unlocks all characters, colors, and stages without altering saves (vmu_save_A1.bin, eeprom.bin, backup.bin).",
+      "text": "ports/port/sdl/start.c locates game data via SDL_GetBasePath(): roms/mvsc2 or disc (or arcade=/dc=/MVC2_ROM/MVC2_DC_DISC). Supports --config=<dir|file> (forwarding multi-arg CLI options like --p2p 3 and --spectate 2 without misreading positional paths), host_config_path() for per-instance logs/saves/replays/netplay_profile.cfg/mvc2_ipc.port, and unlock = all in mvc2.cfg.",
       "sources": [
         {
           "path": "ports/port/sdl/start.c",
-          "sha256": "929fc3591fba105bde2eb1d7b3543290cc1c292bf6a5020dfc184a238979ed4f"
+          "sha256": "b20073b7b2b0f5113b8237185f584c5e06270884194f75a3eb7dcee2f2145a71"
         },
         {
           "path": "ports/port/dist/PLAYING.md",
@@ -37,29 +37,143 @@
           "sha256": "ec24e9ef2923e54e5ce623392167513ed6e484cf08b0284f0ee1d698c805fb53"
         }
       ],
-      "verified_at": "2026-11-15T22:54:21Z"
+      "verified_at": "2026-11-18T11:04:28Z"
     },
     {
       "id": "dc-disc-validation",
-      "text": "Dreamcast mode validates USA disc files via dc_disc_check() in ports/port/dc/dc_gd.c: 1ST_READ.BIN (1809817), AICADRV.BIN (59264), FONT.BIN (73792), SELTEX.BIN (1591990), PL00_DAT.BIN (557408), PL3A_DAT.BIN (464448), STG00POL.BIN (173976), ADX_SELC.BIN (417792).",
+      "text": "Dreamcast mode validates USA disc files via dc_disc_check() and supports optional signed patch disc overlays via dc_gd_set_overlay_dir() in ports/port/dc/dc_gd.c (1ST_READ.BIN, AICADRV.BIN, FONT.BIN, SELTEX.BIN, PL00_DAT.BIN, PL3A_DAT.BIN, STG00POL.BIN, ADX_SELC.BIN).",
       "sources": [
         {
           "path": "ports/port/dc/dc_gd.c",
-          "sha256": "29f6dc8631c23f8a9ef1e382020333bd7fd4326643454260a3c4745608b49137"
+          "sha256": "2493b3730f6a8595a44d29ad06adaee009936fb903cab2e4fbaf08a102d32e7b"
         }
       ],
-      "verified_at": "2026-11-15T22:54:21Z"
+      "verified_at": "2026-11-18T11:04:28Z"
     },
     {
       "id": "headless-test-env",
-      "text": "Setting MVC2_FRAMES=<N> switches ports/port/sdl/main_sdl.c into deterministic test_run mode (no gamepad init, skips missing_screen dialog on missing data, no audio device opened, defaults renderer to soft rules unless configured gpu, supports MVC2_PRESS=frame:key,... and exits after N frames).",
+      "text": "MVC2_FRAMES=<N> or test flags (--savestate-check, --patch-check, --replay-verify, --takeover-test, --ui-smoke-test, --synctest) activate test_run mode in main_sdl.c: SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN=0 + SW_SHOWMINNOACTIVE avoids focus stealing, no audio device is opened, software renderer rules apply unless configured gpu, and frames_left counts down even while F1/F4 overlays are open.",
       "sources": [
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "db9da47222ad863ccd41003159b4797ba7a77672170ad850586b26f073373f89"
+          "sha256": "de413278e3e447d3b4303cd8e8e4a015edfe348d2dec256dff262ca044d22d9f"
         }
       ],
-      "verified_at": "2026-11-15T22:54:21Z"
+      "verified_at": "2026-11-18T11:04:29Z"
+    },
+    {
+      "id": "trap-implicit-decl-stub",
+      "text": "Game code compiled for the port turns any undeclared function into a gen_host.py stub that logs 'stub: NAME' and returns 0. A macro used without its header (e.g. DEG_ANG from dm.h, not included by select.c) and libc calls such as getenv/atof in src/ silently become such stubs; check mvc2.log for 'stub:' lines.",
+      "sources": [
+        {
+          "path": "ports/port/tools/gen_host.py",
+          "sha256": "e1aeddd6fa88f706a255a227f81b9f6db36c24c5596228f059257dfa2dbac57b"
+        },
+        {
+          "path": "include/dm.h",
+          "sha256": "49f43f1d111ab1c460b328e29e445b8c28211a0b741455ae5f38970e3ae6ed13"
+        }
+      ],
+      "verified_at": "2026-11-18T05:25:34Z"
+    },
+    {
+      "id": "select-still-picture",
+      "text": "On the select screen, sel_name.c's 'name plate' work (obj_dm01 models 177/178, texture from name_pic_set) is the character's still pose picture, a 168x215-unit quad at depth ~571 showing 184x184 texels. The live preview (select.c sel_preview_disp) projects onto its position/depth and hides it via sel_preview_shown().",
+      "sources": [
+        {
+          "path": "src/sel_name.c",
+          "sha256": "c4ced37aed7c5fdaffbc78cd49add9f3b1798614a952d7c8a43a2fdf0de1cb6a"
+        },
+        {
+          "path": "src/select.c",
+          "sha256": "253416aaaa5cd6b71fe550a2175e54e2bdcf1835e290eca88fb94ec42ee73f85"
+        }
+      ],
+      "verified_at": "2026-11-18T05:25:34Z"
+    },
+    {
+      "id": "select-assist-labels",
+      "text": "Assist pillar labels: models 108 (DC/English) and 102 (Japanese) with UV templates 109/103; sel_glow_step_tbl indexes 13 type labels (0 Projectile,1 Ground,2 Expansion,3 Dash,4 Anti-air,5 Variety,6 Throw,7 Air Throw,8 Heal,9 Enhance,10 Capture,11 Launcher,12 Balance). On HOST_PORT, sel_label.c draws move name + type symbol into common texture 0xFE0 (256x512 RGB565) and retargets the label material's tcw each draw. Move names come from the character's TBL_SP_ASSIST routine plus src/sel_move_name.c, generated by tools/sel_move_names.py (--check fails when stale).",
+      "sources": [
+        {
+          "path": "src/sel_label.c",
+          "sha256": "3ab8e0a29d67e182894d3c4c6189169c2f2743b9a610b5eff1f455e778a2b21d"
+        },
+        {
+          "path": "src/sel_light.c",
+          "sha256": "f25ba0fa3afe4a7078051346facb6533d8b3a7e21776f55d3ef5d20b81157dc2"
+        },
+        {
+          "path": "tools/sel_move_names.py",
+          "sha256": "65926512618d1290ab9b168feeec94a789fa19ab782d461b5f0259632c10ba6c"
+        }
+      ],
+      "verified_at": "2026-11-18T05:25:34Z"
+    },
+    {
+      "id": "port-model-tcw",
+      "text": "In the port, nl_obj.c stores nl_tex indices in tcw low 21 bits; put() must update near_w from nl_objput_param before returning early on rd_discard so forward rendering and GGPO rollback resimulation produce bit-identical NL_OBJ_STATE savestates.",
+      "sources": [
+        {
+          "path": "ports/port/nl/nl_obj.c",
+          "sha256": "32ebdf114d6d9e29b93d62951a95cb243e63bc7143dbcd6a8829d3288001d77e"
+        }
+      ],
+      "verified_at": "2026-11-18T11:04:29Z"
+    },
+    {
+      "id": "netplay-savestate-rollback",
+      "text": "Rollback determinism uses page-COW savestates via MEM_WRITE_WATCH (ports/port/sys/savestate.c), x86 coroutines masking SSE sticky bits stmxcsr & 0xFFC0 with static primary stack (coro_x86.c), rd_discard audio/render suppression (host_present in host_coro), static vendored pond3r/ggpo (ggpo_glue.c), non-blocking UDP + PUNCH!/PBACK! + Go R2 relay + MVC2_NETSIM (net_transport.c), and umvsc2:// loopback IPC (uri_ipc.c).",
+      "sources": [
+        {
+          "path": "ports/port/sys/savestate.c",
+          "sha256": "7fafc846114fa1e610604d458d51a3e962640915cc36a6324e892a81c32180f7"
+        },
+        {
+          "path": "ports/port/sys/coro_x86.c",
+          "sha256": "a98a70137d4fe469c0e089ee42b359fbb108b3b3817391477fdfff43869612fc"
+        },
+        {
+          "path": "ports/port/net/ggpo_glue.c",
+          "sha256": "46db444cf7673a796602f287767a258cc9c1ce1e09b75cdbf3d91b9c7e72a7dc"
+        },
+        {
+          "path": "ports/port/net/net_transport.c",
+          "sha256": "a335b3fcc0ff53e3ad2ae9c7ec6955ad93924fc8422c97e40b1bdf7d9f465125"
+        },
+        {
+          "path": "ports/port/net/uri_ipc.c",
+          "sha256": "a8e69df2afa15cd9cb6760edd9f9ca066cff36c2fe8f49d4e321922fe3430311"
+        }
+      ],
+      "verified_at": "2026-11-18T11:04:29Z"
+    },
+    {
+      "id": "netplay-patches-replays-ui",
+      "text": "Retrocompatible patches bundle dc_game.dll + manifest.json + Ed25519 manifest.sig (sign_patch_manifest.py) verified by ed25519_verify.c + patch_dll.c BEFORE LoadLibraryA. Binary .mvc2r v1 replays (216B LE header, RLE+XOR input payload, 60f checksums, 20f COW keyframes for <12ms Takeover seek in replay.c) pair with F4 Netplay/F8 Replay HUDs backed by non-blocking WinHTTP/WebSocket (http_client.c, net_ui.c).",
+      "sources": [
+        {
+          "path": "ports/port/sys/patch_dll.c",
+          "sha256": "45bf9b9cc8ba347f34b3248a6635f7b0266e1471a04b1ee480f5162514abae48"
+        },
+        {
+          "path": "ports/port/net/ed25519_verify.c",
+          "sha256": "5ed4a1b7d59921a758447c88f0fab910c0a34c16fc69afc886adbf79db3567e9"
+        },
+        {
+          "path": "ports/port/net/replay.c",
+          "sha256": "3a9d5f9b583a1bf7fd702a6653717ca94b1e372e5d8acf2bcfe2f1a5a48c5b70"
+        },
+        {
+          "path": "ports/port/net/net_ui.c",
+          "sha256": "8d1ce8b3e4f0416f84fff789ad8c7dc4190fa98e32fc57cc45595bbb0ad6433e"
+        },
+        {
+          "path": "tools/sign_patch_manifest.py",
+          "sha256": "3fed8c96c68a9f65d35cdcf8021f798e5e22696465ef177a9d9a3fcbbd0fe7ca"
+        }
+      ],
+      "verified_at": "2026-11-18T11:04:29Z"
     }
   ]
 }
