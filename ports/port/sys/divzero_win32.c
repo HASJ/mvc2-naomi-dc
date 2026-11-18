@@ -10,8 +10,60 @@
 #include <dbghelp.h>
 #include "naomi_host.h"
 
-static const unsigned char* image_lo;
-static const unsigned char* image_hi;
+#define MAX_DIVZERO_MODULES 8
+static struct {
+    const unsigned char* lo;
+    const unsigned char* hi;
+} allowed_modules[MAX_DIVZERO_MODULES];
+static int num_allowed_modules;
+
+static int addr_in_allowed_module(const unsigned char* p) {
+    int i;
+    for (i = 0; i < num_allowed_modules; i++) {
+        if (p >= allowed_modules[i].lo && p < allowed_modules[i].hi) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void host_divzero_allow_module(const void* hmod) {
+    const unsigned char* base = (const unsigned char*)hmod;
+    const IMAGE_DOS_HEADER* dos;
+    const IMAGE_NT_HEADERS* nt;
+    const unsigned char* lo;
+    const unsigned char* hi;
+    int i;
+    if (base == NULL) {
+        return;
+    }
+    dos = (const IMAGE_DOS_HEADER*)base;
+    nt = (const IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+    lo = base;
+    hi = base + nt->OptionalHeader.SizeOfImage;
+    for (i = 0; i < num_allowed_modules; i++) {
+        if (allowed_modules[i].lo == lo && allowed_modules[i].hi == hi) {
+            return;
+        }
+    }
+    if (num_allowed_modules < MAX_DIVZERO_MODULES) {
+        allowed_modules[num_allowed_modules].lo = lo;
+        allowed_modules[num_allowed_modules].hi = hi;
+        num_allowed_modules++;
+    }
+}
+
+void host_divzero_disallow_module(const void* hmod) {
+    const unsigned char* lo = (const unsigned char*)hmod;
+    int i;
+    for (i = 0; i < num_allowed_modules; i++) {
+        if (allowed_modules[i].lo == lo) {
+            num_allowed_modules--;
+            allowed_modules[i] = allowed_modules[num_allowed_modules];
+            return;
+        }
+    }
+}
 
 static int is_fatal_exception(DWORD code) {
     switch (code) {
@@ -106,8 +158,8 @@ static LONG CALLBACK divzero_handler(EXCEPTION_POINTERS* ep) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
 
-    /* only the exe's own divisions */
-    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_INT_DIVIDE_BY_ZERO || p < image_lo || p >= image_hi) {
+    /* only the exe's and loaded patch DLLs' own divisions */
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_INT_DIVIDE_BY_ZERO || !addr_in_allowed_module(p)) {
         return EXCEPTION_CONTINUE_SEARCH;
     }
     len = 0;
@@ -156,16 +208,21 @@ static LONG CALLBACK divzero_handler(EXCEPTION_POINTERS* ep) {
 }
 
 void host_divzero_install(void) {
-    const unsigned char* base = (const unsigned char*)GetModuleHandleA(NULL);
-    const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + ((const IMAGE_DOS_HEADER*)base)->e_lfanew);
-    image_lo = base;
-    image_hi = base + nt->OptionalHeader.SizeOfImage;
+    host_divzero_allow_module(GetModuleHandleA(NULL));
     AddVectoredExceptionHandler(1, divzero_handler);
 }
 
 #else
 
 void host_divzero_install(void) {
+}
+
+void host_divzero_allow_module(const void* hmod) {
+    (void)hmod;
+}
+
+void host_divzero_disallow_module(const void* hmod) {
+    (void)hmod;
 }
 
 #endif

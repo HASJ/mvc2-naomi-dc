@@ -716,3 +716,52 @@ void s3lIntr(void)
         s3l_intr(0, 0);
     }
 }
+
+typedef struct {
+    int32_t stereo[4];
+    int32_t mono[8];
+    S3LPORT port[S3L_PORTS];
+    uint8_t next[S3L_PORTS][S3L_HALF];
+    uint32_t next_rom[S3L_PORTS];
+    uint8_t next_ok[S3L_PORTS];
+} S3L_STATE;
+
+size_t s3l_state_size(void) {
+    return sizeof(S3L_STATE);
+}
+
+void s3l_state_save(void* out) {
+    S3L_STATE s;
+    memset(&s, 0, sizeof s);
+    memcpy(s.stereo, s3l_stereo, sizeof s3l_stereo);
+    memcpy(s.mono, s3l_mono, sizeof s3l_mono);
+    memcpy(s.port, s3l_port, sizeof s3l_port);
+    memcpy(s.next, s3l_next, sizeof s3l_next);
+    memcpy(s.next_rom, s3l_next_rom, sizeof s3l_next_rom);
+    memcpy(s.next_ok, s3l_next_ok, sizeof s3l_next_ok);
+    memcpy(out, &s, sizeof s);
+}
+
+void s3l_state_load(const void* in) {
+    S3L_STATE s;
+    memcpy(&s, in, sizeof s);
+    memcpy(s3l_stereo, s.stereo, sizeof s3l_stereo);
+    memcpy(s3l_mono, s.mono, sizeof s3l_mono);
+    memcpy(s3l_port, s.port, sizeof s3l_port);
+    memcpy(s3l_next, s.next, sizeof s3l_next);
+    memcpy(s3l_next_rom, s.next_rom, sizeof s3l_next_rom);
+    memcpy(s3l_next_ok, s.next_ok, sizeof s3l_next_ok);
+}
+
+uint64_t s3l_state_hash(void) {
+    S3L_STATE s;
+    const uint8_t* p = (const uint8_t*)&s;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    s3l_state_save(&s);
+    for (i = 0; i < sizeof s; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}

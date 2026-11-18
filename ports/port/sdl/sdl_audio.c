@@ -28,6 +28,7 @@ static int dropped, dry, waited, played;  /* MVC2_SNDDBG: counted, and shown at 
 static double lo = 99, hi;          /* the queue's least and most, in frames, before each frame's samples */
 static FILE* wav;                   /* MVC2_WAV: every frame's sound, the same in a test run as when played */
 static uint32_t wav_samples;
+static int rollback_fade;           /* 32-sample crossfade ramp after rollback */
 
 static void put32(uint8_t* p, uint32_t v) {
     p[0] = (uint8_t)v;
@@ -148,6 +149,14 @@ static void queue(const int16_t* in, int n, double stretch) {
             b[c] = in[i * CHANNELS + c];
             out[o * CHANNELS + c] = (int16_t)lrint(a[c] + (b[c] - a[c]) * f);
         }
+        if (rollback_fade > 0) {
+            int rem = 32 - rollback_fade;
+            for (c = 0; c < CHANNELS; c++) {
+                int32_t target = out[o * CHANNELS + c];
+                out[o * CHANNELS + c] = (int16_t)((in_last[c] * rollback_fade + target * rem) / 32);
+            }
+            rollback_fade--;
+        }
         o++;
         pos += step;
     }
@@ -155,6 +164,15 @@ static void queue(const int16_t* in, int n, double stretch) {
     in_last[0] = in[(n - 1) * CHANNELS];
     in_last[1] = in[(n - 1) * CHANNELS + 1];
     put(out, o);
+}
+
+void sdl_audio_notify_rollback(void) {
+    rollback_fade = 32;
+}
+
+void sdl_audio_step_silent(void) {
+    const int16_t* s;
+    (void)snd_frame(&s);
 }
 
 /* frames run faster than 59.94 (MVC2_FPS) wait for the device while the queue is 2.5 frames past its mark, but

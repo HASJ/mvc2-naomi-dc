@@ -4,6 +4,8 @@
  */
 
 #include <math.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef float NLMTX[16];
@@ -414,4 +416,71 @@ __attribute__((section(".text.nlhot"))) const float* nl_xmtrx(void) {
 
 __attribute__((section(".text.nlhot"))) const float* nl_view_matrix(void) {
     return *nlMatrixStack[2].matrix;
+}
+
+typedef struct {
+    NLMATRIXSTACK stacks[4];
+    unsigned char matrix_mode;
+    NLMTX xm;
+    NLMTX view_stack[VIEW_DEPTH + 1];
+    NLMTX proj_stack[PROJ_DEPTH + 1];
+} NL_XMTR_STATE;
+
+size_t nl_xmtr_state_size(void) {
+    return sizeof(NL_XMTR_STATE);
+}
+
+void nl_xmtr_state_save(void* out) {
+    NL_XMTR_STATE s;
+    memcpy(s.stacks, nlMatrixStack, sizeof nlMatrixStack);
+    s.matrix_mode = matrix_mode;
+    memcpy(s.xm, xm, sizeof xm);
+    memcpy(s.view_stack, view_stack, sizeof view_stack);
+    memcpy(s.proj_stack, proj_stack, sizeof proj_stack);
+    memcpy(out, &s, sizeof s);
+}
+
+void nl_xmtr_state_load(const void* in) {
+    NL_XMTR_STATE s;
+    memcpy(&s, in, sizeof s);
+    memcpy(nlMatrixStack, s.stacks, sizeof nlMatrixStack);
+    matrix_mode = s.matrix_mode;
+    memcpy(xm, s.xm, sizeof xm);
+    memcpy(view_stack, s.view_stack, sizeof view_stack);
+    memcpy(proj_stack, s.proj_stack, sizeof proj_stack);
+}
+
+uint64_t nl_xmtr_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    const uint8_t* p;
+    size_t i;
+    int s;
+    for (s = 0; s < 4; s++) {
+        int32_t idx = nlMatrixStack[s].base != NULL && nlMatrixStack[s].matrix != NULL
+                          ? (int32_t)(nlMatrixStack[s].matrix - nlMatrixStack[s].base)
+                          : 0;
+        uint32_t meta[3] = { (uint32_t)nlMatrixStack[s].count, (uint32_t)nlMatrixStack[s].max, (uint32_t)idx };
+        for (i = 0; i < sizeof meta; i++) {
+            h ^= ((const uint8_t*)meta)[i];
+            h *= 1099511628211ULL;
+        }
+    }
+    h ^= matrix_mode;
+    h *= 1099511628211ULL;
+    p = (const uint8_t*)xm;
+    for (i = 0; i < sizeof xm; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    p = (const uint8_t*)view_stack;
+    for (i = 0; i < sizeof view_stack; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    p = (const uint8_t*)proj_stack;
+    for (i = 0; i < sizeof proj_stack; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }

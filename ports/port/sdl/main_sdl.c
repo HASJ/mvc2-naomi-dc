@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 #include "sdl_front.h"
 #ifdef MVC2_SDL3
@@ -19,6 +23,7 @@
 #endif
 #include "input_sdl.h"
 #include "menu_sdl.h"
+#include "savestate.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
 void sdl_audio_frame(void);
@@ -41,48 +46,75 @@ const HOST_INPUT* host_input(void) {
     return &input;
 }
 
+void host_set_input(const HOST_INPUT* in) {
+    if (in != NULL) {
+        input = *in;
+    }
+}
+
 static unsigned presented;
 static int switch_req;      /* F9 */
 static int coin_req;
-static int test_run;        /* MVC2_FRAMES: the press list is the only input */
+static int test_run;        /* MVC2_FRAMES or headless run: no focus steal, press list only */
 
-/* MVC2_PRESS=n:key,...: player 1 holds the key for 5 frames from frame n; coin and switch happen at n */
-static uint32_t pressed(void) {
+int host_is_headless(void) {
+    return test_run;
+}
+
+/* MVC2_PRESS=[n][+dur]:[p1:|p2:]key,...: player holds key for dur frames (default 5); coin/switch/test at n */
+static void pressed(uint32_t out_bits[2]) {
     static const struct {
         const char* name;
         uint32_t bit;
     } keys[] = {
-        { "start", JVS_START }, { "up", JVS_UP }, { "down", JVS_DOWN }, { "left", JVS_LEFT }, { "right", JVS_RIGHT },
-        { "b1", JVS_B1 }, { "b2", JVS_B2 }, { "b3", JVS_B3 }, { "b4", JVS_B4 }, { "b5", JVS_B5 }, { "b6", JVS_B6 },
+        { "start", JVS_START }, { "service", JVS_SERVICE }, { "up", JVS_UP }, { "down", JVS_DOWN },
+        { "left", JVS_LEFT }, { "right", JVS_RIGHT }, { "b1", JVS_B1 }, { "b2", JVS_B2 },
+        { "b3", JVS_B3 }, { "b4", JVS_B4 }, { "b5", JVS_B5 }, { "b6", JVS_B6 },
+        { "dash", HOST_DASH }, { "sjump", HOST_SJUMP },
     };
     const char* p = getenv("MVC2_PRESS");
-    uint32_t bits = 0;
+    out_bits[0] = 0;
+    out_bits[1] = 0;
     while (p != NULL && *p != 0) {
-        char name[16];
-        unsigned at;
-        size_t i;
-        if (sscanf(p, "%u:%15[a-z0-9]", &at, name) == 2 && presented == at && strcmp(name, "switch") == 0) {
-            switch_req = 1;
+        unsigned at = 0, dur = 5;
+        int pl = 0, used = 0;
+        char rest[32];
+        const char* keyname = rest;
+        if (sscanf(p, "%u+%u:%31[^,]", &at, &dur, rest) == 3) {
+            used = 1;
+        } else if (sscanf(p, "%u:%31[^,]", &at, rest) == 2) {
+            dur = 5;
+            used = 1;
         }
-        if (sscanf(p, "%u:%15[a-z0-9]", &at, name) == 2 && presented == at && strcmp(name, "coin") == 0) {
-            coin_req = 1;
-        }
-        if (sscanf(p, "%u:%15[a-z0-9]", &at, name) == 2 && presented >= at && presented < at + 5) {
-            for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
-                if (strcmp(name, keys[i].name) == 0) {
-                    bits |= keys[i].bit;
+        if (used) {
+            if (strncmp(keyname, "p1:", 3) == 0) {
+                pl = 0;
+                keyname += 3;
+            } else if (strncmp(keyname, "p2:", 3) == 0) {
+                pl = 1;
+                keyname += 3;
+            }
+            if (presented == at && strcmp(keyname, "switch") == 0) {
+                switch_req = 1;
+            } else if (presented == at && strcmp(keyname, "coin") == 0) {
+                coin_req = 1;
+            } else if (presented >= at && presented < at + dur) {
+                size_t i;
+                for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
+                    if (strcmp(keyname, keys[i].name) == 0) {
+                        out_bits[pl] |= keys[i].bit;
+                        break;
+                    }
                 }
             }
         }
         p = strchr(p, ',');
         p = p != NULL ? p + 1 : NULL;
     }
-    return bits;
 }
 
 static void read_input(void) {
-    input.player[0] = pressed();
-    input.player[1] = 0;
+    pressed(input.player);
     input.coin = 0;
     input.test = 0;
     if (!test_run) {
@@ -187,16 +219,32 @@ static void screenshot(void) {
 }
 
 /* both boards: a 27 MHz pixel clock, 858 by 525 */
+static double base_frame_rate = 27000000.0 / (858.0 * 525.0);
 static double frame_rate = 27000000.0 / (858.0 * 525.0);
+static double rate_scale = 1.0;
 static Uint64 next_frame;
+
+void pace_set_rate_scale(double scale) {
+    if (scale < 0.90) {
+        scale = 0.90;
+    }
+    if (scale > 1.10) {
+        scale = 1.10;
+    }
+    rate_scale = scale;
+    if (base_frame_rate > 0.0) {
+        frame_rate = base_frame_rate * rate_scale;
+    }
+}
 
 static void pace_init(void) {
     const char* fps = getenv("MVC2_FPS");
     if (fps != NULL) {
-        frame_rate = atof(fps);
-    } else if (getenv("MVC2_FRAMES") != NULL) {
-        frame_rate = 0;
+        base_frame_rate = atof(fps);
+    } else if (test_run || getenv("MVC2_FRAMES") != NULL) {
+        base_frame_rate = 0;
     }
+    frame_rate = base_frame_rate * rate_scale;
 }
 
 /* sleep most of the way, then spin the last 2 ms */
@@ -339,7 +387,12 @@ static void show(SDL_Texture* t) {
 
 void host_present(void) {
     SDL_Texture* t = screen;
-    Uint64 start = SDL_GetPerformanceCounter();
+    Uint64 start;
+    if (rd_discard) {
+        rd_begin_frame();
+        return;
+    }
+    start = SDL_GetPerformanceCounter();
 #ifdef MVC2_SDL3
     if (gpu) {
         t = gpu_frame();
@@ -513,7 +566,7 @@ static int open_window(void) {
     const char* scale = config_get("scale");
     const char* r;
     int w, h, i;
-    keep_settings = getenv("MVC2_FRAMES") == NULL;
+    keep_settings = !test_run;
     if (!keep_settings) {
         full = NULL;
     }
@@ -523,15 +576,26 @@ static int open_window(void) {
     w = w < RD_WIDTH / 2 ? RD_WIDTH / 2 : w;
     h = h < RD_HEIGHT / 2 ? RD_HEIGHT / 2 : h;
 #ifdef MVC2_SDL3
-    window = SDL_CreateWindow(game_title(), w, h,
-                              SDL_WINDOW_RESIZABLE | (full != NULL && strcmp(full, "yes") == 0 ? SDL_WINDOW_FULLSCREEN : 0));
+    window = SDL_CreateWindow(
+        game_title(), w, h,
+        SDL_WINDOW_RESIZABLE | (test_run ? SDL_WINDOW_MINIMIZED : 0) |
+            (full != NULL && strcmp(full, "yes") == 0 ? SDL_WINDOW_FULLSCREEN : 0));
     if (window == NULL) {
         return 0;
     }
     SDL_SetWindowMinimumSize(window, RD_WIDTH / 2, RD_HEIGHT / 2);
+#ifdef _WIN32
+    if (test_run) {
+        HWND hwnd = (HWND)SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                                 SDL_PROP_WINDOW_WIN32_HWND_POINTER, NULL);
+        if (hwnd != NULL) {
+            ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+        }
+    }
+#endif
 #else
     window = SDL_CreateWindow(game_title(), SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, w, h,
-                              SDL_WINDOW_RESIZABLE |
+                              SDL_WINDOW_RESIZABLE | (test_run ? SDL_WINDOW_MINIMIZED : 0) |
                                   (full != NULL && strcmp(full, "yes") == 0 ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0));
     if (window == NULL) {
         return 0;
@@ -686,11 +750,22 @@ void host_out_of_memory(const char* what, size_t bytes) {
     exit(1);
 }
 
+static int has_arg(int argc, char** argv, const char* flag) {
+    int i;
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], flag) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     int quit = 0;
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
 
-    test_run = frames_left >= 0;
+    test_run = frames_left >= 0 || getenv("MVC2_HEADLESS") != NULL || has_arg(argc, argv, "--headless") ||
+               has_arg(argc, argv, "--savestate-check") || has_arg(argc, argv, "--replay-verify");
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -699,6 +774,10 @@ int main(int argc, char** argv) {
     host_divzero_install();
     pace_init();
 #ifdef MVC2_SDL3
+    if (test_run) {
+        SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
+        SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "0");
+    }
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (test_run ? 0 : SDL_INIT_GAMEPAD))) {
 #else
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
@@ -719,13 +798,29 @@ int main(int argc, char** argv) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    if (frames_left < 0) {
+    if (!test_run) {
         sdl_audio_open();
     }
     host_keep_start();
     rd_begin_frame();
     if (!start_game()) {
         return 1;
+    }
+    if (cli_has_flag("savestate-check") || getenv("MVC2_SAVESTATE_TEST") != NULL) {
+        int test_rc = savestate_run_self_test();
+        save_window();
+        snd_close();
+        sdl_audio_close();
+        host_stub_report();
+#ifdef MVC2_SDL3
+        if (gpu) {
+            SDL_DestroyRenderer(renderer);
+            rd_gpu_quit();
+            SDL_DestroyGPUDevice(gpu);
+        }
+#endif
+        SDL_Quit();
+        return test_rc;
     }
     while (!quit) {
         SDL_Event e;

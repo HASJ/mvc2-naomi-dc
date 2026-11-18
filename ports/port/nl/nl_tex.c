@@ -296,42 +296,123 @@ static size_t source_at(int type, int w, int h, size_t bytes) {
     return texels_made(type, w, h) ? bytes : 0;
 }
 
+static void keep_source(NL_TEX* t, const void* src, size_t bytes);
+
+typedef struct NL_TEX_BLOB {
+    uint32_t refcnt;
+    size_t room;
+    size_t texel_bytes;
+    uint32_t twiddled_off;
+    uint64_t hash;
+    uint8_t data[];
+} NL_TEX_BLOB;
+
+static NL_TEX_BLOB* slot_blobs[NL_MAX_TEX];
+static void retire_blob(NL_TEX_BLOB* b);
+
+static NL_TEX_BLOB* blob_alloc(size_t room, size_t texel_bytes) {
+    NL_TEX_BLOB* b = (NL_TEX_BLOB*)host_try_malloc(sizeof(NL_TEX_BLOB) + room);
+    if (b == NULL) {
+        return NULL;
+    }
+    b->refcnt = 1;
+    b->room = room;
+    b->texel_bytes = texel_bytes;
+    b->twiddled_off = 0xFFFFFFFFu;
+    b->hash = 0;
+    return b;
+}
+
+static void blob_release(NL_TEX_BLOB* b) {
+    if (b != NULL && --b->refcnt == 0) {
+        free(b);
+    }
+}
+
+static int blob_cow(int idx, size_t min_room, size_t texel_bytes, int copy_old) {
+    NL_TEX_BLOB* cur = slot_blobs[idx];
+    NL_TEX_BLOB* nb;
+    NL_TEX* t = &nl_tex[idx];
+    if (cur != NULL && cur->refcnt == 1 && cur->room >= min_room) {
+        cur->texel_bytes = texel_bytes;
+        cur->hash = 0;
+        return 1;
+    }
+    nb = blob_alloc(min_room, texel_bytes);
+    if (nb == NULL) {
+        return 0;
+    }
+    if (copy_old && cur != NULL) {
+        size_t ncopy = cur->room < min_room ? cur->room : min_room;
+        memcpy(nb->data, cur->data, ncopy);
+        nb->twiddled_off = cur->twiddled_off;
+    }
+    retire_blob(cur);
+    slot_blobs[idx] = nb;
+    t->tex.texels = nb->data;
+    t->bytes = nb->room;
+    if (copy_old) {
+        set_mips(&t->tex, texel_bytes);
+        t->tex.twiddled = nb->twiddled_off != 0xFFFFFFFFu ? nb->data + nb->twiddled_off : NULL;
+    } else {
+        t->tex.twiddled = NULL;
+    }
+    return 1;
+}
+
 static void keep_source(NL_TEX* t, const void* src, size_t bytes) {
+    int idx = (int)(t - nl_tex);
     size_t n = source_kept(t->type, t->tex.width, t->tex.height);
     void* at = n != 0 ? memcpy((uint8_t*)t->tex.texels + source_at(t->type, t->tex.width, t->tex.height, bytes), src, n)
                       : NULL;
     t->tex.twiddled = (t->type >> 8 & 0xff) == KM_PAL4 ? at : NULL;
+    if (slot_blobs[idx] != NULL) {
+        slot_blobs[idx]->twiddled_off =
+            ((t->type >> 8 & 0xff) == KM_PAL4 && at != NULL) ? (uint32_t)((uint8_t*)at - slot_blobs[idx]->data)
+                                                             : 0xFFFFFFFFu;
+        slot_blobs[idx]->hash = 0;
+    }
 }
 
 /* a load that changes no texels keeps the serial */
 static int unpack_again(NL_TEX* t, const void* src, size_t bytes, size_t texel) {
     size_t kept = source_kept(t->type, t->tex.width, t->tex.height), room = bytes + kept;
-    void *old = t->tex.texels, *made;
+    int idx = (int)(t - nl_tex);
+    NL_TEX_BLOB* old = slot_blobs[idx];
+    NL_TEX_BLOB* made;
     int ok;
     if (!texels_made(t->type, t->tex.width, t->tex.height)) {
-        if (memcmp(old, src, kept) != 0) {
+        if (memcmp(t->tex.texels, src, kept) != 0) {
+            if (!blob_cow(idx, room, texel, 0)) {
+                return 0;
+            }
             keep_source(t, src, bytes);
             t->tex.serial = ++serials;
         }
         return 1;
     }
-    made = host_try_malloc(room);
+    made = blob_alloc(room, texel);
     if (made == NULL) {
+        if (!blob_cow(idx, room, texel, 0)) {
+            return 0;
+        }
         ok = unpack_texels(&t->tex, t->type, src);      /* no room for both */
         keep_source(t, src, bytes);
         t->tex.serial = ++serials;
         return ok;
     }
-    t->tex.texels = made;
+    t->tex.texels = made->data;
     set_mips(&t->tex, texel);
     ok = unpack_texels(&t->tex, t->type, src);
-    if (ok && memcmp(old, made, bytes) == 0) {
-        free(made);
-        t->tex.texels = old;
+    if (ok && old != NULL && memcmp(old->data, made->data, bytes) == 0) {
+        blob_release(made);
+        t->tex.texels = old->data;
         set_mips(&t->tex, texel);
+        t->tex.twiddled = old->twiddled_off != 0xFFFFFFFFu ? old->data + old->twiddled_off : NULL;
         return 1;
     }
-    free(old);
+    retire_blob(old);
+    slot_blobs[idx] = made;
     t->bytes = room;
     keep_source(t, src, bytes);
     t->tex.serial = ++serials;
@@ -430,8 +511,6 @@ static size_t texel_bytes(int type, int w, int h, size_t* texel) {
     return mipmapped(kind) && w == h ? bytes * 4 / 3 + *texel : bytes;
 }
 
-static void retire(void* texels);
-
 #ifdef __3DS__
 /* MVC2_TEX_KEEP_FREED=1: a small texture the game frees kept as it was, with its serial, while the kept ones come to
    no more than KEEP_MOST bytes; loaded again from a source of the same hash it is back as it was, unpacked again
@@ -456,11 +535,14 @@ static int keep_freed(void) {
 }
 
 static void kept_let_go(NL_TEX* t) {
-    kept_freed[t - nl_tex] = 0;
+    int idx = (int)(t - nl_tex);
+    kept_freed[idx] = 0;
     kept_bytes -= t->bytes;
-    hash_ok[t - nl_tex] = 0;
-    retire(t->tex.texels);
+    hash_ok[idx] = 0;
+    retire_blob(slot_blobs[idx]);
+    slot_blobs[idx] = NULL;
     t->tex.texels = NULL;
+    t->tex.twiddled = NULL;
     t->tex.levels = 0;
     t->bytes = 0;
 }
@@ -524,17 +606,16 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
     }
     hash_ok[t - nl_tex] = 0;
     room = source_at(thd->type, w, h, bytes) + source_kept(thd->type, w, h);
-    if (t->tex.texels == NULL || t->bytes < room) {
-        free(t->tex.texels);
-        t->tex.texels = host_try_malloc(room);
+    if (!blob_cow((int)(t - nl_tex), room, texel, 0)) {
 #ifdef __3DS__
-        if (t->tex.texels == NULL && kept_bytes != 0) {
+        if (kept_bytes != 0) {
             kept_let_go_all();
-            t->tex.texels = host_try_malloc(room);
+            if (blob_cow((int)(t - nl_tex), room, texel, 0)) {
+                goto got_room;
+            }
         }
 #endif
-        t->bytes = room;
-        if (t->tex.texels == NULL) {
+        {
             static int told;
             if (told++ < 8) {
                 host_log("textures: no memory for a %dx%d texture of type %04X, %lu bytes: not drawn", w, h, thd->type,
@@ -543,6 +624,9 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
             return 0;
         }
     }
+#ifdef __3DS__
+got_room:
+#endif
     t->tex.width = w;
     t->tex.height = h;
     t->tex.levels = levels;
@@ -616,6 +700,10 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes) {
             c->used = ++cache_clock;
             if (t->tex.serial != c->serial) {
                 if (made) {
+                    if (!blob_cow((int)at, bytes + source_kept(t->type, t->tex.width, t->tex.height),
+                                  slot_blobs[at] != NULL ? slot_blobs[at]->texel_bytes : 1, 0)) {
+                        return 0;
+                    }
                     memcpy(t->tex.texels, cache_texels[h % CACHE_SETS][i], bytes);
                 }
                 keep_source(t, src, bytes);
@@ -632,6 +720,10 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes) {
     if (made) {
         uint8_t* out = cache_texels[h % CACHE_SETS][e - set];
         if (!unpack_level(kind, t->tex.width, t->tex.height, src, out)) {
+            return 0;
+        }
+        if (!blob_cow((int)at, bytes + source_kept(t->type, t->tex.width, t->tex.height),
+                      slot_blobs[at] != NULL ? slot_blobs[at]->texel_bytes : 1, 0)) {
             return 0;
         }
         memcpy(t->tex.texels, out, bytes);
@@ -668,7 +760,7 @@ int nl_tex_reload(NL_TEX* t, const void* texels) {
 #define RETIRE_FRAMES 3
 
 typedef struct {
-    void* texels;
+    NL_TEX_BLOB* blob;
     uint32_t drawn;
 } RETIRED;
 
@@ -676,15 +768,15 @@ static RETIRED* retired;
 static int nretired, retired_room;
 static uint32_t drawn;          /* frames given to the renderer */
 
-static void retire(void* texels) {
-    if (texels == NULL) {
+static void retire_blob(NL_TEX_BLOB* b) {
+    if (b == NULL) {
         return;
     }
     if (nretired == retired_room) {
         int room = retired_room != 0 ? retired_room * 2 : 512;
         RETIRED* r = host_try_malloc(sizeof *r * (size_t)room);
         if (r == NULL) {
-            free(texels);       /* nothing points at them: the slot's pointer is cleared */
+            blob_release(b);       /* nothing points at them: the slot's pointer is cleared */
             return;
         }
         if (nretired != 0) {
@@ -694,7 +786,7 @@ static void retire(void* texels) {
         retired = r;
         retired_room = room;
     }
-    retired[nretired].texels = texels;
+    retired[nretired].blob = b;
     retired[nretired].drawn = drawn;
     nretired++;
 }
@@ -702,7 +794,7 @@ static void retire(void* texels) {
 static void retire_all(void) {
     int i;
     for (i = 0; i < nretired; i++) {
-        free(retired[i].texels);
+        blob_release(retired[i].blob);
     }
     free(retired);
     retired = NULL;
@@ -725,7 +817,7 @@ void nl_tex_frame(void) {
     }
     for (i = 0; i < nretired; i++) {
         if (drawn - retired[i].drawn >= RETIRE_FRAMES) {
-            free(retired[i].texels);
+            blob_release(retired[i].blob);
         } else {
             retired[n++] = retired[i];
         }
@@ -737,21 +829,24 @@ void nl_tex_frame(void) {
 }
 
 void nl_tex_free(NL_TEX* t) {
+    int idx = (int)(t - nl_tex);
 #ifdef __3DS__
-    if (t->loaded && hash_ok[t - nl_tex] && t->bytes <= KEEP_ONE && kept_bytes + t->bytes <= KEEP_MOST && keep_freed()) {
-        kept_freed[t - nl_tex] = 1;
+    if (t->loaded && hash_ok[idx] && t->bytes <= KEEP_ONE && kept_bytes + t->bytes <= KEEP_MOST && keep_freed()) {
+        kept_freed[idx] = 1;
         kept_bytes += t->bytes;
         t->loaded = 0;
         return;
     }
-    if (kept_freed[t - nl_tex]) {
+    if (kept_freed[idx]) {
         kept_let_go(t);
         return;
     }
 #endif
     t->loaded = 0;
-    retire(t->tex.texels);
+    retire_blob(slot_blobs[idx]);
+    slot_blobs[idx] = NULL;
     t->tex.texels = NULL;
+    t->tex.twiddled = NULL;
     t->tex.levels = 0;
     t->bytes = 0;
 }
@@ -770,8 +865,10 @@ void nl_tex_free_all(void) {
 #endif
     retire_all();
     for (i = 0; i < NL_MAX_TEX; i++) {
-        free(nl_tex[i].tex.texels);     /* the mip levels too */
+        blob_release(slot_blobs[i]);
+        slot_blobs[i] = NULL;
         nl_tex[i].tex.texels = NULL;
+        nl_tex[i].tex.twiddled = NULL;
         nl_tex[i].tex.levels = 0;
         nl_tex[i].bytes = 0;
         nl_tex[i].loaded = 0;
@@ -869,4 +966,178 @@ void nlLoadCorePaletteData(void) {
 }
 
 void nlFreePaletteAll(void) {
+}
+
+typedef struct {
+    NL_TEX_BLOB* blob;
+    int type, loaded, palette;
+    int width, height, format, levels;
+    uint32_t unpacked;
+    void (*unpack)(const RD_TEXTURE*, RD_TEXTURE*);
+    uint64_t loaded_hash;
+    uint8_t hash_ok;
+} NL_TEX_SLOT_SNAP;
+
+typedef struct {
+    NL_TEX_SLOT_SNAP slots[NL_MAX_TEX];
+    int tex_offset;
+    uint16_t pal_work[1024];
+    int pal_dirty;
+    int pal_mode;
+    int palette_direct;
+} NL_TEX_SNAP;
+
+size_t nl_tex_state_size(void) {
+    return sizeof(NL_TEX_SNAP);
+}
+
+void nl_tex_state_init(void* buf) {
+    memset(buf, 0, sizeof(NL_TEX_SNAP));
+}
+
+void nl_tex_state_free(void* buf) {
+    NL_TEX_SNAP* s = (NL_TEX_SNAP*)buf;
+    int i;
+    if (s == NULL) {
+        return;
+    }
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        blob_release(s->slots[i].blob);
+        s->slots[i].blob = NULL;
+    }
+}
+
+void nl_tex_state_save(void* buf) {
+    NL_TEX_SNAP* s = (NL_TEX_SNAP*)buf;
+    int i;
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        NL_TEX* t = &nl_tex[i];
+        NL_TEX_BLOB* b = slot_blobs[i];
+        NL_TEX_SLOT_SNAP* dst = &s->slots[i];
+        blob_release(dst->blob);
+        dst->blob = b;
+        if (b != NULL) {
+            b->refcnt++;
+            if (b->hash == 0 && b->room > 0) {
+                b->hash = source_hash64(b->data, b->room);
+            }
+        }
+        dst->type = t->type;
+        dst->loaded = t->loaded;
+        dst->palette = t->palette;
+        dst->width = t->tex.width;
+        dst->height = t->tex.height;
+        dst->format = t->tex.format;
+        dst->levels = t->tex.levels;
+        dst->unpacked = t->tex.unpacked;
+        dst->unpack = t->tex.unpack;
+        dst->loaded_hash = loaded_hash[i];
+        dst->hash_ok = hash_ok[i];
+    }
+    s->tex_offset = nl_tex_offset;
+    memcpy(s->pal_work, pal_work, sizeof pal_work);
+    s->pal_dirty = pal_dirty;
+    s->pal_mode = pal_mode;
+    s->palette_direct = nl_palette_direct;
+}
+
+void nl_tex_state_load(const void* buf) {
+    const NL_TEX_SNAP* s = (const NL_TEX_SNAP*)buf;
+    int i;
+    nl_tex_offset = s->tex_offset;
+    memcpy(pal_work, s->pal_work, sizeof pal_work);
+    pal_dirty = s->pal_dirty;
+    pal_mode = s->pal_mode;
+    nl_palette_direct = s->palette_direct;
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        const NL_TEX_SLOT_SNAP* src = &s->slots[i];
+        NL_TEX* t = &nl_tex[i];
+        NL_TEX_BLOB* b = src->blob;
+        int same = slot_blobs[i] == b && t->loaded == src->loaded && t->type == src->type &&
+                   t->tex.width == src->width && t->tex.height == src->height && t->tex.format == src->format &&
+                   t->tex.levels == src->levels;
+        if (same) {
+            t->palette = src->palette;
+            loaded_hash[i] = src->loaded_hash;
+            hash_ok[i] = src->hash_ok;
+            continue;
+        }
+        retire_blob(slot_blobs[i]);
+        slot_blobs[i] = b;
+        if (b != NULL) {
+            b->refcnt++;
+        }
+        t->loaded = src->loaded;
+        t->type = src->type;
+        t->palette = src->palette;
+        t->bytes = b != NULL ? b->room : 0;
+        t->tex.width = src->width;
+        t->tex.height = src->height;
+        t->tex.format = src->format;
+        t->tex.levels = src->levels;
+        t->tex.unpacked = src->unpacked;
+        t->tex.unpack = src->unpack;
+        t->tex.texels = b != NULL ? b->data : NULL;
+        if (b != NULL && t->tex.levels > 0) {
+            set_mips(&t->tex, b->texel_bytes);
+        } else {
+            memset((void*)t->tex.mip, 0, sizeof t->tex.mip);
+        }
+        t->tex.twiddled = (b != NULL && b->twiddled_off != 0xFFFFFFFFu) ? (b->data + b->twiddled_off) : NULL;
+        t->tex.serial = ++serials;
+        loaded_hash[i] = src->loaded_hash;
+        hash_ok[i] = src->hash_ok;
+        last_load[i].serial = 0;
+    }
+}
+
+uint64_t nl_tex_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    const uint8_t* p;
+    size_t k;
+    int i;
+    uint32_t hdr[4] = { (uint32_t)nl_tex_offset, (uint32_t)pal_dirty, (uint32_t)pal_mode, (uint32_t)nl_palette_direct };
+    p = (const uint8_t*)hdr;
+    for (k = 0; k < sizeof hdr; k++) {
+        h ^= p[k];
+        h *= 1099511628211ULL;
+    }
+    p = (const uint8_t*)pal_work;
+    for (k = 0; k < sizeof pal_work; k++) {
+        h ^= p[k];
+        h *= 1099511628211ULL;
+    }
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        NL_TEX* t = &nl_tex[i];
+        NL_TEX_BLOB* b = slot_blobs[i];
+        if (!t->loaded && b == NULL) {
+            continue;
+        }
+        if (b != NULL && b->hash == 0 && b->room > 0) {
+            b->hash = source_hash64(b->data, b->room);
+        }
+        {
+            uint32_t m[9] = { (uint32_t)i, (uint32_t)t->loaded, (uint32_t)t->type, (uint32_t)t->palette,
+                              (uint32_t)t->tex.width, (uint32_t)t->tex.height, (uint32_t)t->tex.format,
+                              (uint32_t)t->tex.levels, (uint32_t)hash_ok[i] };
+            uint64_t bhash = b != NULL ? b->hash : 0;
+            uint64_t lhash = loaded_hash[i];
+            p = (const uint8_t*)m;
+            for (k = 0; k < sizeof m; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+            p = (const uint8_t*)&bhash;
+            for (k = 0; k < 8; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+            p = (const uint8_t*)&lhash;
+            for (k = 0; k < 8; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+        }
+    }
+    return h;
 }

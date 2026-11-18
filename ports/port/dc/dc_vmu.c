@@ -66,7 +66,7 @@ typedef struct {
 } BUS_BACKUPFILEHEADER;
 
 static Uint8 card[BLOCKS * BLOCK];
-static int present, keep;   /* a card is in; it is saved to its file */
+static int present, keep, netplay_locked;   /* a card is in; it is saved to its file */
 static char path[1100];
 static int (*complete)(int, int, int, int);
 
@@ -156,7 +156,7 @@ static void format(void) {
 static void save_card(void) {
     char tmp[1110];
     FILE* f;
-    if (!keep) {
+    if (!keep || netplay_locked) {
         return;
     }
     snprintf(tmp, sizeof tmp, "%s.new", path);
@@ -261,7 +261,18 @@ static void bu_server(void) {
 }
 
 static int card_in(int drive) {
-    return drive == 0 && present;
+    return drive == 0 && present && !netplay_locked;
+}
+
+void dc_vmu_set_netplay_lock(int locked) {
+    netplay_locked = locked ? 1 : 0;
+    if (netplay_locked) {
+        ndone = 0;
+    }
+}
+
+int dc_vmu_is_netplay_locked(void) {
+    return netplay_locked;
 }
 
 /* ---- the library's calls ---- */
@@ -272,7 +283,7 @@ int buInit(int capacity, int drives, void* work, void (*func)(void)) {
     (void)work;
     ndone = 0;
     complete = NULL;
-    present = (drives & 1) && (getenv("MVC2_FRAMES") == NULL || getenv("MVC2_VMU") != NULL);
+    present = !netplay_locked && (drives & 1) && (getenv("MVC2_FRAMES") == NULL || getenv("MVC2_VMU") != NULL);
     keep = present;
     format();
     if (keep) {
@@ -306,6 +317,68 @@ int buExit(void) {
 int buSetCompleteCallback(int (*func)(int, int, int, int)) {
     complete = func;
     return BUD_ERR_OK;
+}
+
+typedef struct {
+    int present;
+    int keep;
+    int netplay_locked;
+    int ndone;
+    struct {
+        int drive, op, status;
+    } done[16];
+} DC_VMU_HDR;
+
+size_t dc_vmu_state_size(void) {
+    return sizeof(DC_VMU_HDR) + sizeof(card);
+}
+
+void dc_vmu_state_save(void* out) {
+    DC_VMU_HDR hdr;
+    uint8_t* dst = (uint8_t*)out;
+    memset(&hdr, 0, sizeof hdr);
+    hdr.present = present;
+    hdr.keep = keep;
+    hdr.netplay_locked = netplay_locked;
+    hdr.ndone = ndone;
+    memcpy(hdr.done, done, sizeof done);
+    memcpy(dst, &hdr, sizeof hdr);
+    if (!netplay_locked) {
+        memcpy(dst + sizeof hdr, card, sizeof card);
+    } else {
+        memset(dst + sizeof hdr, 0, sizeof card);
+    }
+}
+
+void dc_vmu_state_load(const void* in) {
+    DC_VMU_HDR hdr;
+    const uint8_t* src = (const uint8_t*)in;
+    memcpy(&hdr, src, sizeof hdr);
+    present = hdr.present;
+    keep = hdr.keep;
+    netplay_locked = hdr.netplay_locked;
+    ndone = hdr.ndone;
+    memcpy(done, hdr.done, sizeof done);
+    if (!netplay_locked) {
+        memcpy(card, src + sizeof hdr, sizeof card);
+    }
+}
+
+uint64_t dc_vmu_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    DC_VMU_HDR hdr;
+    const uint8_t* p = (const uint8_t*)&hdr;
+    size_t i;
+    memset(&hdr, 0, sizeof hdr);
+    hdr.present = present;
+    hdr.netplay_locked = netplay_locked;
+    hdr.ndone = ndone;
+    memcpy(hdr.done, done, sizeof done);
+    for (i = 0; i < sizeof hdr; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }
 
 int buMountDisk(int drive, void* work, int size) {

@@ -4,6 +4,8 @@
  */
 
 #include <math.h>
+#include <stddef.h>
+#include <string.h>
 
 #include "nl_port.h"
 #include "prof.h"
@@ -199,4 +201,27 @@ static int spr_put(const NLsprarg* a) {
     s.palette = nl_palette_base(t, t->palette);
     rd_quad(&s, v);
     return 0;
+}
+
+typedef struct {
+    int max_spr;
+    float screen_x;
+    float screen_y;
+} NL_SPRITE_STATE;
+
+size_t nl_sprite_state_size(void) {
+    return sizeof(NL_SPRITE_STATE);
+}
+
+void nl_sprite_state_save(void* out) {
+    NL_SPRITE_STATE s = { max_spr, screen_x, screen_y };
+    memcpy(out, &s, sizeof s);
+}
+
+void nl_sprite_state_load(const void* in) {
+    NL_SPRITE_STATE s;
+    memcpy(&s, in, sizeof s);
+    max_spr = s.max_spr;
+    screen_x = s.screen_x;
+    screen_y = s.screen_y;
 }

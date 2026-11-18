@@ -135,6 +135,52 @@ void rd_fog_density(uint32_t reg) {
     rd_fog.density = (float)(reg >> 8 & 255) / 128.0f * ldexpf(1.0f, (int8_t)(reg & 255));
 }
 
+typedef struct {
+    uint32_t palette[1024];
+    RD_FOG fog;
+    int invert;
+    RD_VTX bg[3];
+} RD_STATE_SNAP;
+
+size_t rd_state_size(void) {
+    return sizeof(RD_STATE_SNAP);
+}
+
+void rd_state_save(void* out) {
+    RD_STATE_SNAP s;
+    memcpy(s.palette, rd_palette, sizeof rd_palette);
+    s.fog = rd_fog;
+    s.invert = rd_invert;
+    memcpy(s.bg, rd_frame->background, sizeof s.bg);
+    memcpy(out, &s, sizeof s);
+}
+
+void rd_state_load(const void* in) {
+    RD_STATE_SNAP s;
+    memcpy(&s, in, sizeof s);
+    if (memcmp(rd_palette, s.palette, sizeof rd_palette) != 0) {
+        memcpy(rd_palette, s.palette, sizeof rd_palette);
+        rd_palette_serial++;
+    }
+    rd_fog = s.fog;
+    rd_invert = s.invert;
+    memcpy(rd_frame->background, s.bg, sizeof rd_frame->background);
+}
+
+uint64_t rd_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    RD_STATE_SNAP s;
+    const uint8_t* p = (const uint8_t*)&s;
+    size_t i;
+    memset(&s, 0, sizeof s);
+    rd_state_save(&s);
+    for (i = 0; i < sizeof s; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
+
 /* the frame's copy of s: the last one again when it is the same */
 static __attribute__((section(".text.nlhot"))) int add_state(const RD_STATE* s) {
     if (rd_frame->nstates > 0 && rd_same_state(&rd_frame->states[rd_frame->nstates - 1], s)) {

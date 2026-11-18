@@ -214,11 +214,36 @@ void nlaGetBackupData(NLA_BACKUP_BANK* bank) {
 }
 
 /* a test run's MVC2_CLOCK (seconds from 1970, UTC) fixes it; read once */
+static int netplay_canonical;
+static int clock_override_on;
+static time_t clock_override_t = 946684800;
+
+void host_set_netplay_canonical(int on) {
+    netplay_canonical = on ? 1 : 0;
+}
+
+int host_is_netplay_canonical(void) {
+    return netplay_canonical;
+}
+
+void host_clock_set_override(int on, long long unix_sec) {
+    clock_override_on = on ? 1 : 0;
+    if (clock_override_on) {
+        clock_override_t = (time_t)unix_sec;
+    }
+}
+
 void host_clock(struct tm* out) {
     static int looked, fixed;
     static time_t fixed_t;
     time_t t;
     struct tm* tm;
+    if (clock_override_on) {
+        t = clock_override_t;
+        tm = gmtime(&t);
+        *out = *tm;
+        return;
+    }
     if (!looked) {
         const char* e = getenv("MVC2_FRAMES") != NULL ? getenv("MVC2_CLOCK") : NULL;
         fixed = e != NULL;
@@ -231,6 +256,10 @@ void host_clock(struct tm* out) {
 }
 
 int host_unlock;
+
+int host_is_unlocked(void) {
+    return host_unlock || netplay_canonical;
+}
 
 void nlaGetRTC(NLA_RTC_DATE* date) {
     struct tm now, *tm = &now;
@@ -262,4 +291,48 @@ void nla_frame_input(void) {
     if (in->coin) {
         add_credit();
     }
+}
+
+typedef struct {
+    NLA_SYSTEM_FLAG system_flag;
+    NLA_CREDIT_CONF credit_conf_data;
+    int jamma_nodes;
+    NLA_JAMMA_INFO jamma_info[31];
+    char jamma_input[31][512];
+    int jamma_ack[31][256];
+    unsigned char input_6149[16];
+    NLA_CREDIT_INFO credits;
+    NLA_BACKUP_CREDIT backup_credit;
+} NL_AM_STATE;
+
+size_t nl_am_state_size(void) {
+    return sizeof(NL_AM_STATE);
+}
+
+void nl_am_state_save(void* out) {
+    NL_AM_STATE s;
+    s.system_flag = system_flag;
+    s.credit_conf_data = credit_conf_data;
+    s.jamma_nodes = nlaJAMMANodes;
+    memcpy(s.jamma_info, nlaJAMMAInfo, sizeof nlaJAMMAInfo);
+    memcpy(s.jamma_input, nlaJAMMAInput, sizeof nlaJAMMAInput);
+    memcpy(s.jamma_ack, nlaJAMMAAcknowledgeIndex, sizeof nlaJAMMAAcknowledgeIndex);
+    memcpy(s.input_6149, nlaInput6149, sizeof nlaInput6149);
+    s.credits = credits;
+    s.backup_credit = backup_credit;
+    memcpy(out, &s, sizeof s);
+}
+
+void nl_am_state_load(const void* in) {
+    NL_AM_STATE s;
+    memcpy(&s, in, sizeof s);
+    system_flag = s.system_flag;
+    credit_conf_data = s.credit_conf_data;
+    nlaJAMMANodes = s.jamma_nodes;
+    memcpy(nlaJAMMAInfo, s.jamma_info, sizeof nlaJAMMAInfo);
+    memcpy(nlaJAMMAInput, s.jamma_input, sizeof nlaJAMMAInput);
+    memcpy(nlaJAMMAAcknowledgeIndex, s.jamma_ack, sizeof nlaJAMMAAcknowledgeIndex);
+    memcpy(nlaInput6149, s.input_6149, sizeof nlaInput6149);
+    credits = s.credits;
+    backup_credit = s.backup_credit;
 }

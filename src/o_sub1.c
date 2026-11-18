@@ -23,6 +23,13 @@ void rnd_init( void )
 	rnd_lo = 0xc3 ;
 }
 
+void rnd_set( Uint32 seed )
+{
+	rnd_hi = ( Uint8 )( ( seed >> 8 ) & 0xff ) ;
+	rnd_lo = ( Uint8 )( seed & 0xff ) ;
+	if( !rnd_hi && !rnd_lo ) rnd_init() ;
+}
+
 /****************************************************************/
 /*			The next random number, 0 to 255					*/
 /****************************************************************/

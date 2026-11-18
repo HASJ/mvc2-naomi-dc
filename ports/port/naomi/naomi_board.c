@@ -33,6 +33,7 @@ static coro* game_coro;
 static INTR_FUNC intr[8];
 static int render_done;
 static unsigned frames;
+static int ram_write_watch;
 static void (*stop_fn)(void);
 static void (*frame_fn)(void);
 #ifdef __3DS__
@@ -125,7 +126,14 @@ void host_stub_report(void) {
 /* first thing in main(), before SDL or a GPU driver takes the addresses */
 int naomi_map_ram(void) {
 #ifdef _WIN32
-    void* p = VirtualAlloc((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    void* p = VirtualAlloc((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE,
+                           MEM_RESERVE | MEM_COMMIT | MEM_WRITE_WATCH, PAGE_READWRITE);
+    if (p == (void*)(uintptr_t)NAOMI_RAM_BASE) {
+        ram_write_watch = 1;
+        return 1;
+    }
+    p = VirtualAlloc((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    ram_write_watch = 0;
     return p == (void*)(uintptr_t)NAOMI_RAM_BASE;
 #elif defined(__3DS__)
     extern int ctr_ram_mapped;      /* mapped before libctru's heaps (port/ctr/main_3ds.c) */
@@ -324,6 +332,96 @@ int host_get_imask(void) {
 
 void host_set_imask(int mask) {
     imask = mask;
+}
+
+typedef struct {
+    INTR_FUNC intr[8];
+    int render_done;
+    unsigned frames;
+    unsigned frame_polls;
+    unsigned polls_frame;
+    int imask;
+    uint32_t host_fills;
+} NAOMI_BOARD_STATE;
+
+const HOST_PROGRAM* board_program(void) {
+    return program;
+}
+
+coro* board_game_coro(void) {
+    return game_coro;
+}
+
+int naomi_ram_has_write_watch(void) {
+    return ram_write_watch;
+}
+
+int naomi_ram_get_dirty_pages(void** out_pages, unsigned long* inout_count) {
+#ifdef _WIN32
+    ULONG gran = 0;
+    if (!ram_write_watch || out_pages == NULL || inout_count == NULL) {
+        return 0;
+    }
+    return GetWriteWatch(WRITE_WATCH_FLAG_RESET, (void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE, out_pages,
+                         inout_count, &gran) == 0;
+#else
+    (void)out_pages;
+    (void)inout_count;
+    return 0;
+#endif
+}
+
+void naomi_ram_reset_write_watch(void) {
+#ifdef _WIN32
+    if (ram_write_watch) {
+        ResetWriteWatch((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE);
+    }
+#endif
+}
+
+size_t naomi_board_state_size(void) {
+    return sizeof(NAOMI_BOARD_STATE);
+}
+
+void naomi_board_state_save(void* out) {
+    NAOMI_BOARD_STATE s;
+    memcpy(s.intr, intr, sizeof intr);
+    s.render_done = render_done;
+    s.frames = frames;
+    s.frame_polls = frame_polls;
+    s.polls_frame = polls_frame;
+    s.imask = imask;
+    s.host_fills = host_fills;
+    memcpy(out, &s, sizeof s);
+}
+
+void naomi_board_state_load(const void* in) {
+    NAOMI_BOARD_STATE s;
+    memcpy(&s, in, sizeof s);
+    memcpy(intr, s.intr, sizeof intr);
+    render_done = s.render_done;
+    frames = s.frames;
+    frame_polls = s.frame_polls;
+    polls_frame = s.polls_frame;
+    imask = s.imask;
+    host_fills = s.host_fills;
+}
+
+uint64_t naomi_board_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    uint32_t vals[6];
+    int i;
+    vals[0] = (uint32_t)render_done;
+    vals[1] = (uint32_t)frames;
+    vals[2] = (uint32_t)frame_polls;
+    vals[3] = (uint32_t)polls_frame;
+    vals[4] = (uint32_t)imask;
+    vals[5] = host_fills;
+    for (i = 0; i < 6; i++) {
+        h ^= vals[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }
 
 void cache_inv(void* p, int size) {

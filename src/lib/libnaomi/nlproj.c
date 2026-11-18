@@ -804,3 +804,74 @@ void nl_set_cnv_proj_pers( void )
 	nlGetMatrix8( &nl_cnv_proj_pers0[0] );
 	nlLoadMatrix8( work );
 }
+
+#ifdef HOST_PORT
+#include <string.h>
+
+typedef struct NLPROJ_STATE {
+	Float focusX, focusY, focus;
+	Sint32 clip[9];
+	Float sft_x, sft_y, pm_w, pm_h, pm_l, pm_t;
+	Sint32 clip_on;
+	NLMATRIX mv, pm, conv;
+	NLVECTOR4 side[4];
+	Float focusX2, focusY2, w_w, w_h, w_l, w_t, pc_l, pc_t, pc_w, pc_h;
+	NLMATRIX pers;
+	NLMATRIX pers0[2];
+} NLPROJ_STATE;
+
+unsigned int nlproj_state_size( void ) { return ( unsigned int )sizeof( NLPROJ_STATE ); }
+
+void nlproj_state_save( void *out ) {
+	NLPROJ_STATE s;
+	memset( &s, 0, sizeof s );
+	s.focusX = nl_focusX; s.focusY = nl_focusY; s.focus = nl_focus;
+	s.clip[0] = nl_reg_clip_xmin; s.clip[1] = nl_reg_clip_xmax;
+	s.clip[2] = nl_reg_clip_ymin; s.clip[3] = nl_reg_clip_ymax;
+	s.clip[4] = nl_reg_clip_xmin0; s.clip[5] = nl_reg_clip_xmax0;
+	s.clip[6] = nl_reg_clip_ymin0; s.clip[7] = nl_reg_clip_ymax0;
+	s.clip[8] = nl_reg_clip_start;
+	s.sft_x = nl_sft_pers_x; s.sft_y = nl_sft_pers_y;
+	s.pm_w = nl_projectMatrixWidth; s.pm_h = nl_projectMatrixHeight;
+	s.pm_l = nl_projectMatrixLeft; s.pm_t = nl_projectMatrixTop;
+	s.clip_on = nl_requset_PixelClipping_on;
+	memcpy( s.mv, nl_modelviewMatrix, sizeof s.mv );
+	memcpy( s.pm, nl_projectMatrix, sizeof s.pm );
+	memcpy( s.conv, nl_projConvMat, sizeof s.conv );
+	memcpy( s.side, nl_sideclip_vector, sizeof s.side );
+	s.focusX2 = nl_focusX2; s.focusY2 = nl_focusY2;
+	s.w_w = nl_windowSizeWidth; s.w_h = nl_windowSizeHeight;
+	s.w_l = nl_windowSizeLeft; s.w_t = nl_windowSizeTop;
+	s.pc_l = nl_requset_PixelClipping_left; s.pc_t = nl_requset_PixelClipping_top;
+	s.pc_w = nl_requset_PixelClipping_width; s.pc_h = nl_requset_PixelClipping_height;
+	memcpy( s.pers, nl_cnv_proj_pers, sizeof s.pers );
+	memcpy( s.pers0, nl_cnv_proj_pers0, sizeof s.pers0 );
+	memcpy( out, &s, sizeof s );
+}
+
+void nlproj_state_load( const void *in ) {
+	NLPROJ_STATE s;
+	memcpy( &s, in, sizeof s );
+	nl_focusX = s.focusX; nl_focusY = s.focusY; nl_focus = s.focus;
+	nl_reg_clip_xmin = s.clip[0]; nl_reg_clip_xmax = s.clip[1];
+	nl_reg_clip_ymin = s.clip[2]; nl_reg_clip_ymax = s.clip[3];
+	nl_reg_clip_xmin0 = s.clip[4]; nl_reg_clip_xmax0 = s.clip[5];
+	nl_reg_clip_ymin0 = s.clip[6]; nl_reg_clip_ymax0 = s.clip[7];
+	nl_reg_clip_start = s.clip[8];
+	nl_sft_pers_x = s.sft_x; nl_sft_pers_y = s.sft_y;
+	nl_projectMatrixWidth = s.pm_w; nl_projectMatrixHeight = s.pm_h;
+	nl_projectMatrixLeft = s.pm_l; nl_projectMatrixTop = s.pm_t;
+	nl_requset_PixelClipping_on = s.clip_on;
+	memcpy( nl_modelviewMatrix, s.mv, sizeof nl_modelviewMatrix );
+	memcpy( nl_projectMatrix, s.pm, sizeof nl_projectMatrix );
+	memcpy( nl_projConvMat, s.conv, sizeof nl_projConvMat );
+	memcpy( nl_sideclip_vector, s.side, sizeof nl_sideclip_vector );
+	nl_focusX2 = s.focusX2; nl_focusY2 = s.focusY2;
+	nl_windowSizeWidth = s.w_w; nl_windowSizeHeight = s.w_h;
+	nl_windowSizeLeft = s.w_l; nl_windowSizeTop = s.w_t;
+	nl_requset_PixelClipping_left = s.pc_l; nl_requset_PixelClipping_top = s.pc_t;
+	nl_requset_PixelClipping_width = s.pc_w; nl_requset_PixelClipping_height = s.pc_h;
+	memcpy( nl_cnv_proj_pers, s.pers, sizeof nl_cnv_proj_pers );
+	memcpy( nl_cnv_proj_pers0, s.pers0, sizeof nl_cnv_proj_pers0 );
+}
+#endif

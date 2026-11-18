@@ -446,21 +446,22 @@ static void mix_same_rate(ADXT p, int16_t* buf, int n, int32_t g) {
 }
 #endif
 
+static Sint32 adx_g_vol = 0;
+static int32_t adx_g = 32768;
+
 static void adx_mix(int16_t* buf, int n) {
-    static Sint32 g_vol = 0;
-    static int32_t g = 32768;
     ADXT p = &player;
     int i, c;
     if (p->stat != ADXT_STAT_PLAYING || p->pause) {
         return;
     }
-    if (p->vol != g_vol) {
-        g_vol = p->vol;
-        g = (int32_t)(32768.0 * pow(10.0, g_vol / 200.0));
+    if (p->vol != adx_g_vol) {
+        adx_g_vol = p->vol;
+        adx_g = (int32_t)(32768.0 * pow(10.0, adx_g_vol / 200.0));
     }
 #ifdef __3DS__
     if (p->step == 0x10000 && p->frac == 0) {
-        mix_same_rate(p, buf, n, g);
+        mix_same_rate(p, buf, n, adx_g);
         return;
     }
 #endif
@@ -473,7 +474,7 @@ static void adx_mix(int16_t* buf, int n) {
             }
         }
         for (c = 0; c < 2; c++) {
-            int32_t s = p->out[c] * g >> 15;
+            int32_t s = p->out[c] * adx_g >> 15;
             buf[i * 2 + c] = (int16_t)(s > 32767 ? 32767 : s < -32768 ? -32768 : s);
         }
     }
@@ -699,4 +700,51 @@ void ADXT_SetOutVol(ADXT adxt, Sint32 vol) {
 
 Sint32 ADXT_GetOutVol(ADXT adxt) {
     return adxt != NULL ? adxt->vol : 0;
+}
+
+extern int dc_gd_handle_index(GDFS gd);
+extern GDFS dc_gd_handle_at(int idx);
+
+typedef struct {
+    struct _adx_talk player;
+    int gd_index;
+    Sint32 g_vol;
+    int32_t g;
+} DC_ADX_STATE;
+
+size_t dc_adx_state_size(void) {
+    return sizeof(DC_ADX_STATE);
+}
+
+void dc_adx_state_save(void* out) {
+    DC_ADX_STATE s;
+    memset(&s, 0, sizeof s);
+    s.player = player;
+    s.gd_index = dc_gd_handle_index(player.gd);
+    s.player.gd = NULL;
+    s.g_vol = adx_g_vol;
+    s.g = adx_g;
+    memcpy(out, &s, sizeof s);
+}
+
+void dc_adx_state_load(const void* in) {
+    DC_ADX_STATE s;
+    memcpy(&s, in, sizeof s);
+    player = s.player;
+    player.gd = dc_gd_handle_at(s.gd_index);
+    adx_g_vol = s.g_vol;
+    adx_g = s.g;
+}
+
+uint64_t dc_adx_state_hash(void) {
+    DC_ADX_STATE s;
+    const uint8_t* p = (const uint8_t*)&s;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    dc_adx_state_save(&s);
+    for (i = 0; i < sizeof s; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }

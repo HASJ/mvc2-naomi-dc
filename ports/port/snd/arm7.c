@@ -182,6 +182,23 @@ void arm7_set_regs(const ARM7_REGS* s) {
     memcpy(bank_r14, s->b14, sizeof s->b14);
     memcpy(bank_spsr, s->bs, sizeof s->bs);
     fiq_line = s->fiq_line;
+    fiq_run = 0;
+    run_left = 0;
+    event = (fiq_line && !(cpsr & F_F)) ? 1 : 0;
+}
+
+uint64_t arm7_state_hash(void) {
+    ARM7_REGS regs;
+    const uint8_t* p = (const uint8_t*)&regs;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    memset(&regs, 0, sizeof regs);
+    arm7_get_regs(&regs);
+    for (i = 0; i < sizeof regs; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }
 
 int arm7_fiq_line(void) {

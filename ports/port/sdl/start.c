@@ -5,6 +5,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <direct.h>
+#endif
 
 #ifdef __3DS__
 #include "ctr_front.h"
@@ -49,13 +52,73 @@ static struct {
 } config[CONFIG_KEYS];
 static int config_n;
 static char config_path[1100];
+static char config_dir[1100];
 static char folder[MODES][1100];
+static int saved_argc;
+static char** saved_argv;
+
+static const char* cli_norm_name(const char* name) {
+    if (name == NULL) {
+        return "";
+    }
+    return (name[0] == '-' && name[1] == '-') ? name + 2 : name;
+}
+
+const char* cli_get_opt(const char* name) {
+    const char* key = cli_norm_name(name);
+    size_t klen = strlen(key);
+    int i;
+    if (klen == 0 || saved_argv == NULL) {
+        return NULL;
+    }
+    for (i = 1; i < saved_argc; i++) {
+        const char* a = saved_argv[i];
+        if (a[0] != '-' || a[1] != '-') {
+            continue;
+        }
+        a += 2;
+        if (strncmp(a, key, klen) == 0) {
+            if (a[klen] == '=') {
+                return a + klen + 1;
+            }
+            if (a[klen] == 0 && i + 1 < saved_argc) {
+                return saved_argv[i + 1];
+            }
+        }
+    }
+    return NULL;
+}
+
+int cli_has_flag(const char* name) {
+    const char* key = cli_norm_name(name);
+    size_t klen = strlen(key);
+    int i;
+    if (klen == 0 || saved_argv == NULL) {
+        return 0;
+    }
+    for (i = 1; i < saved_argc; i++) {
+        const char* a = saved_argv[i];
+        if (a[0] != '-' || a[1] != '-') {
+            continue;
+        }
+        a += 2;
+        if (strcmp(a, key) == 0) {
+            return 1;
+        }
+        if (strncmp(a, key, klen) == 0 && a[klen] == '=') {
+            const char* v = a + klen + 1;
+            return strcmp(v, "1") == 0 || strcmp(v, "true") == 0 || strcmp(v, "yes") == 0;
+        }
+    }
+    return 0;
+}
 
 /* path, or when it is relative, path in the executable's folder */
 static const char* beside_exe(const char* path, char* buf, size_t size) {
     static char base[1024];
     if (path[0] == '/' || path[0] == '\\' || (path[0] != 0 && path[1] == ':')) {
-        return path;
+        snprintf(buf, size, "%s", path);
+        return buf;
     }
 #ifdef __3DS__
     (void)base;
@@ -78,9 +141,98 @@ static const char* beside_exe(const char* path, char* buf, size_t size) {
 #endif
 }
 
+static int ends_with_cfg(const char* s) {
+    size_t n = strlen(s);
+    if (n < 4) {
+        return 0;
+    }
+    return (s[n - 4] == '.') &&
+           (s[n - 3] == 'c' || s[n - 3] == 'C') &&
+           (s[n - 2] == 'f' || s[n - 2] == 'F') &&
+           (s[n - 1] == 'g' || s[n - 1] == 'G');
+}
+
+static void resolve_config_paths(void) {
+    const char* cfg;
+    if (config_path[0] != 0) {
+        return;
+    }
+    cfg = cli_get_opt("config");
+    if (cfg == NULL || cfg[0] == 0) {
+        cfg = getenv("MVC2_CONFIG");
+    }
+    if (cfg != NULL && cfg[0] != 0) {
+        char resolved[1100];
+        size_t len;
+        beside_exe(cfg, resolved, sizeof resolved);
+        len = strlen(resolved);
+        if (len > 0 && (resolved[len - 1] == '/' || resolved[len - 1] == '\\')) {
+            snprintf(config_dir, sizeof config_dir, "%s", resolved);
+#ifdef _WIN32
+            _mkdir(config_dir);
+#endif
+            snprintf(config_path, sizeof config_path, "%s" CONFIG, config_dir);
+        } else if (!ends_with_cfg(resolved)) {
+            snprintf(config_dir, sizeof config_dir, "%s/", resolved);
+#ifdef _WIN32
+            _mkdir(resolved);
+#endif
+            snprintf(config_path, sizeof config_path, "%s" CONFIG, config_dir);
+        } else {
+            const char* s1 = strrchr(resolved, '/');
+            const char* s2 = strrchr(resolved, '\\');
+            const char* sep = s1 > s2 ? s1 : s2;
+            snprintf(config_path, sizeof config_path, "%s", resolved);
+            if (sep != NULL) {
+                size_t dlen = (size_t)(sep - resolved + 1);
+                if (dlen >= sizeof config_dir) {
+                    dlen = sizeof config_dir - 1;
+                }
+                memcpy(config_dir, resolved, dlen);
+                config_dir[dlen] = 0;
+            } else {
+                beside_exe("", config_dir, sizeof config_dir);
+            }
+        }
+    } else {
+        beside_exe("", config_dir, sizeof config_dir);
+        beside_exe(CONFIG, config_path, sizeof config_path);
+    }
+}
+
+const char* host_config_dir(void) {
+    resolve_config_paths();
+    return config_dir;
+}
+
+const char* host_config_path(const char* name) {
+    static char bufs[4][1100];
+    static int next;
+    char* buf = bufs[(next++) & 3];
+    if (name == NULL || name[0] == 0) {
+        return host_config_dir();
+    }
+    if (name[0] == '/' || name[0] == '\\' || (name[0] != 0 && name[1] == ':')) {
+        snprintf(buf, 1100, "%s", name);
+        return buf;
+    }
+    resolve_config_paths();
+    snprintf(buf, 1100, "%s%s", config_dir, name);
+    return buf;
+}
+
+const char* host_exe_path(const char* name) {
+    static char bufs[4][1100];
+    static int next;
+    char* buf = bufs[(next++) & 3];
+    return beside_exe(name != NULL ? name : "", buf, 1100);
+}
+
 const char* host_save_path(const char* name) {
-    static char buf[1100];
-    return beside_exe(name, buf, sizeof buf);
+    if (name != NULL && strcmp(name, "gamecontrollerdb.txt") == 0) {
+        return host_exe_path(name);
+    }
+    return host_config_path(name);
 }
 
 static char* parse_line(char* line, char** value) {
@@ -121,7 +273,7 @@ static void keep(const char* key, const char* value) {
 static void read_config(void) {
     char line[1100];
     FILE* f;
-    beside_exe(CONFIG, config_path, sizeof config_path);
+    resolve_config_paths();
     f = fopen(config_path, "r");
     while (f != NULL && fgets(line, sizeof line, f) != NULL) {
         char* v;
@@ -269,10 +421,30 @@ static int mode = -1;
 static const char* path[MODES];
 static int found[MODES];
 
+static int is_value_option(const char* a) {
+    static const char* const opts[] = {
+        "--config", "--join", "--connect", "--host", "--spectate", "--relay", "--server",
+        "--replay", "--record", "--patch", "--synctest", "--netsim", "--local-port",
+        "--peer-port", "--takeover-frame", "--seed", "--token", "--match-id", "--lobby",
+    };
+    size_t i;
+    if (strchr(a, '=') != NULL) {
+        return 0;
+    }
+    for (i = 0; i < sizeof opts / sizeof opts[0]; i++) {
+        if (strcmp(a, opts[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 int pick_game(int argc, char** argv) {
     const char* missing[MODES];
     const char* arg = NULL;
     int flag = -1, i;
+    saved_argc = argc;
+    saved_argv = argv;
     mode = -1;
     told[0] = 0;
     for (i = 1; i < argc; i++) {
@@ -280,6 +452,10 @@ int pick_game(int argc, char** argv) {
             flag = ARCADE;
         } else if (strcmp(argv[i], "--dc") == 0) {
             flag = DC;
+        } else if (argv[i][0] == '-' && argv[i][1] == '-') {
+            if (is_value_option(argv[i]) && i + 1 < argc) {
+                i++;
+            }
         } else {
             arg = argv[i];
         }

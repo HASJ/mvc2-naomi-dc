@@ -7,6 +7,13 @@
 
 extern void naomi_main(void);       /* the game's main(), renamed */
 extern char span_data_begin[], span_data_end[], span_bss_begin[], span_bss_end[];
+#ifdef MVC2_DC_PROGRAM
+extern const MVC2_MATCH_API dc_match_api;
+#define PROGRAM_MATCH_API (&dc_match_api)
+#else
+#define PROGRAM_MATCH_API NULL
+#endif
 
 const HOST_PROGRAM PROGRAM = { naomi_main, host_reloc,
-                               { span_data_begin, span_data_end, span_bss_begin, span_bss_end } };
+                               { span_data_begin, span_data_end, span_bss_begin, span_bss_end },
+                               PROGRAM_MATCH_API };

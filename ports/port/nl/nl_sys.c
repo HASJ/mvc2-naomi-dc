@@ -2,6 +2,8 @@
  * nl_sys.c  The NAOMI library's background and fade colour
  */
 
+#include <stddef.h>
+#include <string.h>
 #include "nl_port.h"
 
 float nl_fade_r = 1.0f, nl_fade_g = 1.0f, nl_fade_b = 1.0f;
@@ -45,4 +47,21 @@ void kmSetPixelClipping(int32_t left, int32_t top, int32_t width, int32_t height
     (void)top;
     (void)width;
     (void)height;
+}
+
+size_t nl_sys_state_size(void) {
+    return 3 * sizeof(float);
+}
+
+void nl_sys_state_save(void* out) {
+    float f[3] = { nl_fade_r, nl_fade_g, nl_fade_b };
+    memcpy(out, f, sizeof f);
+}
+
+void nl_sys_state_load(const void* in) {
+    float f[3];
+    memcpy(f, in, sizeof f);
+    nl_fade_r = f[0];
+    nl_fade_g = f[1];
+    nl_fade_b = f[2];
 }

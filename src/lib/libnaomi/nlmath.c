@@ -17,6 +17,9 @@
 
 Uint32 nl_random_next = 1;
 
+void nlmath_state_save( unsigned int *rng ) { *rng = nl_random_next; }
+void nlmath_state_load( const unsigned int *rng ) { nl_random_next = *rng; }
+
 Sint32 nlArcSin( Float x );
 Sint32 nlArcTan( Float x );
 Float nlSin( int ang );

@@ -1419,53 +1419,6 @@ void aica_arm_write8(uint32_t a, uint32_t v) {
     }
 }
 
-/* what the sound CPU's writes to the registers can change, kept and put back around a check */
-struct AICA_STATE {
-    uint8_t reg[sizeof reg];
-    CHANNEL ch[64];
-    uint8_t ch_on[64], par_ok[64];
-    uint32_t scipd, mcipd, intreq;
-    int timer_count[3], timer_sub[3], timer_load[3];
-    int dsp_dirty, cpu_reset, cpu_debt;
-};
-
-AICA_STATE* aica_state_new(void) {
-    return malloc(sizeof(AICA_STATE));
-}
-
-void aica_state_save(AICA_STATE* s) {
-    memcpy(s->reg, reg, sizeof reg);
-    memcpy(s->ch, ch, sizeof ch);
-    memcpy(s->ch_on, ch_on, sizeof ch_on);
-    memcpy(s->par_ok, par_ok, sizeof par_ok);
-    s->scipd = scipd;
-    s->mcipd = mcipd;
-    s->intreq = intreq;
-    memcpy(s->timer_count, timer_count, sizeof timer_count);
-    memcpy(s->timer_sub, timer_sub, sizeof timer_sub);
-    memcpy(s->timer_load, timer_load, sizeof timer_load);
-    s->dsp_dirty = dsp_dirty;
-    s->cpu_reset = cpu_reset;
-    s->cpu_debt = cpu_debt;
-}
-
-void aica_state_load(const AICA_STATE* s) {
-    aica_watch_gen++;
-    memcpy(reg, s->reg, sizeof reg);
-    memcpy(ch, s->ch, sizeof ch);
-    memcpy(ch_on, s->ch_on, sizeof ch_on);
-    memcpy(par_ok, s->par_ok, sizeof par_ok);
-    scipd = s->scipd;
-    mcipd = s->mcipd;
-    intreq = s->intreq;
-    memcpy(timer_count, s->timer_count, sizeof timer_count);
-    memcpy(timer_sub, s->timer_sub, sizeof timer_sub);
-    memcpy(timer_load, s->timer_load, sizeof timer_load);
-    dsp_dirty = s->dsp_dirty;
-    cpu_reset = s->cpu_reset;
-    cpu_debt = s->cpu_debt;
-}
-
 /* the SH4's side */
 uint8_t* aica_sh4_ptr(uint32_t addr) {
     return ram + (addr & 0x00FFFFFFu & aica_ram_mask);
@@ -1819,4 +1772,135 @@ void aica_render(int16_t* out, int n) {
         out += len * 2;
         n -= len;
     }
+}
+
+struct AICA_STATE {
+    uint8_t reg[sizeof reg];
+    CHANNEL ch[64];
+    uint8_t ch_on[64], par_ok[64];
+    uint32_t scipd, mcipd, intreq;
+    int timer_count[3], timer_sub[3], timer_load[3];
+    int dsp_dirty, cpu_reset, cpu_debt;
+    int32_t temp[128], mems[32], efreg[16];
+    int32_t frc_reg, y_reg, adrs_reg, memval;
+    uint32_t mdec;
+    int32_t rv_ring[RV_SIZE];
+    int32_t rv_fb[4], rv_damp[4], rv_in[2], rv_l[2], rv_r[2];
+    uint32_t rv_pos;
+    int rv_on, rv_odd, rv_idle;
+};
+
+AICA_STATE* aica_state_new(void) {
+    return malloc(sizeof(AICA_STATE));
+}
+
+void aica_state_save(AICA_STATE* s) {
+    memset(s, 0, sizeof *s);
+    memcpy(s->reg, reg, sizeof reg);
+    memcpy(s->ch, ch, sizeof ch);
+    memcpy(s->ch_on, ch_on, sizeof ch_on);
+    memcpy(s->par_ok, par_ok, sizeof par_ok);
+    s->scipd = scipd;
+    s->mcipd = mcipd;
+    s->intreq = intreq;
+    memcpy(s->timer_count, timer_count, sizeof timer_count);
+    memcpy(s->timer_sub, timer_sub, sizeof timer_sub);
+    memcpy(s->timer_load, timer_load, sizeof timer_load);
+    s->dsp_dirty = dsp_dirty;
+    s->cpu_reset = cpu_reset;
+    s->cpu_debt = cpu_debt;
+    memcpy(s->temp, temp, sizeof temp);
+    memcpy(s->mems, mems, sizeof mems);
+    memcpy(s->efreg, efreg, sizeof efreg);
+    s->frc_reg = frc_reg;
+    s->y_reg = y_reg;
+    s->adrs_reg = adrs_reg;
+    s->memval = memval;
+    s->mdec = mdec;
+    memcpy(s->rv_ring, rv_ring, sizeof rv_ring);
+    memcpy(s->rv_fb, rv_fb, sizeof rv_fb);
+    memcpy(s->rv_damp, rv_damp, sizeof rv_damp);
+    memcpy(s->rv_in, rv_in, sizeof rv_in);
+    memcpy(s->rv_l, rv_l, sizeof rv_l);
+    memcpy(s->rv_r, rv_r, sizeof rv_r);
+    s->rv_pos = rv_pos;
+    s->rv_on = rv_on;
+    s->rv_odd = rv_odd;
+    s->rv_idle = rv_idle;
+}
+
+void aica_state_load(const AICA_STATE* s) {
+    aica_watch_gen++;
+    memcpy(reg, s->reg, sizeof reg);
+    memcpy(ch, s->ch, sizeof ch);
+    memcpy(ch_on, s->ch_on, sizeof ch_on);
+    memset(par_ok, 0, sizeof par_ok);
+    memset(mixs, 0, sizeof mixs);
+    memset(sends, 0, sizeof sends);
+    sent = 0;
+    scipd = s->scipd;
+    mcipd = s->mcipd;
+    intreq = s->intreq;
+    memcpy(timer_count, s->timer_count, sizeof timer_count);
+    memcpy(timer_sub, s->timer_sub, sizeof timer_sub);
+    memcpy(timer_load, s->timer_load, sizeof timer_load);
+    dsp_dirty = s->dsp_dirty;
+    cpu_reset = s->cpu_reset;
+    cpu_debt = s->cpu_debt;
+    memcpy(temp, s->temp, sizeof temp);
+    memcpy(mems, s->mems, sizeof mems);
+    memcpy(efreg, s->efreg, sizeof efreg);
+    frc_reg = s->frc_reg;
+    y_reg = s->y_reg;
+    adrs_reg = s->adrs_reg;
+    memval = s->memval;
+    mdec = s->mdec;
+    memcpy(rv_ring, s->rv_ring, sizeof rv_ring);
+    memcpy(rv_fb, s->rv_fb, sizeof rv_fb);
+    memcpy(rv_damp, s->rv_damp, sizeof rv_damp);
+    memcpy(rv_in, s->rv_in, sizeof rv_in);
+    memcpy(rv_l, s->rv_l, sizeof rv_l);
+    memcpy(rv_r, s->rv_r, sizeof rv_r);
+    rv_pos = s->rv_pos;
+    rv_on = s->rv_on;
+    rv_odd = s->rv_odd;
+    rv_idle = s->rv_idle;
+    dsp_scan();
+    dsp_dirty = s->dsp_dirty;
+}
+
+size_t aica_state_size(void) {
+    return sizeof(AICA_STATE);
+}
+
+uint64_t aica_state_hash(void) {
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    const uint8_t* p;
+    for (i = 0; i < sizeof reg; i++) {
+        h ^= reg[i];
+        h *= 1099511628211ULL;
+    }
+    p = (const uint8_t*)ch;
+    for (i = 0; i < sizeof ch; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    for (i = 0; i < 64; i++) {
+        h ^= ch_on[i];
+        h *= 1099511628211ULL;
+    }
+    {
+        uint32_t w[17] = { scipd, mcipd, intreq, (uint32_t)timer_count[0], (uint32_t)timer_count[1],
+                           (uint32_t)timer_count[2], (uint32_t)timer_sub[0], (uint32_t)timer_sub[1],
+                           (uint32_t)timer_sub[2], (uint32_t)timer_load[0], (uint32_t)timer_load[1],
+                           (uint32_t)timer_load[2], (uint32_t)dsp_dirty, (uint32_t)cpu_reset, (uint32_t)cpu_debt,
+                           mdec, (uint32_t)memval };
+        p = (const uint8_t*)w;
+        for (i = 0; i < sizeof w; i++) {
+            h ^= p[i];
+            h *= 1099511628211ULL;
+        }
+    }
+    return h;
 }

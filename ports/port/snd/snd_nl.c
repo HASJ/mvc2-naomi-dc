@@ -84,8 +84,18 @@ static int snd_log;      /* MVC2_SNDLOG: the requests, in the log */
 int snd_enabled(void) {
     if (sound_on < 0) {
         const char* e = getenv("MVC2_SOUND");
-        /* on unless MVC2_SOUND=0; a test run (MVC2_FRAMES) makes none unless it is saved (MVC2_WAV) */
-        sound_on = e != NULL ? atoi(e) != 0 : getenv("MVC2_FRAMES") == NULL || getenv("MVC2_WAV") != NULL;
+        /* on unless MVC2_SOUND=0; deterministic tests and netplay/replays also keep sound CPU active */
+        if (e != NULL) {
+            sound_on = atoi(e) != 0;
+        } else {
+            int keep_snd = cli_has_flag("savestate-check") || cli_has_flag("replay-verify") ||
+                           cli_get_opt("replay") != NULL || cli_get_opt("synctest") != NULL ||
+                           cli_get_opt("connect") != NULL || cli_get_opt("host") != NULL ||
+                           cli_get_opt("join") != NULL || cli_get_opt("spectate") != NULL ||
+                           getenv("MVC2_SAVESTATE_TEST") != NULL || getenv("MVC2_SYNCTEST") != NULL ||
+                           getenv("MVC2_NETPLAY") != NULL;
+            sound_on = keep_snd || getenv("MVC2_FRAMES") == NULL || getenv("MVC2_WAV") != NULL;
+        }
         snd_log = getenv("MVC2_SNDLOG") != NULL;
     }
     return sound_on;
@@ -897,4 +907,73 @@ int snd_frame_extra(const int16_t** out) {
     aica_render(frame_buf, (int)n);
     *out = frame_buf;
     return (int)n;
+}
+
+typedef struct {
+    int inited;
+    uint32_t ring, base, ram_size, mem_size, stream_mem, stream_start;
+    int32_t used, stream_size;
+    SLOT slot[SND_PORTS];
+    STREAM stream[SND_STREAMS];
+    uint32_t frac, frame_us;
+    int prepared;
+    int16_t mix_buf[2 * 2048];
+} SND_NL_STATE;
+
+size_t snd_nl_state_size(void) {
+    return sizeof(SND_NL_STATE);
+}
+
+void snd_nl_state_save(void* out) {
+    SND_NL_STATE s;
+    memset(&s, 0, sizeof s);
+    s.inited = inited;
+    s.ring = ring;
+    s.base = base;
+    s.ram_size = ram_size;
+    s.mem_size = mem_size;
+    s.stream_mem = stream_mem;
+    s.stream_start = stream_start;
+    s.used = used;
+    s.stream_size = stream_size;
+    memcpy(s.slot, slot, sizeof slot);
+    memcpy(s.stream, stream, sizeof stream);
+    s.frac = frac;
+    s.frame_us = frame_us;
+    s.prepared = prepared;
+    memcpy(s.mix_buf, mix_buf, sizeof mix_buf);
+    memcpy(out, &s, sizeof s);
+}
+
+void snd_nl_state_load(const void* in) {
+    SND_NL_STATE s;
+    memcpy(&s, in, sizeof s);
+    inited = s.inited;
+    ring = s.ring;
+    base = s.base;
+    ram_size = s.ram_size;
+    mem_size = s.mem_size;
+    stream_mem = s.stream_mem;
+    stream_start = s.stream_start;
+    used = s.used;
+    stream_size = s.stream_size;
+    memcpy(slot, s.slot, sizeof slot);
+    memcpy(stream, s.stream, sizeof stream);
+    frac = s.frac;
+    frame_us = s.frame_us;
+    prepared = s.prepared;
+    memcpy(mix_buf, s.mix_buf, sizeof mix_buf);
+}
+
+uint64_t snd_nl_state_hash(void) {
+    SND_NL_STATE s;
+    const uint8_t* p = (const uint8_t*)&s;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    snd_nl_state_save(&s);
+    for (i = 0; i < offsetof(SND_NL_STATE, mix_buf); i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }

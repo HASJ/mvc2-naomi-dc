@@ -6,7 +6,9 @@
 
 #define SEL_FILE_PART( p, n )	( ( void * )&( ( Uint8 * )( p ) )[( ( Sint32 * )( p ) )[n]] )
 
+#ifdef __3DS__
 extern void *host_malloc( Uint32 size );
+#endif
 extern void col_set( void *col, int no, int cnt );
 extern int sprite_tex_set( PLAYER_WORK *w );
 extern int sprite_disp( PLAYER_WORK *w );
@@ -52,8 +54,8 @@ extern int obj_uv_next( void );
 extern void obj_uv_get( Float *x, Float *y );
 extern void obj_uv_put( Float *x, Float *y );
 #ifdef HOST_PORT
-extern int host_unlock ;	/* the host's unlock = all */
-#define ARCADE_CLEAR	( host_unlock || Sys->arcade_clear )
+extern int host_is_unlocked( void );	/* the host's unlock = all */
+#define ARCADE_CLEAR	( host_is_unlocked() || Sys->arcade_clear )
 #else
 #define ARCADE_CLEAR	Sys->arcade_clear
 #endif
@@ -183,23 +185,31 @@ Sint32 def_team_tbl[2][3] = {
 	{ 0x17, 0x16, 0x06 }
 } ;
 
+#if defined(HOST_PORT) && !defined(__3DS__)
+static Uint8 sel_preview_buf[2][0x160000];
+#else
 static Uint8 *sel_char_cache[64];
+#endif
 static PLAYER_WORK sel_preview_w[2];
 static Sint8 sel_preview_type[2] = { -1, -1 };
 static Sint8 sel_preview_col[2] = { -1, -1 };
 static Uint8 sel_preview_active[2] = { 0, 0 };
 
-static Uint8 *sel_preview_load( Uint8 type )
+static Uint8 *sel_preview_load( Uint8 side, Uint8 type )
 {
 	Uint8 *buf ;
 #ifndef TARGET_DC
 	Sint16 *src ;
 #endif
 
-	if( type >= 64 ) return NULL ;
+	if( type >= 64 || side >= 2 ) return NULL ;
+#if defined(HOST_PORT) && !defined(__3DS__)
+	buf = sel_preview_buf[side] ;
+#else
 	if( sel_char_cache[type] ) return sel_char_cache[type] ;
 	buf = ( Uint8 * )host_malloc( 0x160000 ) ;
 	if( !buf ) return NULL ;
+#endif
 #ifdef TARGET_DC
 	file_load2( type + FILE_PL_DAT, buf, 1 ) ;
 #else
@@ -207,7 +217,9 @@ static Uint8 *sel_preview_load( Uint8 type )
 	src = SEL_FILE_PART( 0x0dd00000, type ) ;
 	lz_unpack16( src, ( Uint16 * )( buf + 0x130000 ) ) ;
 #endif
+#if !(defined(HOST_PORT) && !defined(__3DS__))
 	sel_char_cache[type] = buf ;
+#endif
 	return buf ;
 }
 
@@ -219,11 +231,11 @@ static void sel_preview_set( Uint8 side, Sint8 type, Sint8 color )
 	Uint8 *chr ;
 #endif
 
-	if( type < 0 || type >= 64 ) return ;
-	buf = sel_preview_load( ( Uint8 )type ) ;
-	if( !buf ) return ;
+	if( type < 0 || type >= 64 || side >= 2 ) return ;
 	w = &sel_preview_w[side] ;
 	if( sel_preview_type[side] != type ){
+		buf = sel_preview_load( side, ( Uint8 )type ) ;
+		if( !buf ) return ;
 		memset( w, 0, sizeof( PLAYER_WORK ) ) ;
 		w->pl_index = side ;
 		w->load_type = type ;
@@ -347,7 +359,7 @@ static void sel_mask_set( Sint8 side )
 	off[0] = pl_work[0].card_ex[0] | pl_work[1].card_ex[0] | Sys->char_open_all0 ;
 	off[1] = pl_work[0].card_ex[1] | pl_work[1].card_ex[1] | Sys->char_open_all1 ;
 #ifdef HOST_PORT
-	if( host_unlock ){	/* select's masks only, never what is saved */
+	if( host_is_unlocked() ){	/* select's masks only, never what is saved */
 		on[0] = off[0] = 0xf8ffffff ;
 		on[1] = off[1] = 0x07ffffff ;
 	}
@@ -412,12 +424,14 @@ static void sel_init( void )
 	sel_preview_type[0] = sel_preview_type[1] = -1 ;
 	sel_preview_col[0] = sel_preview_col[1] = -1 ;
 	sel_preview_active[0] = sel_preview_active[1] = 0 ;
+#if !(defined(HOST_PORT) && !defined(__3DS__))
 	{
 		int s, k ;
 		for( s = 0 ; s < 2 ; s ++ ){
-			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )def_team_tbl[s][k] ) ;
+			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )s, ( Uint8 )def_team_tbl[s][k] ) ;
 		}
 	}
+#endif
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
 	Sys->routine_2 = 0 ;
@@ -429,7 +443,7 @@ static void sel_init( void )
 #ifdef TARGET_DC
 	sel_w.stage_ex_cnt = vms_work.stage_ex_cnt ;
 #ifdef HOST_PORT
-	if( host_unlock ) sel_w.stage_ex_cnt = 7 ;
+	if( host_is_unlocked() ) sel_w.stage_ex_cnt = 7 ;
 #endif
 	if( Sys->home_mode == HOME_VERSUS ){
 		sel_w.stage_cur = 0 ;
@@ -1966,12 +1980,14 @@ static void sel_main_end( void )
 	sel_preview_type[0] = sel_preview_type[1] = -1 ;
 	sel_preview_col[0] = sel_preview_col[1] = -1 ;
 	sel_preview_active[0] = sel_preview_active[1] = 0 ;
+#if !(defined(HOST_PORT) && !defined(__3DS__))
 	{
 		int s, k ;
 		for( s = 0 ; s < 2 ; s ++ ){
-			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )def_team_tbl[s][k] ) ;
+			for( k = 0 ; k < 3 ; k ++ ) sel_preview_load( ( Uint8 )s, ( Uint8 )def_team_tbl[s][k] ) ;
 		}
 	}
+#endif
 	Sys->routine_0 ++ ;
 	Sys->routine_1 = 0 ;
 	Sys->routine_2 = 0 ;
@@ -2340,7 +2356,7 @@ static void sel_pl_mask_set( PLAYER_WORK *pl_w )
 	off[0] = pl_w->card_ex[0] | Sys->char_open_all0 ;
 	off[1] = pl_w->card_ex[1] | Sys->char_open_all1 ;
 #ifdef HOST_PORT
-	if( host_unlock ){
+	if( host_is_unlocked() ){
 		on[0] = off[0] = 0xf8ffffff ;
 		on[1] = off[1] = 0x07ffffff ;
 	}

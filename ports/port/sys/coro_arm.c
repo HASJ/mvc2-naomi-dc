@@ -110,3 +110,27 @@ void coro_switch(coro* to) {
         coro_swap(&from->sp, to->sp);
     }
 }
+
+size_t coro_state_size(const coro* c) {
+    (void)c;
+    return 0;
+}
+
+size_t coro_state_save(const coro* c, void* buf, size_t max_bytes) {
+    (void)c;
+    (void)buf;
+    (void)max_bytes;
+    return 0;
+}
+
+int coro_state_load(coro* c, const void* buf, size_t bytes) {
+    (void)c;
+    (void)buf;
+    (void)bytes;
+    return 0;
+}
+
+unsigned coro_stack_used(const coro* c) {
+    (void)c;
+    return 0;
+}

@@ -1195,3 +1195,32 @@ int nlObjPutLoadTexture(int* obj, const NLthd* thd) {
     }
     return 0;
 }
+
+typedef struct {
+    NLV3 light;
+    float global_ambience;
+    int trnsl_blend;
+    float near_w;
+} NL_OBJ_STATE;
+
+size_t nl_obj_state_size(void) {
+    return sizeof(NL_OBJ_STATE);
+}
+
+void nl_obj_state_save(void* out) {
+    NL_OBJ_STATE s;
+    s.light = light;
+    s.global_ambience = global_ambience;
+    s.trnsl_blend = trnsl_blend;
+    s.near_w = near_w;
+    memcpy(out, &s, sizeof s);
+}
+
+void nl_obj_state_load(const void* in) {
+    NL_OBJ_STATE s;
+    memcpy(&s, in, sizeof s);
+    light = s.light;
+    global_ambience = s.global_ambience;
+    trnsl_blend = s.trnsl_blend;
+    near_w = s.near_w;
+}

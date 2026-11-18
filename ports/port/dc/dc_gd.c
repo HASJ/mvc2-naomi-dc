@@ -23,9 +23,7 @@ struct GDS_FS_HANDLE {
     Sint32 size;
     long pos;           /* where the next sector is read from */
     Sint32 stat;
-#ifdef __3DS__
     char name[32];
-#endif
 };
 
 static char root[1024];
@@ -434,6 +432,7 @@ GDFS gdFsOpen(const char* fname, void* dirrec) {
                 host_log("gdFsOpen: no %s on the disc", fname);
                 return NULL;
             }
+            snprintf(gd->name, sizeof gd->name, "%s", fname);
 #ifndef __3DS__
             fseek(gd->f, 0, SEEK_END);
             gd->size = (Sint32)ftell(gd->f);
@@ -598,4 +597,104 @@ Sint32 gdFsReqDrvStat(void) {
 void gdFsEntryErrFuncAll(GDFS_ERRFUNC func, void* obj) {
     (void)func;
     (void)obj;
+}
+
+typedef struct {
+    uint8_t open[GD_MAX_OPEN];
+    char name[GD_MAX_OPEN][32];
+    Sint32 size[GD_MAX_OPEN];
+    long pos[GD_MAX_OPEN];
+    Sint32 stat[GD_MAX_OPEN];
+    Sint32 sys_stat;
+} DC_GD_STATE;
+
+int dc_gd_handle_index(GDFS gd) {
+    if (gd == NULL) {
+        return -1;
+    }
+    if (gd == &sys_handle) {
+        return GD_MAX_OPEN;
+    }
+    if (gd >= &files[0] && gd < &files[GD_MAX_OPEN]) {
+        return (int)(gd - &files[0]);
+    }
+    return -1;
+}
+
+GDFS dc_gd_handle_at(int idx) {
+    if (idx == GD_MAX_OPEN) {
+        return &sys_handle;
+    }
+    if (idx >= 0 && idx < GD_MAX_OPEN) {
+        return &files[idx];
+    }
+    return NULL;
+}
+
+size_t dc_gd_state_size(void) {
+    return sizeof(DC_GD_STATE);
+}
+
+void dc_gd_state_save(void* out) {
+    DC_GD_STATE s;
+    int i;
+    memset(&s, 0, sizeof s);
+    for (i = 0; i < GD_MAX_OPEN; i++) {
+        s.open[i] = files[i].f != NULL ? 1 : 0;
+        if (s.open[i]) {
+            snprintf(s.name[i], sizeof s.name[i], "%s", files[i].name);
+            s.size[i] = files[i].size;
+            s.pos[i] = files[i].pos;
+            s.stat[i] = files[i].stat;
+        }
+    }
+    s.sys_stat = sys_handle.stat;
+    memcpy(out, &s, sizeof s);
+}
+
+void dc_gd_state_load(const void* in) {
+    DC_GD_STATE s;
+    int i;
+    memcpy(&s, in, sizeof s);
+    for (i = 0; i < GD_MAX_OPEN; i++) {
+        if (!s.open[i]) {
+            if (files[i].f != NULL) {
+                fclose(files[i].f);
+                files[i].f = NULL;
+            }
+            files[i].size = 0;
+            files[i].pos = 0;
+            files[i].stat = 0;
+            files[i].name[0] = 0;
+            continue;
+        }
+        if (files[i].f == NULL || strcmp(files[i].name, s.name[i]) != 0) {
+            if (files[i].f != NULL) {
+                fclose(files[i].f);
+                files[i].f = NULL;
+            }
+            files[i].f = open_file(s.name[i]);
+            snprintf(files[i].name, sizeof files[i].name, "%s", s.name[i]);
+        }
+        if (files[i].f != NULL) {
+            fseek(files[i].f, s.pos[i], SEEK_SET);
+        }
+        files[i].size = s.size[i];
+        files[i].pos = s.pos[i];
+        files[i].stat = s.stat[i];
+    }
+    sys_handle.stat = s.sys_stat;
+}
+
+uint64_t dc_gd_state_hash(void) {
+    DC_GD_STATE s;
+    const uint8_t* p = (const uint8_t*)&s;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    dc_gd_state_save(&s);
+    for (i = 0; i < sizeof s; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
 }

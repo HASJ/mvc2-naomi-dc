@@ -22,6 +22,29 @@ typedef struct {
 } HOST_INPUT;
 
 const HOST_INPUT* host_input(void);     /* this frame's controls (the front end) */
+void host_set_input(const HOST_INPUT* in);
 void nla_frame_input(void);             /* builds the I/O board's report (nl_am.c) */
+
+static inline uint16_t net_pack_input(uint32_t jvs) {
+    uint16_t v = (uint16_t)(jvs & 0xFFF0u);
+    if (jvs & HOST_DASH) {
+        v |= 0x0001u;
+    }
+    if (jvs & HOST_SJUMP) {
+        v |= 0x0002u;
+    }
+    return v;
+}
+
+static inline uint32_t net_unpack_input(uint16_t packed) {
+    uint32_t v = (uint32_t)(packed & 0xFFF0u);
+    if (packed & 0x0001u) {
+        v |= HOST_DASH;
+    }
+    if (packed & 0x0002u) {
+        v |= HOST_SJUMP;
+    }
+    return v;
+}
 
 #endif

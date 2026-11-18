@@ -3,6 +3,8 @@
  * space (or through XMTRX, undivided, with NL_DISP_USEMATRIX), 1/z deep
  */
 
+#include <stddef.h>
+#include <string.h>
 #include "nl_port.h"
 #include "prof.h"
 
@@ -59,6 +61,22 @@ void nlDispStripFreeTexture(int index) {
 
 void nlDispStripSetPalette(int index) {
     disp_palette = index;
+}
+
+size_t nl_strip_state_size(void) {
+    return 2 * sizeof(int);
+}
+
+void nl_strip_state_save(void* out) {
+    int v[2] = { disp_coord, disp_palette };
+    memcpy(out, v, sizeof v);
+}
+
+void nl_strip_state_load(const void* in) {
+    int v[2];
+    memcpy(v, in, sizeof v);
+    disp_coord = v[0];
+    disp_palette = v[1];
 }
 
 static void position(RD_VTX* d, const float* p) {

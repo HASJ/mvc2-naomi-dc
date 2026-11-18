@@ -1376,3 +1376,150 @@ void pl_sw_config_sub2( int side )
 	pl_work[side].pad_sw.on = ~pl_work[side].pad_sw.old & pl_work[side].pad_sw.now ;
 	pl_work[side].pad_sw.off = ~pl_work[side].pad_sw.now & pl_work[side].pad_sw.old ;
 }
+
+#ifdef HOST_PORT
+#include "mvc2_match_api.h"
+
+extern void entry_init( PLAYER_WORK *pl_w ) ;
+extern void bright_init( void ) ;
+extern void fade_init( void ) ;
+extern void fight_load_start( int no ) ;
+extern void rnd_set( Uint32 seed ) ;
+extern void nlRandomSeed( int seed ) ;
+extern void sound_all_off( void ) ;
+extern void se_all_off( void ) ;
+extern void stream_stop( void ) ;
+extern Uint16 button_cfg[2][6] ;
+extern VS_SYS_WORK vs_sys_work ;
+
+static int dc_match_is_ready( void )
+{
+	return Sys != NULL && Sys->task_no >= 1 ;
+}
+
+static void dc_match_reset_common( Uint32 seed )
+{
+	int i ;
+	PLAYER_WORK *pl_w ;
+
+	sys_set_init( 1 | 2 | 4 ) ;
+	for( i = 0 ; i < 6 ; i ++ ){
+		button_cfg[0][i] = ( Uint16 )i ;
+		button_cfg[1][i] = ( Uint16 )i ;
+	}
+	sys_set_load() ;
+	training_init() ;
+	rnd_set( seed ) ;
+	nlRandomSeed( ( int )( seed ? seed : 1u ) ) ;
+	task_wait = 0 ;
+	exit_req = 0 ;
+	lobby_time_flag = 0 ;
+	lobby_time = 0 ;
+	Sys->game_timer = ( Sint8 )( seed & 0x7f ) ;
+	Sys->game_timer0 = 0 ;
+	Sys->wave_ang = 0 ;
+	Sys->timer0 = 0 ;
+	Sys->timer1 = 0 ;
+	Sys->timer2 = 0 ;
+	Sys->timer3 = 0 ;
+	Sys->routine_0 = 0 ;
+	Sys->routine_1 = 0 ;
+	Sys->routine_2 = 0 ;
+	Sys->routine_3 = 0 ;
+	Sys->exit_flag = 0 ;
+	Sys->play_mode = 96 ;
+	Sys->task_no = 2 ;
+	Sys->task_step = 0 ;
+	Sys->scene_no = 0 ;
+	back_color_set( 0 ) ;
+	fade_init() ;
+	bright_init() ;
+	SysTransReset() ;
+	stream_stop() ;
+	sound_all_off() ;
+	se_all_off() ;
+	se_vol_up( 0, 1 ) ;
+	se_vol_up( 1, 1 ) ;
+	s3l_fade_in_set( 1 ) ;
+	load_stop() ;
+	load_stop2() ;
+	fight_load_start( 8 ) ;
+	vib_stop() ;
+	for( i = 0 ; i < 6 ; i ++ ){
+		pl_w = &pl_work[i] ;
+		memset( pl_w, 0, sizeof( PLAYER_WORK ) ) ;
+		pl_w->pl_index = i ;
+		entry_init( pl_w ) ;
+	}
+	pl_work[0].side_bit = 1 ;
+	pl_work[1].side_bit = 2 ;
+}
+
+static void dc_match_start_versus( unsigned int seed )
+{
+	if( !dc_match_is_ready() ) return ;
+	dc_match_reset_common( seed ) ;
+	reset_lock = 1 ;
+	Sys->home_mode = HOME_VERSUS ;
+	Sys->ended_mode = HOME_VERSUS ;
+	Sys->event_flag = 1 ;
+	Sys->damage_level = 1 ;
+	Sys->pause_off = 1 ;
+	Sys->entry_side = 3 ;
+	Sys->new_side = 3 ;
+	Sys->play_side = 3 ;
+	pl_work[0].entry_routine_1 = ENTRY_PLAY ;
+	pl_work[1].entry_routine_1 = ENTRY_PLAY ;
+}
+
+static void dc_match_start_training( void )
+{
+	if( !dc_match_is_ready() ) return ;
+	dc_match_reset_common( 1u ) ;
+	reset_lock = 0 ;
+	Sys->home_mode = HOME_TRAINING ;
+	Sys->ended_mode = HOME_TRAINING ;
+	Sys->no_challenge_flag = -1 ;
+	Sys->round_time_no = 3 ;
+	Sys->speed_fix = 1 ;
+	Sys->pause_off = 0 ;
+	training_work.side = 0 ;
+	Sys->entry_side = 1 ;
+	Sys->new_side = 1 ;
+	Sys->play_side = 1 ;
+	pl_work[0].entry_routine_1 = ENTRY_PLAY ;
+}
+
+static void dc_match_get_info( MVC2_MATCH_INFO *out )
+{
+	int i ;
+	if( !out ) return ;
+	memset( out, 0, sizeof( *out ) ) ;
+	out->ready = ( unsigned char )( dc_match_is_ready() ? 1 : 0 ) ;
+	if( !out->ready ) return ;
+	out->routine_0 = ( unsigned char )Sys->routine_0 ;
+	out->routine_1 = ( unsigned char )Sys->routine_1 ;
+	out->stage_no = ( unsigned char )stage_no ;
+	out->vs_st = ( unsigned char )vs_sys_work.vs_st ;
+	out->winner_side = ( signed char )vs_sys_work.winner_id ;
+	out->in_select = ( unsigned char )( Sys->task_no == 2 && Sys->scene_no == 0 && Sys->routine_0 == 1 ) ;
+	out->in_fight = ( unsigned char )( Sys->task_no == 2 && Sys->scene_no == 0 && Sys->routine_0 == 3 ) ;
+	out->match_over = ( unsigned char )( Sys->task_no == 2 && Sys->scene_no == 0 &&
+		( ( Sys->routine_0 == 3 && ( Sys->routine_1 == 3 || vs_sys_work.vs_st >= VS_EXIT ) ) || Sys->routine_0 == 4 ) ) ;
+	for( i = 0 ; i < 3 ; i ++ ){
+		out->p1_char[i] = ( unsigned char )pl_work[i * 2].load_type ;
+		out->p1_assist[i] = ( unsigned char )pl_work[i * 2].pl_personal ;
+		out->p1_color[i] = ( unsigned char )pl_work[i * 2].load_color ;
+		out->p2_char[i] = ( unsigned char )pl_work[i * 2 + 1].load_type ;
+		out->p2_assist[i] = ( unsigned char )pl_work[i * 2 + 1].pl_personal ;
+		out->p2_color[i] = ( unsigned char )pl_work[i * 2 + 1].load_color ;
+	}
+}
+
+const MVC2_MATCH_API dc_match_api = {
+	dc_match_is_ready,
+	dc_match_start_versus,
+	dc_match_start_training,
+	dc_match_get_info,
+} ;
+#endif

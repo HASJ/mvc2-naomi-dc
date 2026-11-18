@@ -259,3 +259,51 @@ void mdmFinish(void) {
 Sint32 ntInfIsNetworkInfo(void) {
     return NTD_ERR_NOINFO;
 }
+
+typedef struct {
+    Sint32 sound_mode;
+    unsigned tmr_base;
+    PDS_PERIPHERAL pads[4];
+} DC_SHINOBI_STATE;
+
+size_t dc_shinobi_state_size(void) {
+    return sizeof(DC_SHINOBI_STATE);
+}
+
+void dc_shinobi_state_save(void* out) {
+    DC_SHINOBI_STATE s;
+    int i;
+    memset(&s, 0, sizeof s);
+    s.sound_mode = sound_mode;
+    s.tmr_base = tmr_base;
+    memcpy(s.pads, pads, sizeof pads);
+    for (i = 0; i < 4; i++) {
+        s.pads[i].info = NULL;
+    }
+    memcpy(out, &s, sizeof s);
+}
+
+void dc_shinobi_state_load(const void* in) {
+    DC_SHINOBI_STATE s;
+    int i;
+    memcpy(&s, in, sizeof s);
+    sound_mode = s.sound_mode;
+    tmr_base = s.tmr_base;
+    memcpy(pads, s.pads, sizeof pads);
+    for (i = 0; i < 4; i++) {
+        pads[i].info = i < 2 ? &pad_info : &none_info;
+    }
+}
+
+uint64_t dc_shinobi_state_hash(void) {
+    DC_SHINOBI_STATE s;
+    const uint8_t* p = (const uint8_t*)&s;
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    dc_shinobi_state_save(&s);
+    for (i = 0; i < sizeof s; i++) {
+        h ^= p[i];
+        h *= 1099511628211ULL;
+    }
+    return h;
+}
