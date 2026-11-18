@@ -38,22 +38,26 @@ typedef struct {
 static coro main_coro;
 static coro* current;
 
-extern void __cdecl coro_swap(void** save_sp, void* load_sp) __asm__("coro_swap");
+/* Primary 1 MB coroutine stack kept in fixed-base .bss so VirtualAlloc collisions never alter VAs. */
+static __attribute__((aligned(4096))) uint8_t s_primary_stack[1u << 20];
+static int s_primary_in_use;
+
+extern void __attribute__((regparm(2))) coro_swap(void** save_sp, void* load_sp) __asm__("coro_swap");
 
 __asm__(
     ".text\n"
     ".globl coro_swap\n"
     "coro_swap:\n"
-    "    movl 4(%esp), %eax\n"
-    "    movl 8(%esp), %edx\n"
     "    pushl %ebp\n"
     "    pushl %ebx\n"
     "    pushl %esi\n"
     "    pushl %edi\n"
     "    subl $4, %esp\n"
+    "    movl $0, (%esp)\n"
     "    fnstcw (%esp)\n"
     "    subl $4, %esp\n"
     "    stmxcsr (%esp)\n"
+    "    andl $0xFFC0, (%esp)\n"
     "    movl %fs:0x00, %ecx\n"
     "    pushl %ecx\n"
     "    movl %fs:0x04, %ecx\n"
@@ -109,6 +113,7 @@ static void start_on_stack(coro* c, void (*fn)(void*), void* arg) {
     }
     __asm__ volatile("fnstcw %0" : "=m"(fcw));
     __asm__ volatile("stmxcsr %0" : "=m"(mxcsr));
+    mxcsr &= 0xFFC0u;
 
     top = (uint32_t*)(((uintptr_t)c->stack + c->stack_size) & ~(uintptr_t)15);
     /* dummy return address above coro_start so coro_start enters with 16-byte aligned (esp + 4) */
@@ -135,7 +140,16 @@ coro* coro_create(void (*fn)(void*), void* arg, unsigned stack_size) {
     coro_self();
     stack_size = (stack_size + 4095u) & ~4095u;
     if (c != NULL) {
-        c->stack = VirtualAlloc(NULL, stack_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        if (!s_primary_in_use && stack_size <= sizeof(s_primary_stack)) {
+            c->stack = s_primary_stack;
+            s_primary_in_use = 1;
+        } else {
+            /* Try fixed virtual address first so secondary coroutine stacks stay uniform across peers. */
+            c->stack = VirtualAlloc((void*)(uintptr_t)0x1C000000u, stack_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            if (c->stack == NULL) {
+                c->stack = VirtualAlloc(NULL, stack_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+            }
+        }
     }
     if (c == NULL || c->stack == NULL) {
         fprintf(stderr, "coro_create: VirtualAlloc failed for %u byte stack\n", stack_size);
@@ -154,7 +168,9 @@ void coro_restart(coro* c, void (*fn)(void*), void* arg) {
 
 void coro_delete(coro* c) {
     if (c != NULL && c != current && c != &main_coro) {
-        if (c->stack != NULL) {
+        if (c->stack == s_primary_stack) {
+            s_primary_in_use = 0;
+        } else if (c->stack != NULL) {
             VirtualFree(c->stack, 0, MEM_RELEASE);
         }
         free(c);

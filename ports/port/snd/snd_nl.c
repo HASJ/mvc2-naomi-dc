@@ -88,10 +88,12 @@ int snd_enabled(void) {
         if (e != NULL) {
             sound_on = atoi(e) != 0;
         } else {
-            int keep_snd = cli_has_flag("savestate-check") || cli_has_flag("replay-verify") ||
-                           cli_get_opt("replay") != NULL || cli_get_opt("synctest") != NULL ||
-                           cli_get_opt("connect") != NULL || cli_get_opt("host") != NULL ||
-                           cli_get_opt("join") != NULL || cli_get_opt("spectate") != NULL ||
+            int keep_snd = cli_has_flag("savestate-check") || cli_has_flag("patch-check") ||
+                           cli_get_opt("replay-verify") != NULL || cli_get_opt("takeover-test") != NULL ||
+                           cli_get_opt("record") != NULL || cli_get_opt("replay") != NULL ||
+                           cli_get_opt("synctest") != NULL || cli_get_opt("connect") != NULL ||
+                           cli_get_opt("host") != NULL || cli_get_opt("join") != NULL ||
+                           cli_get_opt("spectate") != NULL ||
                            getenv("MVC2_SAVESTATE_TEST") != NULL || getenv("MVC2_SYNCTEST") != NULL ||
                            getenv("MVC2_NETPLAY") != NULL;
             sound_on = keep_snd || getenv("MVC2_FRAMES") == NULL || getenv("MVC2_WAV") != NULL;
