@@ -249,6 +249,45 @@ static void ef05_cur_free( PLAYER_WORK *ew )
 	work_free( ew ) ;
 }
 
+/* the slot of each piece in the place table while a member is chosen: as made, after ctl_in, after
+   ctl_out */
+static Uint8 ef05_cur_slot_tbl[3][3] = {
+	{ 0, 1, 2 },
+	{ 2, 0, 1 },
+	{ 2, 1, 0 },
+} ;
+
+/****************************************************************/
+/*			A pick taken back: the side's cursor waits for		*/
+/*			the member again, with its pieces where they		*/
+/*			stood for that member								*/
+/****************************************************************/
+void ef05_cur_rewind( Uint8 side, Uint8 member )
+{
+	PLAYER_WORK *ew, *pw ;
+	Uint8 no, slot ;
+
+	if( member > 2 ) return ;
+	for( ew = work_top[W_SET] ; ew ; ew = ew->behind_w ){
+		if( ew->work_func != ef05_cur_main || ew->type != side || ew->routine_0 != 3 ) continue ;
+		ew->routine_1 = member * 2 + 1 ;
+		ew->dir = 0 ;
+		for( pw = work_top[W_SET] ; pw ; pw = pw->behind_w ){
+			if( pw->work_func != ef05_cur_piece_main || pw->master_w != ew || pw->routine_0 != 2 ) continue ;
+			if( sel_w.join_flag == 3 ) no = 0 ;
+			else no = pw->work3 ;
+			slot = ef05_cur_slot_tbl[member][pw->sub_type] ;
+			pw->pos = ef05_cur_pos_tbl[pw->type][no][slot] ;
+			pw->work1 = slot ;
+			pw->spd.x = pw->spd.y = pw->spd.z = 0.0f ;
+			pw->acc.x = pw->acc.y = pw->acc.z = 0.0f ;
+			pw->routine_1 = 0 ;
+			pw->routine_2 = 0 ;
+		}
+	}
+	sel_w.cur_go_flag &= ~( 1 << side ) ;
+}
+
 static void ef05_cur_boss_set( PLAYER_WORK *ew );
 static void ef05_cur_boss_wait( PLAYER_WORK *ew );
 

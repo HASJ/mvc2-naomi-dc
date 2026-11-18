@@ -33,6 +33,8 @@ extern void face2_tex_set( int pl );
 extern void ef05_cur_make( Uint8 side, int a );
 extern void sel_cursor_set( PLAYER_WORK *pl_w );
 extern void ef05_card_set( Uint8 side, Uint8 no );
+extern void ef05_card_rewind( Uint8 side, Uint8 no );
+extern void ef05_cur_rewind( Uint8 side, Uint8 member );
 extern void sel_turn_set( PLAYER_WORK *tw, Uint8 side );
 extern PLAYER_WORK *sel_name_set( PLAYER_WORK *pl_w, Uint8 flag );
 extern void ef05_tag_set( PLAYER_WORK *pl_w );
@@ -1082,10 +1084,14 @@ static void sel_pl_pick_char( PLAYER_WORK *pl_w )
 		tex_req_no |= pl_w->pl_index + 1 ;
 		face_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
 		face2_tex_set( pl_w->timer1 * 2 + pl_w->pl_index ) ;
+		pl_w->master_w = sel_char_w ;
+		ef05_cur_rewind( pl_w->pl_index, pl_w->timer1 ) ;
+		ef05_card_rewind( pl_w->pl_index, pl_w->timer1 ) ;
+		pl_w->timer0 -= 2 ;
 		pl_w->routine_1 = 1 ;
 		pl_w->routine_2 = 0 ;
 		sel_w.work_step[pl_w->pl_index] = 1 ;
-		sel_w.cur_char[pl_w->pl_index] = 1 ;
+		sel_w.cur_char[pl_w->pl_index] = sel_char_w->load_type + 1 ;
 		return ;
 	}
 	if( sel_sw_on[pl_w->pl_index] & KEY_LEVER ){
@@ -1167,10 +1173,11 @@ static void sel_pl_pick_type( PLAYER_WORK *pl_w )
 				sel_w.char_free[pl_w->pl_index][hi] |= bit ;
 			}
 			pl_w->timer0 -- ;
+			ef05_card_rewind( pl_w->pl_index, pl_w->timer1 ) ;
 			pl_w->routine_1 = 1 ;
 			pl_w->routine_2 = 0 ;
 			sel_w.work_step[pl_w->pl_index] = 1 ;
-			sel_w.cur_char[pl_w->pl_index] = 1 ;
+			sel_w.cur_char[pl_w->pl_index] = sel_type_w->load_type + 1 ;
 			break ;
 		}
 		if( sel_w.sel_timer == 0 ){

@@ -188,6 +188,24 @@ static void ef05_card_pic( PLAYER_WORK *ew )
 }
 
 /****************************************************************/
+/*			A pick taken back: the side's card serves the		*/
+/*			member again, or a new one comes in when the old	*/
+/*			one has already gone								*/
+/****************************************************************/
+void ef05_card_rewind( Uint8 side, Uint8 no )
+{
+	PLAYER_WORK *ew ;
+
+	for( ew = work_top[W_SET] ; ew ; ew = ew->behind_w ){
+		if( ew->work_func != ef05_card_main || ew->type != side || ew->routine_0 > 1 ) continue ;
+		ew->sub_type = no ;
+		ew->pl_type = 0xff ;
+		return ;
+	}
+	ef05_card_set( side, no ) ;
+}
+
+/****************************************************************/
 /*			The cursor's cell from the character, by the		*/
 /*			grid												*/
 /****************************************************************/
