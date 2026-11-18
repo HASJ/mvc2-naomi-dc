@@ -284,6 +284,27 @@ mvc2_program(dc PROGRAM dc SOURCES ${DC_SOURCES} DEFINITIONS TARGET_DC BUILD_DAT
              HOST mvc2_port mvc2_lib mvc2_dc)
 
 if(WIN32 AND NOT NINTENDO_3DS)
+    enable_language(CXX)
+    set(GGPO_DIR ${CMAKE_SOURCE_DIR}/third_party/ggpo)
+    add_library(mvc2_ggpo STATIC
+        ${GGPO_DIR}/src/lib/ggpo/bitvector.cpp
+        ${GGPO_DIR}/src/lib/ggpo/game_input.cpp
+        ${GGPO_DIR}/src/lib/ggpo/input_queue.cpp
+        ${GGPO_DIR}/src/lib/ggpo/log.cpp
+        ${GGPO_DIR}/src/lib/ggpo/main.cpp
+        ${GGPO_DIR}/src/lib/ggpo/platform_windows.cpp
+        ${GGPO_DIR}/src/lib/ggpo/poll.cpp
+        ${GGPO_DIR}/src/lib/ggpo/sync.cpp
+        ${GGPO_DIR}/src/lib/ggpo/timesync.cpp
+        ${GGPO_DIR}/src/lib/ggpo/backends/p2p.cpp
+        ${GGPO_DIR}/src/lib/ggpo/backends/spectator.cpp
+        ${GGPO_DIR}/src/lib/ggpo/backends/synctest.cpp
+        ${GGPO_DIR}/src/lib/ggpo/network/udp.cpp
+        ${GGPO_DIR}/src/lib/ggpo/network/udp_proto.cpp)
+    target_include_directories(mvc2_ggpo PUBLIC ${GGPO_DIR}/include PRIVATE ${GGPO_DIR}/src/lib/ggpo)
+    target_compile_definitions(mvc2_ggpo PRIVATE _WINDOWS WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_options(mvc2_ggpo PRIVATE -O2 -w -fno-exceptions -fno-rtti)
+
     set(PATCH_GEN ${GEN}/patch_api)
     add_custom_command(
         OUTPUT ${PATCH_GEN}/patch_api_gen.h ${PATCH_GEN}/host_api_fill.c ${PATCH_GEN}/dll_thunks.c ${PATCH_GEN}/patch_id.txt
@@ -344,7 +365,13 @@ function(mvc2_executable TARGET)
     set_source_files_properties(${CMAKE_BINARY_DIR}/${TARGET}_host.o PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
     set(EXTRA_FRONT)
     if(WIN32 AND NOT NINTENDO_3DS)
-        list(APPEND EXTRA_FRONT ${PORT}/net/ed25519_verify.c ${PORT}/net/replay.c ${PORT}/sys/patch_dll.c)
+        list(APPEND EXTRA_FRONT
+            ${PORT}/net/ed25519_verify.c
+            ${PORT}/net/replay.c
+            ${PORT}/net/net_transport.c
+            ${PORT}/net/ggpo_glue.c
+            ${PORT}/net/uri_ipc.c
+            ${PORT}/sys/patch_dll.c)
         if("dc" IN_LIST ARGN)
             list(APPEND EXTRA_FRONT ${GEN}/patch_api/host_api_fill.c)
         endif()
@@ -352,6 +379,7 @@ function(mvc2_executable TARGET)
     add_executable(${TARGET} ${OBJECTS} ${FRONT_SOURCES} ${EXTRA_FRONT} ${PORT}/sys/restart.c)
     target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd ${PORT}/net)
     if(WIN32 AND NOT NINTENDO_3DS)
+        target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/third_party/ggpo/include)
         add_dependencies(${TARGET} mvc2_patch_api_gen)
         target_include_directories(${TARGET} PRIVATE ${GEN}/patch_api)
     endif()
@@ -435,8 +463,12 @@ function(mvc2_executable TARGET)
             target_compile_definitions(${TARGET} PRIVATE MVC2_SDL3 RD_SDL3)
         endif()
         if(WIN32)
+            target_link_libraries(${TARGET} PRIVATE mvc2_ggpo ws2_32 -Wl,-Bstatic -lstdc++ -lpthread)
             # a fixed load address, so the RAM at 0x0C000000 stays free and runs are repeatable
-            target_link_options(${TARGET} PRIVATE "-Wl,--disable-dynamicbase")
+            target_link_options(${TARGET} PRIVATE
+                -Wl,--disable-dynamicbase
+                -static-libstdc++
+                -static-libgcc)
         elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
             # libgcc's division helpers, through port/sys/divzero_arm.c
             target_link_options(${TARGET} PRIVATE

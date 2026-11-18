@@ -68,10 +68,14 @@ static const char* cli_norm_name(const char* name) {
 }
 
 const char* cli_get_opt(const char* name) {
+    return cli_get_opt_n(name, 0);
+}
+
+const char* cli_get_opt_n(const char* name, int arg_idx) {
     const char* key = cli_norm_name(name);
     size_t klen = strlen(key);
     int i;
-    if (klen == 0 || saved_argv == NULL) {
+    if (klen == 0 || saved_argv == NULL || arg_idx < 0) {
         return NULL;
     }
     for (i = 1; i < saved_argc; i++) {
@@ -81,11 +85,15 @@ const char* cli_get_opt(const char* name) {
         }
         a += 2;
         if (strncmp(a, key, klen) == 0) {
-            if (a[klen] == '=') {
+            if (arg_idx == 0 && a[klen] == '=') {
                 return a + klen + 1;
             }
-            if (a[klen] == 0 && i + 1 < saved_argc) {
-                return saved_argv[i + 1];
+            if (a[klen] == 0 && i + 1 + arg_idx < saved_argc) {
+                const char* val = saved_argv[i + 1 + arg_idx];
+                if (arg_idx > 0 && val[0] == '-' && val[1] == '-') {
+                    return NULL;
+                }
+                return val;
             }
         }
     }
@@ -424,20 +432,27 @@ static int mode = -1;
 static const char* path[MODES];
 static int found[MODES];
 
-static int is_value_option(const char* a) {
-    static const char* const opts[] = {
-        "--config", "--join", "--connect", "--host", "--spectate", "--relay", "--server",
-        "--replay", "--replay-verify", "--takeover-test", "--record", "--patch", "--synctest",
-        "--netsim", "--local-port", "--peer-port", "--takeover-frame", "--seed", "--token",
-        "--match-id", "--lobby",
+static int option_arity(const char* a) {
+    static const struct {
+        const char* name;
+        int n;
+    } opts[] = {
+        { "--p2p", 3 },
+        { "--spectate", 2 },
+        { "--config", 1 }, { "--join", 1 }, { "--connect", 1 }, { "--host", 1 },
+        { "--relay", 1 }, { "--relay-token", 1 }, { "--delay", 1 }, { "--server", 1 },
+        { "--replay", 1 }, { "--replay-verify", 1 }, { "--takeover-test", 1 }, { "--record", 1 },
+        { "--patch", 1 }, { "--synctest", 1 }, { "--netsim", 1 }, { "--local-port", 1 },
+        { "--peer-port", 1 }, { "--takeover-frame", 1 }, { "--seed", 1 }, { "--match-seed", 1 },
+        { "--token", 1 }, { "--match-id", 1 }, { "--lobby", 1 },
     };
     size_t i;
     if (strchr(a, '=') != NULL) {
         return 0;
     }
     for (i = 0; i < sizeof opts / sizeof opts[0]; i++) {
-        if (strcmp(a, opts[i]) == 0) {
-            return 1;
+        if (strcmp(a, opts[i].name) == 0) {
+            return opts[i].n;
         }
     }
     return 0;
@@ -457,7 +472,8 @@ int pick_game(int argc, char** argv) {
         } else if (strcmp(argv[i], "--dc") == 0) {
             flag = DC;
         } else if (argv[i][0] == '-' && argv[i][1] == '-') {
-            if (is_value_option(argv[i]) && i + 1 < argc) {
+            int ar = option_arity(argv[i]);
+            while (ar-- > 0 && i + 1 < argc && !(argv[i + 1][0] == '-' && argv[i + 1][1] == '-')) {
                 i++;
             }
         } else {

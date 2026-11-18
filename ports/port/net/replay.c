@@ -761,6 +761,14 @@ static void scripted_match_inputs(int frame, uint16_t* out_p1, uint16_t* out_p2)
     *out_p2 = net_pack_input(p2);
 }
 
+int replay_boot_canonical_match(const char* patch_id, uint32_t seed, int64_t timestamp_utc, uint8_t start_mode) {
+    return boot_dc_match_canonical(patch_id, seed, timestamp_utc, start_mode);
+}
+
+void replay_scripted_match_inputs(int frame, uint16_t* out_p1, uint16_t* out_p2) {
+    scripted_match_inputs(frame, out_p1, out_p2);
+}
+
 int replay_run_record_cli(const char* out_path, int frames, uint32_t seed) {
     const char* patch = cli_get_opt("patch");
     int f;

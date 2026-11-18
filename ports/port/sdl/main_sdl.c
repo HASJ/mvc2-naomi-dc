@@ -25,6 +25,8 @@
 #include "menu_sdl.h"
 #include "patch_dll.h"
 #include "replay.h"
+#include "ggpo_glue.h"
+#include "uri_ipc.h"
 #include "savestate.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
@@ -802,11 +804,21 @@ static void shutdown_front(void) {
 
 int main(int argc, char** argv) {
     int quit = 0;
+    int exit_rc = 0;
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
+
+    if (uri_ipc_try_forward_cli(argc, argv)) {
+        return 0;
+    }
+
+    if (frames_left < 0 && (has_arg(argc, argv, "--synctest") || getenv("MVC2_SYNCTEST") != NULL)) {
+        frames_left = 1500;
+    }
 
     test_run = frames_left >= 0 || getenv("MVC2_HEADLESS") != NULL || has_arg(argc, argv, "--headless") ||
                has_arg(argc, argv, "--savestate-check") || has_arg(argc, argv, "--patch-check") ||
-               has_arg(argc, argv, "--replay-verify") || has_arg(argc, argv, "--takeover-test");
+               has_arg(argc, argv, "--replay-verify") || has_arg(argc, argv, "--takeover-test") ||
+               has_arg(argc, argv, "--synctest") || getenv("MVC2_SYNCTEST") != NULL;
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -843,52 +855,76 @@ int main(int argc, char** argv) {
         sdl_audio_open();
     }
     host_keep_start();
+    if (!test_run || has_arg(argc, argv, "--register-uri")) {
+        uri_ipc_register_protocol();
+    }
+    uri_ipc_listen_start();
     rd_begin_frame();
     if (cli_get_opt("patch") != NULL) {
         if (!patch_dll_activate(cli_get_opt("patch"))) {
+            uri_ipc_listen_stop();
             shutdown_front();
             return 1;
         }
     }
     if (!start_game()) {
+        uri_ipc_listen_stop();
         shutdown_front();
         return 1;
     }
     if (cli_has_flag("savestate-check") || getenv("MVC2_SAVESTATE_TEST") != NULL) {
         int test_rc = savestate_run_self_test();
+        uri_ipc_listen_stop();
         shutdown_front();
         return test_rc;
     }
     if (cli_has_flag("patch-check")) {
         int test_rc = patch_dll_run_self_test();
+        uri_ipc_listen_stop();
         shutdown_front();
         return test_rc;
     }
     if (cli_get_opt("replay-verify") != NULL) {
         int test_rc = replay_run_verify_cli(cli_get_opt("replay-verify"));
+        uri_ipc_listen_stop();
         shutdown_front();
         return test_rc;
     }
     if (cli_get_opt("takeover-test") != NULL) {
         int test_rc = replay_run_takeover_test_cli(cli_get_opt("takeover-test"));
+        uri_ipc_listen_stop();
         shutdown_front();
         return test_rc;
     }
-    if (cli_get_opt("record") != NULL && test_run) {
+    {
+        int gg_rc = ggpo_glue_init_from_cli();
+        if (gg_rc < 0) {
+            uri_ipc_listen_stop();
+            shutdown_front();
+            return 1;
+        }
+    }
+    if (!ggpo_glue_is_active() && cli_get_opt("record") != NULL && test_run) {
         const char* seed_opt = cli_get_opt("seed");
         uint32_t seed = seed_opt ? (uint32_t)strtoul(seed_opt, NULL, 0) : 0x12345678u;
         int test_rc = replay_run_record_cli(cli_get_opt("record"), frames_left > 0 ? (int)frames_left : 900, seed);
+        uri_ipc_listen_stop();
         shutdown_front();
         return test_rc;
     }
-    if (cli_get_opt("replay") != NULL) {
+    if (!ggpo_glue_is_active() && cli_get_opt("replay") != NULL) {
         if (!replay_session_open(cli_get_opt("replay"))) {
+            uri_ipc_listen_stop();
             shutdown_front();
             return 1;
         }
     }
     while (!quit) {
         SDL_Event e;
+        char uri_buf[1024];
+        if (uri_ipc_poll(uri_buf, sizeof uri_buf)) {
+            host_log("URI_IPC RECEIVED uri=%s", uri_buf);
+        }
         while (SDL_PollEvent(&e)) {
             if (test_run) {
                 quit |= e.type == SDL_EVENT_QUIT;
@@ -924,23 +960,34 @@ int main(int argc, char** argv) {
         }
         {
             Uint64 start = SDL_GetPerformanceCounter(), presenting = present_ticks;
-            if (replay_session_is_active()) {
-                replay_session_step_frame(net_pack_input(input.player[0]), net_pack_input(input.player[1]));
+            if (ggpo_glue_is_active()) {
+                if (!ggpo_glue_step_frame(input.player[0], input.player[1])) {
+                    quit = 1;
+                }
             } else {
-                naomi_run_frame();
-            }
-            if (!host_is_headless()) {
-                sdl_audio_frame();
-            } else {
-                sdl_audio_step_silent();
+                if (replay_session_is_active()) {
+                    replay_session_step_frame(net_pack_input(input.player[0]), net_pack_input(input.player[1]));
+                } else {
+                    naomi_run_frame();
+                }
+                if (!host_is_headless()) {
+                    sdl_audio_frame();
+                } else {
+                    sdl_audio_step_silent();
+                }
             }
             game_ticks += SDL_GetPerformanceCounter() - start - (present_ticks - presenting);
         }
-        if (frames_left > 0 && --frames_left == 0) {
+        if (frames_left > 0 && (!ggpo_glue_is_active() || ggpo_glue_is_synchronized()) && --frames_left == 0) {
             quit = 1;
         }
     }
+    if (ggpo_glue_is_active()) {
+        ggpo_glue_finish_and_log();
+        exit_rc = ggpo_glue_exit_code();
+    }
     replay_session_close();
+    uri_ipc_listen_stop();
     shutdown_front();
-    return 0;
+    return exit_rc;
 }

@@ -160,6 +160,7 @@ const char* host_config_dir(void);
 const char* host_config_path(const char* name);
 const char* host_exe_path(const char* name);
 const char* cli_get_opt(const char* name);
+const char* cli_get_opt_n(const char* name, int arg_idx);
 int cli_has_flag(const char* name);
 void config_set(const char* key, const char* value); /* and saves mvc2.cfg */
 int start_game(void);

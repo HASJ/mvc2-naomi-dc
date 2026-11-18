@@ -99,6 +99,8 @@ void replay_session_exit_takeover(void);
 void replay_session_get_status(REPLAY_STATUS* out);
 
 /* CLI / automated verification runners (return process exit code 0 on success) */
+int  replay_boot_canonical_match(const char* patch_id, uint32_t seed, int64_t timestamp_utc, uint8_t start_mode);
+void replay_scripted_match_inputs(int frame, uint16_t* out_p1, uint16_t* out_p2);
 int  replay_run_record_cli(const char* out_path, int frames, uint32_t seed);
 int  replay_run_verify_cli(const char* path);
 int  replay_run_takeover_test_cli(const char* path);
