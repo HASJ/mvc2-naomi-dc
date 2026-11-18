@@ -32,6 +32,7 @@ void sel_nop( PLAYER_WORK *pl_w )
 #ifdef TARGET_DC	/* a mark, and its plate behind it, at the place of the character's own type */
 	PLAYER_WORK *ew, *tw ;
 
+	return ;	/* the mod shows no Recommend! mark: the pillars name each assist's move instead */
 	tw = pl_w->ef_w ;
 	if( pl_w->sub_type != sel_personal_tbl[tw->load_type] ) return ;
 	if( ( ew = work_get( 0, W_SET, LIST_END ) ) == 0 ) return ;
