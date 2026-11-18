@@ -8,6 +8,7 @@
 void ctr_tell(const char* title, const char* text);    /* shown on the bottom screen until START */
 void ctr_stop(const char* text);                        /* said as ctr_tell, then the program ends (main thread) */
 void ctr_hung(const char* text, int cpu_too);           /* the same with the GPU stuck (or another thread too) */
+extern volatile int ctr_ending;                         /* the program is ending: no stop reported after */
 extern const char* ctr_alloc_error;                     /* another thread's failed allocation, or NULL */
 int ctr_ask(const char* text);                          /* 0 arcade, 1 Dreamcast, -1 quit (START) */
 uint32_t* ctr_art_pillars(int target_w, int scale);

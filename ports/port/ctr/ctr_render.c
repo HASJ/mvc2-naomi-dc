@@ -4708,7 +4708,7 @@ static void watch_hung(const char* why, int cpu_too) {
     FILE *f, *t;
     u32 words = frame_words;
     int i;
-    if (__atomic_exchange_n(&once, 1, __ATOMIC_SEQ_CST)) {
+    if (ctr_ending || __atomic_exchange_n(&once, 1, __ATOMIC_SEQ_CST)) {
         for (;;) {
             svcSleepThread(1000000000LL);
         }
@@ -4759,14 +4759,54 @@ static void watch_hung(const char* why, int cpu_too) {
 /* MVC2_WATCH_TEST=frame: the report and the exit at that frame, to try them */
 static unsigned long watch_test;
 
-/* the GPU's last frame waited for at most 500 ms */
+/* in the HOME Menu or asleep: no frames, and not a stop */
+static volatile int away_home, away_sleep;
+static volatile u32 away_beat;      /* watch_beat when the program was last away */
+static aptHookCookie away_hook;
+
+static int away(void) {
+    if ((away_home || away_sleep) && watch_beat - away_beat >= 3) {
+        away_home = away_sleep = 0;     /* back without a hook's word: the game is drawing */
+    }
+    return away_home || away_sleep;
+}
+
+static void away_event(APT_HookType type, void* param) {
+    static const char* const what[APTHOOK_COUNT] = { "the HOME Menu", "back from the HOME Menu", "asleep", "awake",
+                                                     "exiting" };
+    (void)param;
+    if (type == APTHOOK_ONSUSPEND || type == APTHOOK_ONSLEEP) {
+        away_beat = watch_beat;
+        if (type == APTHOOK_ONSUSPEND) {
+            away_home = 1;
+        } else {
+            away_sleep = 1;
+        }
+    } else if (type == APTHOOK_ONRESTORE) {
+        away_home = 0;
+    } else if (type == APTHOOK_ONWAKEUP) {
+        away_sleep = 0;
+    } else if (type == APTHOOK_ONEXIT) {
+        ctr_ending = 1;
+    }
+    if ((unsigned)type < APTHOOK_COUNT) {
+        time_t now = time(NULL);
+        char when[16];
+        strftime(when, sizeof when, "%H:%M:%S", localtime(&now));
+        host_log("apt: %s at %s, the game's frame %lu", what[type], when, (unsigned long)frame_no);
+    }
+}
+
+/* the GPU's last frame waited for at most 500 ms, not counting time away */
 static void watched_begin(void) {
     uint64_t start = svcGetSystemTick();
-    if (watch_test != 0 && frame_no >= watch_test) {
+    if (watch_test != 0 && frame_no >= watch_test && !ctr_ending) {
         watch_hung("a test (MVC2_WATCH_TEST)", 0);
     }
     while (!C3D_FrameBegin(C3D_FRAME_NONBLOCK)) {
-        if (svcGetSystemTick() - start > SYSCLOCK_ARM11 / 2) {
+        if (away() || ctr_ending) {
+            start = svcGetSystemTick();
+        } else if (svcGetSystemTick() - start > SYSCLOCK_ARM11 / 2) {
             watch_hung("the GPU hasn't finished a frame in 500 ms", 0);
         }
         svcSleepThread(100000);
@@ -4778,14 +4818,16 @@ void ctr_render_alive(void) {
     watch_beat++;
 }
 
-/* any other stop: no frame drawn for 10 s */
+/* any other stop: no frame drawn for 10 s, not counting time away; none once the program is ending */
 static void watch_main(void* arg) {
     u32 beat = watch_beat;
     int still = 0;
     (void)arg;
-    for (;;) {
+    while (!ctr_ending) {
         svcSleepThread(250000000LL);
-        if (watch_beat != beat) {
+        if (ctr_ending) {
+            break;
+        } else if (watch_beat != beat || away()) {
             beat = watch_beat;
             still = 0;
         } else if (++still == 40) {
@@ -6572,6 +6614,7 @@ int ctr_render_init(int full, int stretch) {
     gspSetEventCallback(GSPGPU_EVENT_P3D, list_end, NULL, false);
     gpu_split_init();
 #endif
+    aptHook(&away_hook, away_event, NULL);
     watch_regs = getenv("MVC2_WATCH_REGS") != NULL && strcmp(getenv("MVC2_WATCH_REGS"), "0") != 0;
     if (getenv("MVC2_GPU_WATCH") != NULL && strcmp(getenv("MVC2_GPU_WATCH"), "0") != 0) {
         s32 prio = 0x30;

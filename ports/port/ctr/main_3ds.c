@@ -705,11 +705,14 @@ static void set_defaults(void) {
     }
 }
 
+volatile int ctr_ending;
+
 /* the reason on the bottom screen until START, except in a test run (MVC2_FRAMES or MVC2_SHOT), which ends */
 static int render_on;    /* ctr_render_init done, ctr_render_exit not yet */
 
 static int fail(const char* text) {
     int test = getenv("MVC2_FRAMES") != NULL || getenv("MVC2_SHOT") != NULL;
+    ctr_ending = 1;
     host_log("stopped: %s", text);
     if (!test) {
         ctr_tell("Marvel vs. Capcom 2", text);
@@ -740,9 +743,12 @@ void ctr_stop(const char* text) {
    reset for the HOME Menu, which APT is told to bring back. citro3d is left as it is: stopping it waits for the GPU.
    When a thread may be stuck too, the sound is only turned down, as stopping it waits for its thread. The wait reads
    the buttons only: APT's HOME would need the GPU. No stdio or atexit work at the end: another thread may hold its
-   locks. A test run ends at once */
+   locks. A test run ends at once, and so does one already ending, whose buttons, screens and GPU may be gone */
 void ctr_hung(const char* text, int cpu_too) {
     int i;
+    if (ctr_ending || hidSharedMem == NULL) {
+        svcExitProcess();
+    }
     ctr_log_flush();
     fflush(stderr);
     if (getenv("MVC2_FRAMES") != NULL || getenv("MVC2_SHOT") != NULL) {
@@ -1005,6 +1011,7 @@ int main(int argc, char** argv) {
             break;
         }
     }
+    ctr_ending = 1;
     if (rec_f != NULL) {
         rec_close();
     }
