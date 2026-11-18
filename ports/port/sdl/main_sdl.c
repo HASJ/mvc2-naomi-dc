@@ -27,6 +27,7 @@
 #include "replay.h"
 #include "ggpo_glue.h"
 #include "uri_ipc.h"
+#include "net_ui.h"
 #include "savestate.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
@@ -344,6 +345,8 @@ static SDL_Texture* gpu_frame(void) {
 enum { TIMES_W = 240, TIMES_H = 12 };
 static int times_on;
 static SDL_Texture* times_tex;
+static SDL_Texture* hud_tex;
+static uint32_t hud_buf[RD_WIDTH * RD_HEIGHT];
 static Uint64 game_ticks, draw_ticks, present_ticks, times_start;
 static unsigned times_frames;
 
@@ -383,6 +386,23 @@ static void times_update(void) {
 static void show(SDL_Texture* t) {
     SDL_RenderClear(renderer);
     SDL_RenderTexture(renderer, t, NULL, NULL);
+    if (net_ui_has_hud() && !net_ui_is_open()) {
+        if (hud_tex == NULL) {
+            hud_tex = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, RD_WIDTH, RD_HEIGHT);
+            if (hud_tex != NULL) {
+                SDL_SetTextureBlendMode(hud_tex, SDL_BLENDMODE_BLEND);
+#ifdef MVC2_SDL3
+                SDL_SetTextureScaleMode(hud_tex, SDL_SCALEMODE_NEAREST);
+#endif
+            }
+        }
+        if (hud_tex != NULL) {
+            memset(hud_buf, 0, sizeof hud_buf);
+            net_ui_draw_hud(hud_buf, RD_WIDTH, RD_HEIGHT);
+            SDL_UpdateTexture(hud_tex, NULL, hud_buf, RD_WIDTH * 4);
+            render_at(renderer, hud_tex, 0, 0, RD_WIDTH, RD_HEIGHT);
+        }
+    }
     if (times_on && times_tex != NULL) {
         render_at(renderer, times_tex, 4, 4, TIMES_W, TIMES_H);
     }
@@ -534,7 +554,7 @@ int renderer_gpu(void) {
 
 int renderer_set_gpu(int on) {
 #ifdef MVC2_SDL3
-    SDL_Texture** own[] = { &times_tex, &screen, &gpu_screen };
+    SDL_Texture** own[] = { &times_tex, &hud_tex, &screen, &gpu_screen };
     size_t i;
     if ((gpu != NULL) == on) {
         return on;
@@ -699,6 +719,15 @@ static void present_menu(void) {
     show(screen);
 }
 
+static void present_net_ui(void) {
+    static uint32_t shown[RD_WIDTH * RD_HEIGHT];
+    read_frame();
+    memcpy(shown, frame, sizeof shown);
+    net_ui_draw_overlay(shown, RD_WIDTH, RD_HEIGHT);
+    SDL_UpdateTexture(screen, NULL, shown, RD_WIDTH * 4);
+    show(screen);
+}
+
 /* broken at spaces into lines of cols characters; the y below it */
 static int draw_wrapped(int x, int y, int cols, const char* text, uint32_t color) {
     char line[128];
@@ -788,6 +817,7 @@ static int has_arg(int argc, char** argv, const char* flag) {
 }
 
 static void shutdown_front(void) {
+    net_ui_shutdown();
     save_window();
     snd_close();
     sdl_audio_close();
@@ -818,6 +848,7 @@ int main(int argc, char** argv) {
     test_run = frames_left >= 0 || getenv("MVC2_HEADLESS") != NULL || has_arg(argc, argv, "--headless") ||
                has_arg(argc, argv, "--savestate-check") || has_arg(argc, argv, "--patch-check") ||
                has_arg(argc, argv, "--replay-verify") || has_arg(argc, argv, "--takeover-test") ||
+               has_arg(argc, argv, "--ui-smoke-test") ||
                has_arg(argc, argv, "--synctest") || getenv("MVC2_SYNCTEST") != NULL;
 
     if (!naomi_map_ram()) {
@@ -859,6 +890,7 @@ int main(int argc, char** argv) {
         uri_ipc_register_protocol();
     }
     uri_ipc_listen_start();
+    net_ui_init();
     rd_begin_frame();
     if (cli_get_opt("patch") != NULL) {
         if (!patch_dll_activate(cli_get_opt("patch"))) {
@@ -896,6 +928,12 @@ int main(int argc, char** argv) {
         shutdown_front();
         return test_rc;
     }
+    if (cli_has_flag("ui-smoke-test")) {
+        int test_rc = net_ui_run_smoke_test();
+        uri_ipc_listen_stop();
+        shutdown_front();
+        return test_rc;
+    }
     {
         int gg_rc = ggpo_glue_init_from_cli();
         if (gg_rc < 0) {
@@ -922,8 +960,10 @@ int main(int argc, char** argv) {
     while (!quit) {
         SDL_Event e;
         char uri_buf[1024];
+        net_ui_tick();
         if (uri_ipc_poll(uri_buf, sizeof uri_buf)) {
             host_log("URI_IPC RECEIVED uri=%s", uri_buf);
+            net_ui_handle_join_uri(uri_buf);
         }
         while (SDL_PollEvent(&e)) {
             if (test_run) {
@@ -931,7 +971,13 @@ int main(int argc, char** argv) {
                 continue;
             }
             input_event(&e);
-            if (window_key(&e) || menu_event(&e)) {
+            if (window_key(&e)) {
+                continue;
+            }
+            if (menu_active() && menu_event(&e)) {
+                continue;
+            }
+            if (net_ui_event(&e) || menu_event(&e)) {
                 continue;
             }
             if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && key_sym(&e) == SDLK_ESCAPE)) {
@@ -943,6 +989,10 @@ int main(int argc, char** argv) {
         }
         if (menu_active()) {
             present_menu();
+            continue;
+        }
+        if (net_ui_is_open()) {
+            present_net_ui();
             continue;
         }
         read_input();

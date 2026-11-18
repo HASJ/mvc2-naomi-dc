@@ -371,13 +371,15 @@ function(mvc2_executable TARGET)
             ${PORT}/net/net_transport.c
             ${PORT}/net/ggpo_glue.c
             ${PORT}/net/uri_ipc.c
+            ${PORT}/net/http_client.c
+            ${PORT}/net/net_ui.c
             ${PORT}/sys/patch_dll.c)
         if("dc" IN_LIST ARGN)
             list(APPEND EXTRA_FRONT ${GEN}/patch_api/host_api_fill.c)
         endif()
     endif()
     add_executable(${TARGET} ${OBJECTS} ${FRONT_SOURCES} ${EXTRA_FRONT} ${PORT}/sys/restart.c)
-    target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd ${PORT}/net)
+    target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd ${PORT}/net ${PORT}/sdl)
     if(WIN32 AND NOT NINTENDO_3DS)
         target_include_directories(${TARGET} PRIVATE ${CMAKE_SOURCE_DIR}/third_party/ggpo/include)
         add_dependencies(${TARGET} mvc2_patch_api_gen)
@@ -463,7 +465,7 @@ function(mvc2_executable TARGET)
             target_compile_definitions(${TARGET} PRIVATE MVC2_SDL3 RD_SDL3)
         endif()
         if(WIN32)
-            target_link_libraries(${TARGET} PRIVATE mvc2_ggpo ws2_32 -Wl,-Bstatic -lstdc++ -lpthread)
+            target_link_libraries(${TARGET} PRIVATE mvc2_ggpo ws2_32 winhttp -Wl,-Bstatic -lstdc++ -lpthread)
             # a fixed load address, so the RAM at 0x0C000000 stays free and runs are repeatable
             target_link_options(${TARGET} PRIVATE
                 -Wl,--disable-dynamicbase
