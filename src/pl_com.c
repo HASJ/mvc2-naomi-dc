@@ -195,6 +195,17 @@ Uint8 pl_air_dash_ck( PLAYER_WORK *pl_w, COM_WORK *cw )
 }
 
 /****************************************************************/
+/*			The dash buttons this frame: the dash button, or	*/
+/*			both punches together								*/
+/****************************************************************/
+Uint8 pl_dash_sw_ck( PLAYER_WORK *pl_w )
+{
+	Uint16 sw ;
+
+	return ( Uint8 )( host_dash_now( pl_w ) || sw_pair_ck( pl_w, 0x0300, &sw ) || sw_now_ck( pl_w, 0x0300, &sw, 0 ) ) ;
+}
+
+/****************************************************************/
 Uint8 pl_air_dash_sw_ck( PLAYER_WORK *pl_w )
 {
 	Uint16 sw ;
