@@ -12,6 +12,9 @@ extern int pl_active_tag_ok_ck( PLAYER_WORK *nw );
 extern int pl_active_tag_pending_ck( Uint8 pl_no );
 extern int pl_assist_slot_ok_ck( PLAYER_WORK *nw, int is_assist );
 extern void pl_active_tag_req_set( Uint8 pl_no, Uint8 team_idx );
+extern int pl_counter_tag_ok_ck( PLAYER_WORK *nw );
+extern int pl_counter_tag_pending_ck( Uint8 pl_no );
+extern void pl_counter_tag_req_set( Uint8 pl_no, Uint8 team_idx, Uint8 pos_kind );
 
 /* a command's move number, read as the low byte of com[2] */
 #define COM_NO( com )	( ( Uint8 * )&( com )[2] )[0]
@@ -323,6 +326,8 @@ typedef struct CANCEL_RULE {
 
 static const CANCEL_RULE cancel_rules[] = {
 	/* CANCEL_RULES_BEGIN */
+	{ PL_KEN            , 1, 0             , 0x06 },	/* Ken sp Hadouken, once the shot is out */
+	{ PL_KEN            , 1, 4             , 0x06 },	/* Ken sp Hadouken in the air, once the shot is out */
 	/* CANCEL_RULES_END */
 	{ 0xff, 0, 0, 0 },
 } ;
@@ -632,6 +637,54 @@ Uint8 pl_change_ck( PLAYER_WORK *pl_w )
 	act_st_set( pl_w, N_CHANGE ) ;
 	pl_w->routine_2 = pl_w->routine_3 = 0 ;
 	pl_w->change_type = 0 ;
+	return 1 ;
+}
+
+/****************************************************************/
+Uint8 pl_counter_tag_ck( PLAYER_WORK *pl_w )
+{
+	Uint16 sw, back_bit, fwd_bit ;
+	Uint8 idx, pos_kind ;
+	Float ofs ;
+	PLAYER_WORK *nw ;
+	Sint16 total ;
+
+	if( pl_w->team_no || pl_w->pl_no >= 2 || pl_w->cpu_flag ) return 0 ;
+	if( vs_sys_w->vs_st != VS_FIGHT ) return 0 ;
+#ifdef TARGET_DC
+	if( Sys->partner_ng || Sys->one_char ) return 0 ;
+#endif
+	if( pl_w->routine_1 != PL_DAMAGE || pl_w->vital_new <= 0 || pl_w->ko_flag ) return 0 ;
+	if( pl_w->target_w->fly_screen_flag || pl_w->target_w->hyper_stop_flag ) return 0 ;
+	if( pl_counter_tag_pending_ck( pl_w->pl_no ) ) return 0 ;
+
+	idx = 1 ;
+	if( !( sw_pair_ck( pl_w, 0x0240, &sw ) || sw_now_ck( pl_w, 0x0240, &sw, 0 ) ) ){
+		idx = 2 ;
+		if( !( sw_pair_ck( pl_w, 0x0120, &sw ) || sw_now_ck( pl_w, 0x0120, &sw, 0 ) ) ) return 0 ;
+	}
+
+	ofs = pl_w->pl_dir ? DOT_X( 14.0f ) : -DOT_X( 14.0f ) ;
+	back_bit = ( pl_w->pos.x > pl_w->target_w->pos.x + ofs ) ? KEY_RIGHT : KEY_LEFT ;
+	fwd_bit = back_bit ^ ( KEY_LEFT | KEY_RIGHT ) ;
+	if( !( pl_w->pl_new_lvbt & back_bit ) || ( pl_w->pl_new_lvbt & fwd_bit ) ) return 0 ;
+
+	if( pl_w->pl_new_lvbt & KEY_DOWN ) pos_kind = 0 ;
+	else if( pl_w->pl_new_lvbt & KEY_UP ) pos_kind = 2 ;
+	else pos_kind = 1 ;
+
+	nw = vs_sys_w->team_w[pl_w->pl_no][idx] ;
+	if( !nw->vital_new && !nw->be_flag ){
+		idx ^= 3 ;
+		nw = vs_sys_w->team_w[pl_w->pl_no][idx] ;
+	}
+	if( nw->be_flag || nw->vital_new <= 0 || ( pl_w->delay_change_flag & ( 1 << idx ) ) ) return 0 ;
+	if( !pl_counter_tag_ok_ck( nw ) ) return 0 ;
+
+	total = (Sint16)( *pl_w->gauge_level ) * 144 + *pl_w->gauge ;
+	if( total < 360 ) return 0 ;
+
+	pl_counter_tag_req_set( pl_w->pl_no, idx, pos_kind ) ;
 	return 1 ;
 }
 
@@ -1200,7 +1253,7 @@ static Uint8 sp_ok_common_ck( PLAYER_WORK *pl_w, int allow_fly_screen )
 	if( !custom_sp && ( pl_w->cg_atck_flag & CG_ATCK_NG ) ) return 0 ;
 	if( pl_w->routine_1 != PL_NORM ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL ){
-		if( custom_sp && pl_w->hit_flag ){
+		if( custom_sp && ( pl_w->hit_flag || pl_w->cancel_timer > 0 ) ){
 			/* custom special-cancellable special move */
 		} else if( !( pl_w->pl_type == PL_AKUMA && pl_w->pl_sp_type == pl1e_sp_shouryuu && pl_w->atck_level && pl_w->routine_2 == 1 && ( pl_w->hit_flag & HR_HIT )
 		 && ( PL1E_LW( pl_w )->hit_cnt == 2 || PL1E_LW( pl_w )->guard_cnt == 2 ) ) ) return 0 ;
@@ -1266,7 +1319,7 @@ Uint8 sp_ok_hyper_ck( PLAYER_WORK *pl_w )
 	if( pl_w->act_st == N_SUPER ) return 0 ;
 	if( pl_w->act_st == N_CHANGE ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL ){
-		if( custom_hyp && pl_w->hit_flag ){
+		if( custom_hyp && ( pl_w->hit_flag || pl_w->cancel_timer > 0 ) ){
 			/* custom hyper-cancellable special move */
 		} else if( pl_w->cancel_timer < 0 ){
 			if( ( pl_w->cg_atck_flag & CG_ATCK_ALL ) != CG_ATCK_ON ) return 0 ;

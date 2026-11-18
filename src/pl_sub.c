@@ -35,6 +35,7 @@ extern void pl38_tbl_set( PLAYER_WORK *pl_w ), pl39_tbl_set( PLAYER_WORK *pl_w )
 extern void pl_mark_init( void );
 extern void team_w_set( void );
 extern void pl_assist_out_lockout( PLAYER_WORK *pl_w );
+extern void pl_counter_tag_reset_all( void );
 extern PLAYER_WORK *pls00_00_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls03_02_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *shl0b_00_set( PLAYER_WORK *pl_w );
@@ -101,6 +102,7 @@ void pl_work_clear( void )
 {
 	pl_work_clear_1p() ;
 	pl_work_clear_2p() ;
+	pl_counter_tag_reset_all() ;
 }
 
 /*==============================================================*/

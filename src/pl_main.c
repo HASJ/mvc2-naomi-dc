@@ -7,6 +7,7 @@
 
 extern Uint8 pl_nml_atck_ck( PLAYER_WORK *pl_w );	/* s_pl14 declares it as an int */
 extern int pl_active_tag_out_ck( PLAYER_WORK *pl_w );
+extern Uint8 pl_counter_tag_in_pos_get( const PLAYER_WORK *pl_w );
 
 static Uint8 nml_atck_frames[2] ;
 
@@ -94,6 +95,7 @@ static void act_change_hyper_move( PLAYER_WORK *pl_w );
 static void act_change_t_kick( PLAYER_WORK *pl_w );
 static void act_change_call( PLAYER_WORK *pl_w );
 static void act_change_assist_end( PLAYER_WORK *pl_w );
+static void act_change_counter_tag( PLAYER_WORK *pl_w );
 static void act_cmd_atck( PLAYER_WORK *pl_w );
 static void caught_move( PLAYER_WORK *pl_w );
 void caught_blow( PLAYER_WORK *pl_w );
@@ -1309,9 +1311,10 @@ static void act_escape( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static void act_change( PLAYER_WORK *pl_w )
 {
-	static void ( *act_change_jmp[12] )( PLAYER_WORK *pl_w ) = {
+	static void ( *act_change_jmp[13] )( PLAYER_WORK *pl_w ) = {
 		act_change_tag, act_change_tag_air, act_change_out, act_change_gattai, act_change_vcounter, act_change_zero,
 		act_change_out, act_change_assist, act_change_hyper, act_change_t_kick, act_change_call, act_change_assist_end,
+		act_change_counter_tag,
 	} ;
 
 	act_change_jmp[pl_w->change_type]( pl_w ) ;
@@ -1783,6 +1786,73 @@ static void act_change_assist_end( PLAYER_WORK *pl_w )
 			pl_w->routine_2 = pl_w->routine_3 = 0 ;
 			pl_w->catch_ng_timer = 2 ;
 		}
+	}
+}
+
+/*==============================================================*/
+static void act_change_counter_tag( PLAYER_WORK *pl_w )
+{
+	Uint8 pos_kind ;
+
+	if( -- pl_w->timer0 > 0 ){
+		pl_w->catch_ng_timer = 2 ;
+		pl_w->nml_catch_ng_timer = 2 ;
+		pl_w->wall_ng_timer = 2 ;
+		pl_w->push_ng_timer = 2 ;
+		pl_w->atck_flag = 0 ;
+		pl_w->dm_flag = 0 ;
+		pl_char_move( pl_w ) ;
+		pl_w->pos.x += pl_w->spd.x ;
+		pl_w->spd.x += pl_w->acc.x ;
+		pl_w->pos.y += pl_w->spd.y ;
+		pl_w->spd.y += pl_w->acc.y ;
+		if( pl_w->pos.y < pl_w->ground_y ) pl_w->pos.y = pl_w->ground_y ;
+		return ;
+	}
+	pos_kind = pl_counter_tag_in_pos_get( pl_w ) ;
+	pl_w->catch_ng_timer = 0 ;
+	pl_w->nml_catch_ng_timer = 0 ;
+	pl_w->wall_ng_timer = 0 ;
+	pl_w->push_ng_timer = 0 ;
+	if( pl_w->pos.x < scr_work.stage_left + 35.0f ) pl_w->pos.x = scr_work.stage_left + 35.0f ;
+	if( pl_w->pos.x > scr_work.stage_right - 35.0f ) pl_w->pos.x = scr_work.stage_right - 35.0f ;
+	pl_dir_set( pl_w ) ;
+	if( pos_kind == 0 ){
+		pl_w->pos.y = pl_w->ground_y ;
+		pl_w->pl_stance = STANCE_STAND ;
+		pl_w->sjump_flag = 0 ;
+		pl_land_ef_set( pl_w ) ;
+		pl_stop_stand_ret( pl_w ) ;
+	} else if( pos_kind == 1 ){
+		if( pl_w->pos.y <= pl_w->ground_y + DOT_Y( 16.0f ) ) pl_w->pos.y = pl_w->ground_y + DOT_Y( 128.0f ) ;
+		pl_w->spd.x = 0.0f ;
+		pl_w->spd.y = 0.0f ;
+		pl_w->acc.x = 0.0f ;
+		pl_w->acc.y = -DOT_Y( 0.375f ) ;
+		pl_w->pl_stance = STANCE_AIR ;
+		pl_w->sjump_flag = 0 ;
+		pl_w->jump_atk_cnt = JATK_ONE ;
+		pl_w->jump_com_cnt = 0 ;
+		pl_w->jump_dash_cnt = 0 ;
+		pl_w->air_jump_cnt = 0 ;
+		pl_w->jump_dir = 0 ;
+		pl_jump_ret( pl_w ) ;
+	} else {
+		if( pl_w->pos.y <= pl_w->ground_y + DOT_Y( 160.0f ) ) pl_w->pos.y = pl_w->ground_y + DOT_Y( 260.0f ) ;
+		pl_w->spd.x = 0.0f ;
+		pl_w->spd.y = 0.0f ;
+		pl_w->acc.x = 0.0f ;
+		pl_w->pl_stance = STANCE_AIR ;
+		pl_w->sjump_cnt = 7 ;
+		pl_w->jump_hit_flag = 0 ;
+		pl_w->jump_atk_cnt = JATK_ONE ;
+		pl_w->jump_com_cnt = 0 ;
+		pl_w->jump_dash_cnt = 0 ;
+		pl_w->air_jump_cnt = 0 ;
+		pl_w->jump_dir = 0 ;
+		pl_sjump_ret( pl_w ) ;
+		pl_w->sjump_flag = 1 ;
+		pl_sjump_top_ck( pl_w ) ;
 	}
 }
 

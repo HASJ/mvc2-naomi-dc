@@ -20,6 +20,7 @@ extern int sprintf( char *s, const char *fmt, ... ) ;
 extern void vs_msg_set( int no ) ;	/* the fight's start and end messages */
 extern void vs_res_set( int no ) ;	/* the result messages */
 extern void finish_ef_set( void ) ;
+extern void pl_counter_tag_reset_all( void ) ;
 
 static void vs_move_init( VS_SYS_WORK *vs_w ) ;
 static void vs_move_wait( VS_SYS_WORK *vs_w ) ;
@@ -91,6 +92,7 @@ void vs_round_init( void )
 
 	memset( &vs_sys_work, 0, VS_ROUND_SIZE ) ;
 	pl_bounce_reset_all() ;
+	pl_counter_tag_reset_all() ;
 	vs_sys_work.speed_rate = 6 ;
 	vs_sys_work.speed_cnt = 1 ;
 	vs_sys_work.speed_flag = 0 ;

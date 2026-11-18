@@ -32,6 +32,7 @@ extern Sint16 change_in_ofs_tbl[][3];	/* how far in a partner lands, by pl_perso
 extern Sint16 brake_acc_tbl[];		/* the ground brake on acc.x */
 
 extern void pl_tlocal_init( PLAYER_WORK *pl_w );
+extern Uint8 pl_counter_tag_ck( PLAYER_WORK *pl_w );
 
 /****************************************************************/
 /*			Back to standing, or on into whatever the stick		*/
@@ -1684,7 +1685,10 @@ static Uint8 sjump_ck( PLAYER_WORK *pl_w )
 void pl_wait_com_ck( PLAYER_WORK *pl_w )
 {
 	pl_w->change_req = 0 ;
-	if( !( vs_sys_work.ctrl_flag & CTRL_WALK ) && !pl_w->team_no ) pl_w->pl_tbl[TBL_COM_CK]( pl_w ) ;
+	if( !( vs_sys_work.ctrl_flag & CTRL_WALK ) && !pl_w->team_no ){
+		if( pl_counter_tag_ck( pl_w ) ) return ;
+		pl_w->pl_tbl[TBL_COM_CK]( pl_w ) ;
+	}
 }
 
 /****************************************************************/

@@ -12,6 +12,8 @@ extern void sel_mes_disp( void ) ;
 extern void sel_preview_disp( void ) ;
 extern void spr_mark_disp( void ) ;
 extern int sprite_disp( PLAYER_WORK *w ) ;
+extern int pl_counter_tag_invert_ck( void ) ;
+extern void nlInvertScreen( void ) ;
 #ifdef TARGET_DC
 extern void vs_record_disp( void ) ;
 extern void menu_obj_disp( PLAYER_WORK *w ) ;
@@ -460,6 +462,7 @@ void game_disp( void )
 		front_disp() ;
 	}
 	if( Sys->cpu_level_max == 1 ) spr_mark_disp() ;
+	if( pl_counter_tag_invert_ck() ) nlInvertScreen() ;
 }
 
 /*==============================================================*/
