@@ -895,6 +895,7 @@ static void air_dash_init( PLAYER_WORK *pl_w )
 	pl_w->spd.y = DOT_Y( air_dash_spd_tbl[dir][1] ) ;
 	pl_w->acc.y = 0.0f ;
 	pl_char_set( pl_w, Char_Dash, 0 ) ;	/* the grounded forward dash's animation, for every direction */
+	pls27_03_set( pl_w ) ;	/* the flame behind him */
 }
 
 /*--------------------------------------------------------------*/

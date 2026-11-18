@@ -409,6 +409,7 @@ extern void *shl26_02_set( PLAYER_WORK *pl_w, Uint8 no );
 /* s_pl27 */
 extern PLAYER_WORK *pls27_01_set( PLAYER_WORK *pl_w );
 extern PLAYER_WORK *pls27_02_set( PLAYER_WORK *pl_w, Uint8 no );
+extern PLAYER_WORK *pls27_03_set( PLAYER_WORK *pl_w );
 extern void *shl27_00_set( PLAYER_WORK *pl_w, Uint8 no );
 
 extern void pls28_00_set( PLAYER_WORK *pl_w, Uint8 no );
