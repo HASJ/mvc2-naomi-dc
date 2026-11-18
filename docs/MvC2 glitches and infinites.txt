@@ -1,0 +1,955 @@
+Marvel vs. Capcom 2: A New Age of Heroes
+Version 1.1 Infinite/Glitch FAQ
+
+79 Spaces wide written in MS Wordpad
+<----------------------------------------------------------------------------->
+
+XXXXXXXXXXXXXXXXXXXXX
+X|Table of Contents|X
+XXXXXXXXXXXXXXXXXXXXX
+
+I. Introduction
+-Controls
+-Notations
+II. Infinites
+-Everyone
+-Vs. Helpers
+-Akuma
+-Infinite 1
+-Infinite 2
+-Amingo
+-Infinite 1
+-Infinite 2
+-B.B.Hood
+-Infinite 1
+-Infinite 2
+-Infinite 3
+-Blackheart
+-Infinite 1
+-Infinite 2
+-Cammy
+-Infinite 1
+-Chun Li
+-Infinite 1
+-Cyclops
+-Infinite 1
+-Dan
+-Infinite 1
+-Dhalsim
+-Infinite 1
+-Infinite 2
+-Doom
+-Infinite 1
+-Felicia
+-Infinite 1
+-Hayato
+-Infinite 1
+-Hulk
+-Infinite 1
+-Iron Man
+-Infinite 1
+-Infinite 2
+-Jin
+-Infinite 1
+-Infinite 2
+-Ken
+-Infinite 1
+-Infinite 2
+-Magneto
+-Infinite 1
+-Infinite 2
+-Infinite 3
+-Infinite 4
+-Infinite 5
+-Infinite 6
+-Megaman
+-Infinite 1
+-Morrigan
+-Infinite 1
+-Infinite 2
+-Infinite 3
+-Omega Red
+-Infinite 1
+-Infinite 2
+-Psylocke
+-Infinite 1
+-Infinite 2
+-Rouge
+-Infinite 1
+-Roll
+-Infinite 1
+-Ruby Heart
+-Infinite 1
+-Sakura
+-Infinite 1
+-Silver Samurai
+-Infinite 1
+-Shuma Gorath
+-Infinite 1
+-Storm
+-Infinite 1
+-Trone Bonne
+-Infinite 1
+-Infinite 2
+-Thanos
+-Infinite 1
+-War Machine
+-Infinite 1
+-Infinite 2
+-Wolverine
+-Infinite 1(Both)
+-Infinite 2(Metal)
+-Zangeif
+-Infinite 1
+III. Semi Infinites
+-Storm
+-Semi Infinite 1
+IV. Team Infinites
+-Trone Bonne and Jin
+-Infinite 1
+V. Glitches
+-Alpha Counter Glitch
+-B.B.Hood and Venom Glitch
+-Grave Yard Glitch
+-Gulie Blade Lock Glitch
+-Sentinel Blue Flame Glitch
+-Servebot Gambit 999 hit Glitch
+-Servbot SonSon Glitch
+-Psycho Drain Glitch
+-Gambit Glitch
+-Hayato Plasma Lock Glitch
+-Ice Metal Glitch
+-Power Up Glitch
+-Megaman Glitch
+-Rouge Teleport Glitch
+-Ruby Heart Glitch
+-SonSon Glitch
+-Spiral Teleport Glitch
+-Powerball Glitch
+-Timelock Glitch
+-Venom and Strider Glitch
+-Slow Death Glitch
+-Upside Down Glitch
+-Ghost Glitch
+-Final Justice Glitch
+VI. Credits
+VII. Version History
+
+XXXXXXXXXXXXXXXX
+X|Introduction|X
+XXXXXXXXXXXXXXXX
+
+    This game is still new and new stuff is still being found so please
+
+don't expect a complete guide the first time around. In fact it was just
+recently that MikeZ found out the upside down glitch. If you don't know who
+he is I will forgive you.
+The infinites list however probably is complete. However, some of the
+semi infinites could and probably will be found to be true infinites. It is
+just a matter of doing something a little different.
+There are also a few things you could do to make this guide look
+better. One is if you have any formatting suggestions. If you know of any other
+glitches or infinites then by all means SEND THEM IN!
+If you are having trouble with a combo e-mail me or stay tuned for
+updates as I am planing to add descriptions for the rest of the combos soon.
+If you would like to help contribute and send me a description then please do
+send them in.
+I decided to change the formatting around. I thought it was a tad bit
+hard to read. I will probably screw around with it a little bit more so if you
+have any suggestions send 'em in! I had a few people complain about the combo
+notations and how they were read. So I changed them.
+
+---
+
+_Controls_
+
+---
+
+Up/Back Up Up/Forward Jab Fierce Partner A
+\ | / 0 0 0  
+ Back- N -Forward  
+ / | \ Short Roundhouse Partner B
+Down/Back Down Down/Forward 0 0 0
+
+---
+
+_Notations_
+
+---
+
+XX Cancel
+/\ Super Jump
+\/ Landed
+-> Link together
+LP Low Punch or Jab
+MP Medium Punch or Strong
+HP High Punch or Fierce
+LK Low Kick or Short
+MK Medium Kick or Forward
+HK High Kick or Roundhouse
+j. Jumping
+sj. Super Jumping
+dj. Double Jumping
+s. Standing
+c. Crouching
+() Repeat or follow special instructions
+OTG Off the Ground
+QCB Quarter Circle Back
+QCF Quarter Circle Forward
+HCF Half Circle Forward
+HCB Half Circle Back
+DHC Delayed Hyper Combo
+w/ With
+
+XXXXXXXXXXXXX
+X|Infinites|X
+XXXXXXXXXXXXX
+
+---
+
+_Everyone_
+
+---
+
+-Vs. Helpers:
+Assist 1 or 2(Launch)
+
+---
+
+_Akuma_
+
+---
+
+-Infinite 1:
+(j.LP, j. MP, j.LK, \/re-jump straight up)
+
+-Infinite 2:
+KK, Down+LK(OTG), MP, HK,(LP, MP, HK)
+
+---
+
+_Amingo_
+
+---
+
+-Infinite 1:
+(Down+LK(OTG), LP)
+
+-Infinite 2:
+j.LP(\/,/\, sj.LK, sj.LP, sj.LK, sj.MP)
+
+---
+
+_B.B.Hood_
+
+---
+
+AKA: Bulletta
+
+-Infinite 1:
+j.Back/Down+HK \/,(Forward+HP)
+
+-Infinite 2:
+(/\, dj.LK, dj.MP, dj.LK, dj.MP, dj.MK \/)
+
+-Infinite 3:
+In corner, Dash, LK, MK, /\, sj.LP, sj.LK, sj.HK, \/, walk forward
+(LP, MP, Down+MK)
+
+Restrictions:Only works on big characters
+
+---
+
+_Blackheart_
+
+---
+
+-Infinite 1:
+(j.HK, Air Dash)
+
+-Infinite 2:
+(HK XX /\ XX Air Dash, sj.LK, sj.MK, \/)
+
+---
+
+_Cammy_
+
+---
+
+-Infinite 1:
+(Down+LP, Down+MP, Back+HK, /\ Cannon Drill)
+
+---
+
+_Chun Li_
+
+---
+
+-Infinite 1:
+(j.LP, j.LK, j.HP, j.HK, \/, re-jump straight up)
+
+---
+
+_Cyclops_
+
+---
+
+-Infinite 1:
+Launch w/ Down/Forward+HK, /\, sj.LP, sj.LK, sj.MP, sj.Down+LK,
+sj.Down+MP, sj.Down+LK, sj.Down+MP, sj.Down+MK, \/(Down/Forward+HK,
+/\, sj.LP, sj.MP, sj.Down+LK, sj.Down+MP, sj.Down+LK, sj.Down+MP,
+sj.Down+MK)
+
+---
+
+_Dan_
+
+---
+
+-Infinite 1:
+Launch, /\, sj.LP, sj.MP, sj.HP, sj.HK, \/, Down+LK(OTG), MP, HK,
+(LP, MP, HK)
+
+---
+
+_Dhalsim_
+
+---
+
+-Infinite 1:
+(/\, sj.LK, Air Dash Down, sj.LK, \/)
+
+-Infinite 2:
+(Dash+LP, Down+MK)
+
+Restrictions:Only works on Venom and Iceman
+
+---
+
+_Doom_
+
+-Infinite 1:
+LK, MK, /\, sj.LK, sj.MP, sj.HK, fly, LK, MK, HK, fly, LK, MK, HK,
+fly(LK, HK, fly)
+
+---
+
+_Felicia_
+
+---
+
+-Infinite 1:
+(Launch, HP, HP)
+
+---
+
+_Hayato_
+
+---
+
+-Infinite 1:
+(Back+LP, LP, HP, HK, LP)
+
+---
+
+_Hulk_
+
+---
+
+-Infinite 1:
+Down+HK(Gamma Charge Up w/ HK, Gamma Charge Forward/Up)
+
+---
+
+_Iron Man_
+
+---
+
+-Infinite 1:
+HK, /\, sj.LK, sj.MK, sj.HP, sj.HK(OTG)(\/, re-jump straight up,
+j.LK, j.MK, j.Up+HP)
+
+-Infinite 2:
+You trapped in corner(LP, Down+MP, LP)
+
+---
+
+_Jin_
+
+---
+
+-Infinite 1:
+Press Start Button once and mash like crazy
+
+-Infinite 2:
+HP, (Down+LP, HP) After you are pushed away change to(Dash, Down+LP, HP)
+
+---
+
+_Ken_
+
+---
+
+-Infinite 1:
+See Akuma 1
+
+-Infinite 2:
+(j.LP, j.MP, j.MK)
+
+---
+
+_Magneto_
+
+---
+
+-Infinite 1:
+Down+LK, Down+HP, /\, sj.HK, Air Dash Down/Forward, sj.LK, sj.MK, \/,
+(re-jump, j.Down+LP, j.Down+LK, j.Down+MP)
+
+-Infinite 2:
+(/\, sj.Down+LK, Air Dash Forward/Down, sj.LK, sj.MK, \/)
+
+-Infinite 3:
+(HK Throw, Dash, Down+LK(OTG), Down+HK (/\, Air Dash Down(Press LP while
+dashing Down), \/, Down+LK(OTG), Down+HK)
+
+-Infinite 4:
+(HK, Dash past opponent, HP)
+
+-Infinite 5:
+LP, MP(/\, sj.LP, sj.LK, sj.Down+LK, sj.MP, sj.MK, \/)
+
+-Infinite 6:
+Launch, /\, sj.HK, Air Dash Down/Forward, sj.LK, sj.HK, \/(Down+LK(OTG),
+Down+HK)
+
+---
+
+_Megaman_
+
+---
+
+AKA:Rockman
+
+-Infinite 1:
+(j.LP, j.MP, j.HP, \/, re-jump)
+
+---
+
+_Morrigan_
+
+---
+
+-Infinite 1:
+(j.LP, j.LK, j.MP, j.MK, j.HP, j.LK)
+
+-Infinite 2:
+Down+LK, Down+HP(/\, sj.LK, sj.Down+HK, sj.HK, \/ Hold Back, LP, Down+HP)
+
+-Infinite 3:
+(Dash, LP, LK, HK XX /\ XX Air Dash Down/Forward, sj.LP, sj.LK, sj.HK, \/)
+
+---
+
+_Omega Red_
+
+---
+
+-Infinite 1:
+LP, MP(/\, sj.LP, sj.LK, sj.MP, sj.Forward+HP, \/ Down/Forward+HP)
+
+-Infinite 2:
+j.HK, LP(\/, re-jump towards corner, j.LP, j.MP, j.HP)
+
+---
+
+_Psylocke_
+
+---
+
+-Infinite 1:
+Down+LK, Down+MK, Down+HP(/\, sj.LP, sj.HP, sj.LP, sj.LK, sj.MP, sj.HP,
+sj.LP, sj.MP, sj.HP, sj.LP, sj.MP \/, Down+HP)
+
+-Infinite 2:
+(j.LP, j.MP, j.Up+HK, \/, re-jump)
+
+---
+
+_Rouge_
+
+---
+
+-Infinite 1:
+Down+LK, Down+HP, /\, sj.LP, sj.LK, sj.MK, sj.HK, sj.LP(OTG), \/,
+(LP, LK)
+
+---
+
+_Roll_
+
+---
+
+-Infinite 1:
+(LK XX /\ XX Forward Double Jump, dj.LK, dj.MK, dj.LK, dj.MK, dj.HK \/)
+
+---
+
+_Ruby Heart_
+
+---
+
+-Infinite 1:
+(LK, HP)
+
+---
+
+_Sakura_
+
+---
+
+-Infinite 1:
+(j.LP, j.LK, j.HP, j.LK, \/, re-jump straight up)
+
+---
+
+_Silver Samurai_
+
+---
+
+-Infinite 1:
+(HP, Push Down once)
+
+---
+
+_Shuma Gorath_
+
+---
+
+-Infinite 1:
+LK, MK, /\, sj.LP, sj.Up+HP, sj.Up+HP \/ walk forward(re-jump
+straight up, j.LP, j.MK, j.LP, j.Up+HP, \/)
+
+---
+
+_Storm_
+
+---
+
+-Infinite 1:
+(/\, sj.LK, Air Dash Forward/Down, sj.LK, sj.MP, \/)
+
+---
+
+_Trone Bonne_
+
+---
+
+-Infinite 1:
+(LP, LP, walk forward)
+
+-Infinite 2:
+Launch, /\, sj.LK, sj.LP, sj.MK, sj.HP, \/, walk back, Down+LK(OTG)
+(HK(hold), release)
+
+---
+
+_Thanos_
+
+---
+
+-Infinite 1:
+j.HK \/ (Dash, Back+HK, LK)
+
+---
+
+_War Machine_
+
+---
+
+-Infinite 1:
+HK, /\, sj.LK, sj.MK, sj.HP, sj.HK(OTG)(\/, re-jump straight up, j.LK,
+j.MK, j.Up+HP)
+
+-Infinite 2:
+You trapped in corner(LP, Down+MP, LP)
+
+---
+
+_Wolverine_
+
+---
+
+-Infinite 1:(Both)
+PP, LK(OTG), MP, MP, Down+HP(LP, MP, MP, Down+HP)
+
+-Infinite 2:(Metal)
+PP, LK(OTG)(MP, MP, MP, MP)
+
+---
+
+_Zangeif_
+
+---
+
+-Infinite 1:
+HK, PP, (LP, HK, PP)
+
+XXXXXXXXXXXXXXXXXX
+X|Semi Infinites|X
+XXXXXXXXXXXXXXXXXX
+
+---
+
+_Storm_
+
+---
+
+-Semi Infinite 1:
+Activate Flight, Catch opponent w/ LP(Up+LP)
+
+XXXXXXXXXXXXXXXXXX
+X|Team Infinites|X
+XXXXXXXXXXXXXXXXXX
+
+---
+
+_Trone Bonne and Jin_
+
+---
+
+-Infinite 1:
+(Tag Jin, HP, Tag Tron Bonne, HK)
+
+XXXXXXXXXXXX
+X|Glitches|X
+XXXXXXXXXXXX
+
+---
+
+_Alpha Counter Glitch_
+
+---
+
+    Do snap back w/ assist 2, while the snapped character still has the
+
+cross over there life bar, do a Alpha Counter w/ Assist 2 with the newly
+snapped in character. Now the new character will be invincible once they
+reach the flying or standing frame of animation.
+
+---
+
+_B.B.Hood and Venom Glitch_
+
+---
+
+    Choose Venom and B.B.Hood. Perform Venoms QCF+PP super. DHC into
+
+B.B.Hoods HCF+KK super.
+
+---
+
+_Grave Yard Glitch_
+
+---
+
+    Choose Venom, B.B.Hood, and Bison w/ Beta assist. Your opponent must be
+
+nearly dead. Call Bison assist, do Venoms QCF+PP super, DHC into B.B.Hoods
+HCF+KK super. Now the character you killed remains on screen for the rest of
+the game.
+
+---
+
+_Guiles Blade Lock Glitch_
+
+---
+
+    Choose Guile w/ Alpha assist. Do a snapback using assist 2. Now do a
+
+triple team super. Three of the blades from the super are now stuck on the
+screen.
+
+---
+
+_Sentinel Blue Flame Glitch_
+
+---
+
+    Choose Sentinel, activate flight mode. Do a QCF+PP super in the air.
+
+Now DHC into next characters super. Then use that character to DHC back to
+Sentinel. Now Sentinel has a blue flame for the rest of the game.
+
+---
+
+_Servbot and Gambit 999 hit Glitch_
+****************\*\*\*****************
+
+    Choose Gambit and someone big that the assist goes in front of Gambit.
+
+Player 2 pick 3 Servbot with Alpha assist. Gambit call assist, Player 2 do
+triple team super. Gambit do a QCF+PP super. Now Gambit keeps doing the super
+until you DHC. Please note that this only works on the Dreamcast version.
+
+---
+
+_Servbot and SonSon Glitch_
+
+---
+
+    Choose SonSon. Player 2 pick 3 Servbot with Alpha assist. Do a QCF+KK
+
+super from half screen away. Player 2 do a triple team super. Now SonSons
+super will do over 100+ hits and very good damage. This only works on the
+Dreamcast version.
+
+---
+
+_Psycho Drain Glitch_
+
+---
+
+    Choose Captain Commando. Throw the opponent with HK. Now mash like crazy.
+
+Captain Commando will continue to drain the life out of your opponent until
+you stop mashing. This will not work if your opponent counter mashes.
+
+---
+
+_Gambit Glitch_
+
+---
+
+    Choose Gambit and do a snapback with assist 2. Do a Cajun Strike towards
+
+the left wall. Then Gambit will fly up into the air and off the screen. Only
+Bisons and Spirals teleports will take you where he is. Please note that this
+is banned from play in most tournaments because of its game breaking ability.
+
+---
+
+_Hayato Plasma Lock Glitch_
+
+---
+
+    Choose Hayato and while you have less than 3 super bars do his Plasma
+
+chain, which is B+LP, LP, LP, LP. Cancel that into his Level three super. You
+now stay in the last LP frame until you Super Jump. Please note that you can
+still be hit during this time.
+
+---
+
+_Ice Metal Glitch_
+
+---
+
+    Throw Metal Zangeif with Iceman or Magneto. While they are still in the
+
+freeze position hit him with a snapback. Now Metal Zangeif will stay invisible
+until he enters the standing frame for the second time. Or another Zangeif can
+SPD the first one back to being visible.
+
+---
+
+_Power Up Glitch_
+
+---
+
+    Power up with Juggernaught. Tag him out while he is still flashing. Now
+
+he will always be in power up mode and this causes his assists to do twice as
+much damage. Which is 33% of their life. Ouch!
+
+---
+
+_Megaman Glitch_
+
+---
+
+    Player 1 pick Venom and B.B.Hood. Player 2 pick Megaman. Player 2 charge
+
+HP. Player 1 needs to hit player 2 until they are almost dead. Use the Venom
+and B.B.Hood Glitch to kill player two. Now however long Megaman charged HP
+that much damage still comes out when he dies.
+
+---
+
+_Rouge Teleport Glitch_
+
+---
+
+    Do Rouges kiss move. Get near opponent Down+LP, Down+MP s.MK. Everytime
+
+you press MK you teleport to the other side of your opponent. This is very
+useful in a real match in case anyone was wondering.
+
+---
+
+_Ruby Heart Glitch_
+
+---
+
+    Player 1 hold Start with Ruby Heart. Do a LP. Press LP. The effects of
+
+this varies. It depends on which direction you are holding. Any Upwards
+direction you stand still facing left. Right you turn into a barrel and
+shot upwards. Left you turn into a ghost and shoot upward. Down/Left you do
+a fast downwards strike. Down you also turn into a ghost and shoot upwards.
+Down/Right gets different results depending on the other characters you pick.
+You can freeze the game, get free credits, or shoot off the screen forever or
+end any game whenever you want to.
+
+---
+
+_SonSon Glitch_
+
+---
+
+    Do SonSons POW super and DHC it while she is eating fruit. This freezes
+
+the game until time is running out. It only works on Japanese Arcade version.
+
+---
+
+_Spiral Teleport Glitch_
+
+---
+
+    Do Spirals level 3 super, jump towards Juggernaught. Right before you land
+
+press LP and you switch sides with him. This glitch is useless because it only
+works on Juggernaught.
+
+---
+
+_Powerball Glitch_
+
+---
+
+    Do Thanos's QCF+PP super, before the ball leaves his hand DHC into another
+
+characters super. Then the ball gets stuck to his pants. These can also be stored
+up.
+
+---
+
+_Timelock Glitch_
+
+---
+
+    Pick Cable, player 2 pick Spiderman with Alpha assist. They must be using
+
+someone tall. At close range player 2 call Spiderman assist. Immediately throw
+a LK grenade. Spiderman and player 2's main character both get frozen in block
+stun until you hit them.
+
+---
+
+_Venom and Strider Glitch_
+
+---
+
+    Have Venom do a QCF+PP super, while the opponent is still in the web DHC
+
+into Striders F,D,DF+PP super. The opponent can move while Strider is doing
+his grab super.
+
+---
+
+_Slow Death Glitch_
+
+---
+
+    Pick Venom and B.B.Hood. Once your opponent is nearly dead do the
+
+B.B.Hood and Venom glitch to kill them. Now use the player 2 controller to
+tag out the dead character then kill them too. This causes the game to get
+very slow and some of the graphics disapear.
+
+---
+
+_Upside Down Glitch_
+
+---
+
+    Pick Venom and Omega Red with Alpha assist. Player 2 can pick anyone.
+
+Call Omega Red assist and do Venoms QCF+PP super from full screen away.
+Omega Red throws the web character and they get released in mid air. Player
+2 should now hold up and then do any move. They will stay upside down until
+they return to the standing frame or activate flight mode.
+
+---
+
+_Ghost Glitch_
+
+---
+
+    Call out a ghost. Do a snapback with assist 2 before the ghost comes
+
+out of the box. You can't call another ghost until you do the ghost super.
+
+---
+
+_Final Justice Glitch_
+
+---
+
+    Do a Final Justice DHC into another super after the initial hit and
+
+as they are falling towards his waist. The opponent will stay in a
+suspended animation.
+
+XXXXXXXXXXX
+X|Credits|X
+XXXXXXXXXXX
+
+    I would like to give out a major thanks to the following people.
+
+There is no way on earth this FAQ would be possible without any of their
+help.
+
+www.geocities.com/warganic
+www.gamingmatrixonline.com (Big shout out goes to Strike GM)
+MikeZ at www.evilslash.com for finding out most of this shit.
+
+I would also like to thank the following people because they also
+contributed and helped out.
+
+James Chen-jchensor@earthlink.net
+Jay"Viscant"Snyder
+Everyone on the Shoryuken.com forums
+Everyone at #Capcom
+Everyone who e-mailed me about the combo notations.
+
+Thanks everyone! If I forgot anyone please let me know and I will include
+you.
+
+I would also like to think Sun Drop for being the best soft drink in the
+world today and the following bands as I listened to there songs while
+writing this:
+
+Outkast-Bombs Over Bahgdad/Sorry Mrs. Jackson
+Shaggy-Mr. Boombastic/Angel
+Ludacris-You's a Hoe
+Nirvana-Smells like Teen Spirit/Rape Me/Heart Shaped Box
+
+XXXXXXXXXXXXXXXXXXX
+X|Version History|X
+XXXXXXXXXXXXXXXXXXX
+
+Version 1.0-2/23/01 Initial release. I will be updating pretty soon as I
+know I left out lots of information.
+
+Version 1.1-2/27/01 Added Ascii art and fixed the combo notations. Also
+I fixed the formatting. I thought it was kinda hard to read.
+
+XXXXXXXXXXX
+X|The End|X
+XXXXXXXXXXX
+
+What are you doing reading this? Go try out this cool shit now!
+
+Restore Page

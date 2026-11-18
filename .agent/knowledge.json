@@ -198,6 +198,41 @@
         }
       ],
       "verified_at": "2026-11-18T13:41:50Z"
+    },
+    {
+      "id": "super-hop",
+      "text": "Super Hop: pl_hop_ck() in src/pl_sub.c eases rising superjump spd.y to 0 over HOP_STOP_FRAMES (5) after HOP_MIN_RISE (60.0f) when KEY_DOWN (1/2/3) is held/pressed, tracked in PLAYER_WORK.hop_stop_cnt (0x55d, HOP_PENDING=0x80; struct stays 0x5a4). Hooks at top of pl_sjump_ctrl() (before early returns, covering ground/chase/air-recovery/tag-in superjumps, air attacks, and air jumps) and act_jump_air() in src/pl_main.c (before pl_jump_move, skipping PL_FELICIA whose wall jump uses TBL_TJUMP). Gated on sjump_flag != 0 and !cpu_flag; hop_stop_cnt resets to 0 on landing, ground/air/wall jump starts, air recovery, hits, and tag-ins. Headless tests use ports/tools/hop_trace.ps1 (MVC2_HOP_TRACE=1, mvc2dc.exe).",
+      "sources": [
+        {
+          "path": "src/pl_sub.c",
+          "sha256": "ad5e88a3e646eb5f3ac22f192cd0a1f685953668cba8aeca60a7641a0e25e873"
+        },
+        {
+          "path": "include/pl_work.h",
+          "sha256": "bb522824355004cd61d8cc2984b5a2c0526b7456e34b3db2c9e76d7ffcd795b6"
+        },
+        {
+          "path": "src/pl_main.c",
+          "sha256": "fdd7688d1a3fccc19e2b30254c4898fbe18819971a78dbcbae2cc36f967c3606"
+        },
+        {
+          "path": "src/pl_act.c",
+          "sha256": "7c40740ce1a66ea2876069ade6364abea37cf06054773041b1aae927ac1d8e7a"
+        },
+        {
+          "path": "src/pl_dm.c",
+          "sha256": "58a25e1c0e46d411f7e3fcec7ea567a15b9c3a1b055e71e33b198ea0610cc2f9"
+        },
+        {
+          "path": "src/pl_team.c",
+          "sha256": "03d55e2f2c3ba34ed6e08b7aa58932d7b910a228aa7a46bbb3c1382617d7583f"
+        },
+        {
+          "path": "ports/tools/hop_trace.ps1",
+          "sha256": "c2edf40f2de73a4b2cc08e81535f02de13f85ef643ed366ce48fca5971626375"
+        }
+      ],
+      "verified_at": "2026-11-18T19:37:54Z"
     }
   ]
 }

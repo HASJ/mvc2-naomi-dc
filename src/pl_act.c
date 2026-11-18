@@ -9,6 +9,7 @@
 static void jump_ret_set( PLAYER_WORK *pl_w );
 static void atck_type_set( PLAYER_WORK *pl_w );
 static Uint8 jump_atck_ck( PLAYER_WORK *pl_w );
+static Uint8 jump_guard_ck( PLAYER_WORK *pl_w );
 static void nml_atck_set( PLAYER_WORK *pl_w );
 static Uint8 pl_air_guard_req_ck( PLAYER_WORK *pl_w );
 static Uint8 em_atck_out_ck( Uint8 pl_no );
@@ -790,7 +791,23 @@ Uint8 pl_guard_ok( PLAYER_WORK *pl_w )
 	if( pl_w->armor_flag & ARMOR_HEAVY || pl_w->guard_ng_timer || pl_w->team_no ) return 0 ;
 	if( pl_w->act_st == N_AIR_DASH ) return 0 ;
 	if( pl_w->act_st == N_AIR_GUARD ) return 1 ;
-	return jump_atck_ck( pl_w ) ;
+	return jump_guard_ck( pl_w ) ;
+}
+
+/*==============================================================*/
+/*			Whether a guard can start in a jump: as an attack,	*/
+/*			but an air guard already made doesn't use up the	*/
+/*			jump. The original counted it (air_guard_cnt), so	*/
+/*			a fighter in a normal jump - an incoming or			*/
+/*			snapped-in one too - could guard only once before	*/
+/*			landing, which made unblockable guard breaks		*/
+/*==============================================================*/
+static Uint8 jump_guard_ck( PLAYER_WORK *pl_w )
+{
+	if( pl_w->pl_stance != STANCE_AIR || pl_w->sjump_flag || pl_w->fly_flag ) return 1 ;
+	if( pl_w->jump_com_cnt ) return 0 ;
+	if( !( pl_w->jump_atk_cnt & JATK_P_MASK ) || !( pl_w->jump_atk_cnt & JATK_K_MASK ) ) return 0 ;
+	return 1 ;
 }
 
 /*==============================================================*/
