@@ -84,6 +84,8 @@ static void sel_flare_uv( PLAYER_WORK *w );
 extern void obj_func_set( PLAYER_WORK *w, void ( *func )( PLAYER_WORK *w ) );
 
 static void sel_light_set( PLAYER_WORK *pl_w );
+extern void sel_label_uv( PLAYER_WORK *w, Sint16 tmpl, Sint32 step );
+extern void sel_label_reset( void );
 
 /****************************************************************/
 /*			The three lights of a door, each with a glow of		*/
@@ -95,6 +97,9 @@ void sel_light_make( PLAYER_WORK *pl_w )
 	PLAYER_WORK *tw = pl_w->ef_w ;
 	Sint16 i ;
 
+#ifdef HOST_PORT
+	sel_label_reset() ;	/* the labels' texture is made again: the scene may have freed it */
+#endif
 	for( i = 0 ; i < 3 ; i ++ ){
 		if( !( ew = work_get( 0, W_SET, LIST_END ) ) ) return ;
 		ew->master_w = pl_w ;
@@ -408,6 +413,10 @@ static void sel_flare_uv( PLAYER_WORK *w )
 	Float x = sel_glow_uv_tbl[no][0] - sel_glow_uv_tbl[0][0] ;
 	Float y = sel_glow_uv_tbl[0][1] - sel_glow_uv_tbl[no][1] ;
 
+#ifdef HOST_PORT	/* the label names the assist's move, with a symbol of its type (sel_label.c) */
+	sel_label_uv( w, Sys->cpu_level_type ? 109 : 103, no ) ;
+	return ;
+#endif
 	if( Sys->cpu_level_type ) sel_obj_pos_add( w, 109, x, y ) ;
 	else sel_obj_pos_add( w, 103, x, y ) ;
 }
