@@ -552,6 +552,9 @@ static void act_jump_air( PLAYER_WORK *pl_w )
 	if( AIR_JUMP_CK( pl_w ) ) pl_air_jump_ck( pl_w ) ;
 	if( pl_w->pl_type == PL_STORM ) pl_w->pl_tbl[TBL_EX0]( pl_w ) ;
 	pl_char_move( pl_w ) ;
+	/* Super Hop for a wall jump made from a super jump (it keeps sjump_flag); a normal jump has none, and
+	   Felicia's wall jump is her own (TBL_TJUMP), left out */
+	if( pl_w->pl_type != PL_FELICIA ) pl_hop_ck( pl_w ) ;
 	pl_jump_move( pl_w ) ;
 	if( pl_land_ck( pl_w ) && !pl_guard_req_ck( pl_w ) ){
 		if( pl_w->cpu_flag ) pl_dir_set( pl_w ) ;

@@ -336,6 +336,7 @@ Uint8 pl_wall_jump_ck( PLAYER_WORK *pl_w )
 	if( pl_w->disp_dir ) pl_w->spd.x = -pl_w->spd.x ;
 	pl_w->acc.x = 0.0f ;
 	act_st_set( pl_w, N_WALL_JUMP ) ;
+	pl_w->hop_stop_cnt = 0 ;	/* a new rise: a Super Hop stop under way doesn't carry over */
 	pl_w->routine_2 = pl_w->routine_3 = 0 ;
 	return 1 ;
 }

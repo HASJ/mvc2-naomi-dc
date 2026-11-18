@@ -42,6 +42,14 @@
       2 at 4953 / 4955            839.5 (+127.7) / 876.2 (+164.5)
       2 for 2 frames at 4912, up at 4914 (air jump mid-stop): the air jump rises fully (648.1), was cut at 313.7
       -Point 1b Chun-Li: second air jump at 4962, 2 at 4966: stops at 1069.8
+  - Task 4, wall jumps (-Point 0c Spider-Man, left edge '4600+250:left,4900+3:down,4903+5:up,4912+3:right',
+    superjump clings at y 331.1, wall jump starts at f=4924):
+      no 2                        425.8 (+94.7, 13 frames)
+      2 at 4916 (earliest)        354.0 (+22.9, 3 frames)
+      2 at 4930 (late)            415.6 (+84.5, 11 frames)
+      2 at 4910 mid-SJ -> wall    SJ cut at 298.9; wall jump rises fresh (+94.7 to 393.6, cnt=0)
+      -Point 05 Strider normal+air jump into wall ('4600+250:left,4900+5:up,4910+3:up,4920+6:right'):
+        491.1 (sj-seen=False, cnt=0) with or without '4926+40:down'
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Press,
@@ -49,7 +57,8 @@ param(
     [switch]$Dc,
     [string]$Shots = '',
     [switch]$Menu,
-    [string]$Point = '13'
+    [string]$Point = '13',
+    [string]$LogOut = ''
 )
 
 # Dreamcast: title, mode, join, three picks a side (cursor moved right between them), assist types, then b1 on
@@ -89,9 +98,12 @@ if ($Menu) {
 
 $ErrorActionPreference = 'Stop'
 $dist = Join-Path $PSScriptRoot '..\build-dist' | Resolve-Path
-$exe = 'mvc2.exe'
-$log = Join-Path $dist 'mvc2.log'
-if (Test-Path $log) { Remove-Item $log -Force }
+$exe = 'mvc2dc.exe'
+$cfgDir = Join-Path ([System.IO.Path]::GetTempPath()) ("hop_trace_" + [System.Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+$log = Join-Path $cfgDir 'mvc2.log'
+$prevConfig = $env:MVC2_CONFIG
+$env:MVC2_CONFIG = $cfgDir
 
 $env:MVC2_FRAMES = "$Frames"
 $env:MVC2_PRESS = $Press
@@ -101,24 +113,30 @@ $env:SDL_WINDOW_ACTIVATE_WHEN_SHOWN = '0'
 if ($Shots -ne '') { $env:MVC2_SHOT = $Shots } else { Remove-Item Env:\MVC2_SHOT -ErrorAction SilentlyContinue }
 
 $argList = @('/c', 'start', '""', '/min', '/wait', $exe)
-if ($Dc) { $argList += '--dc' }
-Push-Location $dist
+if ($Dc) { $null = $Dc }
 try {
-    Start-Process cmd.exe -ArgumentList $argList -WindowStyle Hidden -Wait
-} finally {
-    Pop-Location
-}
-
-if (-not (Test-Path $log)) { Write-Error "no mvc2.log after the run in $dist"; exit 1 }
-
-$rows = Select-String -Path $log -Pattern '^.*HOPTRACE n=(\d+) f=(\d+) pl=([0-9a-f]+) act=(-?\d+) sj=(\d+) y=(-?[\d.]+) sx=(-?[\d.]+) sy=(-?[\d.]+) cnt=(\d+)' |
-    ForEach-Object {
-        $m = $_.Matches[0].Groups
-        [pscustomobject]@{
-            N = [int]$m[1].Value; F = [int]$m[2].Value; Pl = $m[3].Value; Act = [int]$m[4].Value; Sj = [int]$m[5].Value
-            Y = [double]$m[6].Value; Sx = [double]$m[7].Value; Sy = [double]$m[8].Value; Cnt = [int]$m[9].Value
-        }
+    Push-Location $dist
+    try {
+        Start-Process cmd.exe -ArgumentList $argList -WindowStyle Hidden -Wait
+    } finally {
+        Pop-Location
     }
+
+    if (-not (Test-Path $log)) { Write-Error "no mvc2.log after the run in $cfgDir"; exit 1 }
+    if ($LogOut -ne '') { Copy-Item $log $LogOut -Force }
+
+    $rows = Select-String -Path $log -Pattern '^.*HOPTRACE n=(\d+) f=(\d+) pl=([0-9a-f]+) act=(-?\d+) sj=(\d+) y=(-?[\d.]+) sx=(-?[\d.]+) sy=(-?[\d.]+) cnt=(\d+)' |
+        ForEach-Object {
+            $m = $_.Matches[0].Groups
+            [pscustomobject]@{
+                N = [int]$m[1].Value; F = [int]$m[2].Value; Pl = $m[3].Value; Act = [int]$m[4].Value; Sj = [int]$m[5].Value
+                Y = [double]$m[6].Value; Sx = [double]$m[7].Value; Sy = [double]$m[8].Value; Cnt = [int]$m[9].Value
+            }
+        }
+} finally {
+    if ($null -eq $prevConfig) { Remove-Item Env:\MVC2_CONFIG -ErrorAction SilentlyContinue } else { $env:MVC2_CONFIG = $prevConfig }
+    Remove-Item $cfgDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 if (-not $rows) { Write-Output 'no HOPTRACE lines (is the build installed, and did the run reach a fight?)'; exit 2 }
 
