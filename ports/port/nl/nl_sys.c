@@ -28,6 +28,10 @@ void nlObjPutSetFadeColor(float r, float g, float b) {
     nl_fade_b = b;
 }
 
+void nlInvertScreen(void) {
+    rd_invert = 1;
+}
+
 void nlSetWindowSize(float left, float top, float width, float height);
 
 /* the window is the whole screen, for nlproj.c's screen matrix */

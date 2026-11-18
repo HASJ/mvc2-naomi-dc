@@ -72,6 +72,7 @@ void rd_fog_density(uint32_t reg);
 void rd_begin_frame(void);
 /* set by a front end for a frame it won't show: its strips are dropped, and the library's models not made */
 extern int rd_discard;
+extern int rd_invert;
 /* three vertices whose plane covers the screen */
 void rd_background_plane(const RD_VTX* v);
 void rd_background(uint32_t argb);

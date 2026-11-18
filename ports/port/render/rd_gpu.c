@@ -59,7 +59,7 @@ enum {
 /* 8, though the shader reads 7: SDL's Direct3D 12 driver needs a table size that divides its heaps' */
 #define BINDINGS 8
 
-enum { P_BACKGROUND, P_OPAQUE, P_PUNCH, P_KEY, P_PEEL };
+enum { P_BACKGROUND, P_OPAQUE, P_PUNCH, P_KEY, P_PEEL, P_INVERT };
 
 /* a run of triangles of one state */
 typedef struct {
@@ -88,7 +88,7 @@ static SDL_GPUDevice* dev;
 static SDL_GPUShader *vs, *ps;
 static SDL_GPUSampler* point;
 static SDL_GPUTexture *frame_tex[2], *depth_tex, *key_q[2], *key_o[2], *pal_tex, *dummy_rgba, *dummy_r32;
-static SDL_GPUGraphicsPipeline* pipes[5][8][8][2];
+static SDL_GPUGraphicsPipeline* pipes[6][8][8][2];
 static SDL_GPUBuffer* vbuf;
 static SDL_GPUTransferBuffer* vtrans;
 static uint32_t vcap;
@@ -432,6 +432,16 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
         break;
     case P_PEEL:    /* blended by the shader, over the opaque depth */
         ci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
+        break;
+    case P_INVERT:  /* RGB inverted in place over the finished frame */
+        ct.blend_state.enable_blend = true;
+        ct.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_DST_COLOR;
+        ct.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        ct.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+        ct.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+        ct.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        ct.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        ci.depth_stencil_state.enable_depth_test = false;
         break;
     default:        /* P_PUNCH: blended, over the opaque depth, and writing it */
         ct.blend_state.enable_blend = true;
@@ -980,9 +990,9 @@ static int is_corner(float x, float y) {
     return corners != NULL && *corner_slot(corner_key(x, y)) != ~0ull;
 }
 
-/* the background's 6 vertices, then each list's triangles; how many */
+/* the background's 6 vertices, the invert quad's 6, then each list's triangles; how many */
 static int build(float* zscale) {
-    int list, i, n = 6;
+    int list, i, n = 12;
     float qmax = 0;
     int e;
     for (list = 0; list < RD_LISTS; list++) {
@@ -1041,8 +1051,16 @@ static int build(float* zscale) {
             }
             verts[j] = g;
         }
+        for (j = 0; j < 6; j++) {
+            GVTX g;
+            memset(&g, 0, sizeof g);
+            g.x = cx[j], g.y = cy[j], g.q = 1.0f;
+            g.cf[2] = 16;
+            g.base[0] = g.base[1] = g.base[2] = g.base[3] = 255.0f;
+            verts[6 + j] = g;
+        }
     }
-    n = 6;
+    n = 12;
     if (scale > 1) {
         find_corners();
     }
@@ -1241,6 +1259,20 @@ static SDL_GPUTexture* finish(SDL_GPUCommandBuffer* cmd) {
     SDL_GPUTextureSamplerBinding tb;
     SDL_GPURenderPass* rp;
     float ratio[4];
+    if (rd_invert) {
+        SDL_GPUGraphicsPipeline* p = pipeline(P_INVERT, 0, 0);
+        if (p != NULL) {
+            SDL_GPURenderPass* irp = begin(cmd, frame_tex[0], 0, 0.0f, 0);
+            DRAW d;
+            memset(&d, 0, sizeof d);
+            d.flags = F_USE_ALPHA;
+            SDL_BindGPUGraphicsPipeline(irp, p);
+            bind_textures(irp, NULL, NULL);
+            SDL_PushGPUFragmentUniformData(cmd, 0, &d, sizeof d);
+            SDL_DrawGPUPrimitives(irp, 6, 1, 6, 0);
+            SDL_EndGPURenderPass(irp);
+        }
+    }
     if (out_tex == NULL) {
         return frame_tex[0];
     }

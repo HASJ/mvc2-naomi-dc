@@ -935,16 +935,19 @@ static void work(WORKER* w) {
             raster(&setups[i], w);
         }
     }
-    for (y = first_row(w, 0); y < draw_h; y = next_row(w, y)) {
-        resolve_row(w, y);
-        if (scale == 1) {
-            for (x = 0; x < RD_WIDTH; x++) {
-                out_frame[y * out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x];
-            }
-        } else {
-            uint32_t* o = &out_frame[2 * y * out_pitch];
-            for (x = 0; x < RD_WIDTH; x++) {
-                o[x] = o[out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x / 2];
+    {
+        uint32_t xor_mask = rd_invert ? 0x00FFFFFFu : 0u;
+        for (y = first_row(w, 0); y < draw_h; y = next_row(w, y)) {
+            resolve_row(w, y);
+            if (scale == 1) {
+                for (x = 0; x < RD_WIDTH; x++) {
+                    out_frame[y * out_pitch + x] = (0xFF000000u | cbuf[y * RD_WIDTH + x]) ^ xor_mask;
+                }
+            } else {
+                uint32_t* o = &out_frame[2 * y * out_pitch];
+                for (x = 0; x < RD_WIDTH; x++) {
+                    o[x] = o[out_pitch + x] = (0xFF000000u | cbuf[y * RD_WIDTH + x / 2]) ^ xor_mask;
+                }
             }
         }
     }

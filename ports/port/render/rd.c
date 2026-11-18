@@ -100,6 +100,7 @@ void rd_begin_frame(void) {
     rd_frame->nstates = 0;
     rd_frame->nputs = 0;
     rd_frame->ngroups = 0;
+    rd_invert = 0;
 }
 
 RD_FOG rd_fog;
@@ -179,6 +180,7 @@ static int add_tri(int list, int state, const RD_VTX* a, const RD_VTX* b, const 
 }
 
 int rd_discard;
+int rd_invert;
 #ifdef __3DS__
 int rd_seen, rd_group_info;
 #endif
