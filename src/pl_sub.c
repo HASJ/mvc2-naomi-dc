@@ -8,6 +8,9 @@
 #include "pl_act.h"
 #ifdef HOST_PORT
 #include "naomi_input.h"
+extern void host_log( const char *fmt, ... ) ;
+extern unsigned host_frame( void ) ;
+extern int host_env_on( const char *name ) ;
 #endif
 
 /* the routine tables pl_char_set() and the character modules fill, one for each work */
@@ -827,6 +830,21 @@ void pl_step_spd_set( PLAYER_WORK *pl_w )
 	pl_w->spd.x = spd ;
 }
 
+#ifdef HOST_PORT
+/* MVC2_HOP_TRACE=1: one log line a frame for player 1's point fighter in the air, for headless jump
+   measurements (ports/tools/hop_trace.ps1) */
+static void hop_trace( PLAYER_WORK *pl_w )
+{
+	static int on = -1 ;
+	static unsigned seq ;
+
+	if( on < 0 ) on = host_env_on( "MVC2_HOP_TRACE" ) ;
+	if( !on || pl_w->team_no || pl_w->pl_no != 0 ) return ;
+	host_log( "HOPTRACE n=%u f=%u pl=%02x act=%d sj=%d y=%.2f sx=%.3f sy=%.3f cnt=%d", seq ++, host_frame(), pl_w->pl_type, pl_w->act_st, pl_w->sjump_flag,
+		pl_w->pos.y - pl_w->ground_y, pl_w->spd.x, pl_w->spd.y, 0 ) ;
+}
+#endif
+
 /****************************************************************/
 /*			Move through the air, keeping the sideways speed	*/
 /*			inside the character's limits						*/
@@ -860,6 +878,9 @@ void pl_jump_move( PLAYER_WORK *pl_w )
 	if( spd > hi ) spd = hi ;
 	pl_w->spd.x = spd ;
 	pl_w->pos.x += spd ;
+#ifdef HOST_PORT
+	hop_trace( pl_w ) ;
+#endif
 }
 
 /****************************************************************/

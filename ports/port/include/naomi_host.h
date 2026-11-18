@@ -93,6 +93,7 @@ void host_stub_report(void);
 unsigned host_frame(void);
 extern uint32_t host_fills;         /* counts the port's writes into the game's memory: ROM and disc reads */
 void host_log(const char* fmt, ...);
+int host_env_on(const char* name);  /* the game's getenv is a stub: for HOST_PORT traces gated by an env var */
 void host_divzero_install(void);    /* a division by zero gives 0, as SHC's code did */
 void host_divzero_allow_module(const void* hmod);
 void host_divzero_disallow_module(const void* hmod);

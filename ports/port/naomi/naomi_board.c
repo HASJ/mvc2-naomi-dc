@@ -77,6 +77,12 @@ void host_log(const char* fmt, ...) {
     fflush(stderr);
 }
 
+/* whether an environment variable is set to something other than "0": the game's own getenv is a stub */
+int host_env_on(const char* name) {
+    const char* v = getenv(name);
+    return v != NULL && strcmp(v, "0") != 0;
+}
+
 /* a float returned to a caller expecting an int stays on the x87 stack, which then fills */
 static void x87_check(void) {
 #if defined(__i386__)
