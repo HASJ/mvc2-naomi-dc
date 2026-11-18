@@ -169,6 +169,9 @@ PLAYER_WORK *sel_char_w;	/* the member whose character is being chosen */
 Sint8 sel_char_old;		/* and its character before the cursor moved */
 PLAYER_WORK *sel_type_w;	/* the member whose assist type is being chosen */
 Sint8 sel_type;		/* and the type */
+#define SEL_TYPE_WAIT	20	/* frames after a pick in which LP/LK/HP choose the assist type directly */
+static Uint8 sel_type_wait[2];	/* each side's frames since its pick, up to SEL_TYPE_WAIT */
+static Uint16 sel_type_tap[2];	/* and the type button it last tapped in them */
 
 /* each side's default team, and their bits in the masks of characters */
 Uint32 def_team_bit[2][3] = {
@@ -1126,6 +1129,8 @@ decide :
 	sel_door_set( pl_w ) ;
 	sel_w.pick_flag[pl_w->pl_index] |= 1 << pl_w->timer1 ;
 	sel_char_take( sel_char_w, pl_w->pl_index ) ;
+	sel_type_wait[pl_w->pl_index] = 0 ;
+	sel_type_tap[pl_w->pl_index] = 0 ;
 	pl_w->timer0 ++ ;
 #ifdef TARGET_DC
 	/* nobody plays yet: the member's files are read ahead */
@@ -1143,18 +1148,30 @@ static void sel_pl_pick_type( PLAYER_WORK *pl_w )
 {
 	switch( pl_w->routine_2 ){
 	case 0:
+		/* for SEL_TYPE_WAIT frames from the pick, LP/LK/HP choose the type directly: one
+		   tapped in them, or else one still held when they are up */
+		if( sel_sw_on[pl_w->pl_index] & ( KEY_LP | KEY_LK | KEY_HP ) ){
+			sel_type_tap[pl_w->pl_index] = sel_sw_on[pl_w->pl_index] & ( KEY_LP | KEY_LK | KEY_HP ) ;
+		}
+		if( sel_type_wait[pl_w->pl_index] < SEL_TYPE_WAIT ) sel_type_wait[pl_w->pl_index] ++ ;
 		if( sel_w.work_step[pl_w->pl_index] == 2 ){
+			Uint16 sw = sel_type_tap[pl_w->pl_index] ;
+
+			if( !sw ){
+				if( sel_type_wait[pl_w->pl_index] < SEL_TYPE_WAIT ) break ;
+				sw = sel_sw_now[pl_w->pl_index] ;
+			}
 			pl_w->routine_2 ++ ;
 			sel_type_w = &pl_work[pl_w->timer1 * 2 + pl_w->pl_index] ;
-			if( sel_sw_now[pl_w->pl_index] & KEY_LP ){
+			if( sw & KEY_LP ){
 				sel_type_w->pl_personal = 0 ;
 				goto decide ;
 			}
-			if( sel_sw_now[pl_w->pl_index] & KEY_LK ){
+			if( sw & KEY_LK ){
 				sel_type_w->pl_personal = 1 ;
 				goto decide ;
 			}
-			if( sel_sw_now[pl_w->pl_index] & KEY_HP ){
+			if( sw & KEY_HP ){
 				sel_type_w->pl_personal = 2 ;
 				goto decide ;
 			}
