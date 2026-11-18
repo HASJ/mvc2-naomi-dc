@@ -109,6 +109,7 @@ int dc_vmu_is_netplay_locked(void);
 /* the Dreamcast (port/dc), from the disc's files in a folder */
 int dc_init(const HOST_PROGRAM* program, const char* disc_path);
 int dc_gd_open(const char* disc_path);
+void dc_gd_set_overlay_dir(const char* overlay_dir);
 const char* dc_disc_check(const char* disc_path);  /* a file missing or the wrong size, or NULL */
 long dc_gd_read_file(const char* name, void* buf, long max);  /* a whole file; its size, or -1 */
 const char* dc_gd_path(const char* name);   /* a file's path on the host */
@@ -144,6 +145,7 @@ void ctr_small_drop(void);
 /* port/sys/restart.c */
 void host_keep_start(void);         /* first thing, before any of them runs */
 void host_keep_program(const HOST_PROGRAM* program);   /* before it first runs */
+void host_forget_program(const HOST_SPAN* span);
 void host_restart(void);            /* with the board stopped */
 extern void (*host_restart_hook)(int after);   /* the front end's settings in the layers taken before it (0), given back after (1) */
 void* host_keep_block(size_t size); /* memory kept through restarts (the sound's RAM), or NULL */

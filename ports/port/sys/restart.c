@@ -15,7 +15,7 @@ static const HOST_SPAN host_span = { host_span_data_begin, host_span_data_end, h
 static struct {
     const HOST_SPAN* span;
     char* data;
-} kept[3];
+} kept[16];
 static int nkept;
 
 static void keep(const HOST_SPAN* s) {
@@ -45,6 +45,25 @@ void host_keep_start(void) {
 
 void host_keep_program(const HOST_PROGRAM* program) {
     keep(&program->span);
+}
+
+void host_forget_program(const HOST_SPAN* span) {
+    int i;
+    if (span == NULL) {
+        return;
+    }
+    for (i = 0; i < nkept; i++) {
+        if (kept[i].span == span) {
+            free(kept[i].data);
+            nkept--;
+            if (i < nkept) {
+                kept[i] = kept[nkept];
+            }
+            kept[nkept].span = NULL;
+            kept[nkept].data = NULL;
+            return;
+        }
+    }
 }
 
 /* a block that outlives the restarts, so that the same program's next start finds its memory whole: the one held if

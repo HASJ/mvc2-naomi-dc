@@ -27,6 +27,7 @@ struct GDS_FS_HANDLE {
 };
 
 static char root[1024];
+static char overlay[1024];
 static struct GDS_FS_HANDLE files[GD_MAX_OPEN];
 static struct GDS_FS_HANDLE sys_handle = { NULL, 0, 0, GDD_STAT_COMPLETE };
 
@@ -56,6 +57,14 @@ const char* dc_disc_check(const char* dir) {
 int dc_gd_open(const char* disc_path) {
     snprintf(root, sizeof root, "%s", disc_path);
     return 1;
+}
+
+void dc_gd_set_overlay_dir(const char* overlay_dir) {
+    if (overlay_dir != NULL && overlay_dir[0] != 0) {
+        snprintf(overlay, sizeof overlay, "%s", overlay_dir);
+    } else {
+        overlay[0] = 0;
+    }
 }
 
 #ifdef __3DS__
@@ -342,9 +351,15 @@ static void keep_close_all(void) {
 
 static FILE* open_file(const char* name) {
     char path[1200];
-    FILE* f;
-    snprintf(path, sizeof path, "%s/%s", root, name);
-    f = fopen(path, "rb");
+    FILE* f = NULL;
+    if (overlay[0] != 0) {
+        snprintf(path, sizeof path, "%s/%s", overlay, name);
+        f = fopen(path, "rb");
+    }
+    if (f == NULL) {
+        snprintf(path, sizeof path, "%s/%s", root, name);
+        f = fopen(path, "rb");
+    }
 #ifdef __3DS__
     if (no_buf < 0) {
         no_buf = getenv("MVC2_GD_NOBUF") != NULL && atoi(getenv("MVC2_GD_NOBUF")) != 0;
@@ -360,13 +375,18 @@ static FILE* open_file(const char* name) {
     return f;
 }
 
-#ifdef __3DS__
 const char* dc_gd_path(const char* name) {
     static char path[1200];
+    if (overlay[0] != 0) {
+        struct stat st;
+        snprintf(path, sizeof path, "%s/%s", overlay, name);
+        if (stat(path, &st) == 0) {
+            return path;
+        }
+    }
     snprintf(path, sizeof path, "%s/%s", root, name);
     return path;
 }
-#endif
 
 long dc_gd_read_file(const char* name, void* buf, long max) {
     FILE* f = open_file(name);

@@ -23,10 +23,13 @@
 #endif
 #include "input_sdl.h"
 #include "menu_sdl.h"
+#include "patch_dll.h"
+#include "replay.h"
 #include "savestate.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
 void sdl_audio_frame(void);
+void sdl_audio_step_silent(void);
 void sdl_audio_close(void);
 void snd_close(void);
 
@@ -646,6 +649,28 @@ static int window_key(const SDL_Event* e) {
         }
         return 1;
     }
+    if (replay_session_is_active()) {
+        if (key_sym(e) == SDLK_F5) {
+            replay_session_enter_takeover(0);
+            return 1;
+        }
+        if (key_sym(e) == SDLK_F6) {
+            replay_session_enter_takeover(1);
+            return 1;
+        }
+        if (key_sym(e) == SDLK_F7) {
+            replay_session_reset_takeover();
+            return 1;
+        }
+        if (key_sym(e) == SDLK_SPACE || key_sym(e) == SDLK_P) {
+            replay_session_toggle_pause();
+            return 1;
+        }
+        if (key_sym(e) == SDLK_PERIOD) {
+            replay_session_step_once();
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -760,12 +785,28 @@ static int has_arg(int argc, char** argv, const char* flag) {
     return 0;
 }
 
+static void shutdown_front(void) {
+    save_window();
+    snd_close();
+    sdl_audio_close();
+    host_stub_report();
+#ifdef MVC2_SDL3
+    if (gpu) {
+        SDL_DestroyRenderer(renderer);
+        rd_gpu_quit();
+        SDL_DestroyGPUDevice(gpu);
+    }
+#endif
+    SDL_Quit();
+}
+
 int main(int argc, char** argv) {
     int quit = 0;
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
 
     test_run = frames_left >= 0 || getenv("MVC2_HEADLESS") != NULL || has_arg(argc, argv, "--headless") ||
-               has_arg(argc, argv, "--savestate-check") || has_arg(argc, argv, "--replay-verify");
+               has_arg(argc, argv, "--savestate-check") || has_arg(argc, argv, "--patch-check") ||
+               has_arg(argc, argv, "--replay-verify") || has_arg(argc, argv, "--takeover-test");
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -803,24 +844,48 @@ int main(int argc, char** argv) {
     }
     host_keep_start();
     rd_begin_frame();
+    if (cli_get_opt("patch") != NULL) {
+        if (!patch_dll_activate(cli_get_opt("patch"))) {
+            shutdown_front();
+            return 1;
+        }
+    }
     if (!start_game()) {
+        shutdown_front();
         return 1;
     }
     if (cli_has_flag("savestate-check") || getenv("MVC2_SAVESTATE_TEST") != NULL) {
         int test_rc = savestate_run_self_test();
-        save_window();
-        snd_close();
-        sdl_audio_close();
-        host_stub_report();
-#ifdef MVC2_SDL3
-        if (gpu) {
-            SDL_DestroyRenderer(renderer);
-            rd_gpu_quit();
-            SDL_DestroyGPUDevice(gpu);
-        }
-#endif
-        SDL_Quit();
+        shutdown_front();
         return test_rc;
+    }
+    if (cli_has_flag("patch-check")) {
+        int test_rc = patch_dll_run_self_test();
+        shutdown_front();
+        return test_rc;
+    }
+    if (cli_get_opt("replay-verify") != NULL) {
+        int test_rc = replay_run_verify_cli(cli_get_opt("replay-verify"));
+        shutdown_front();
+        return test_rc;
+    }
+    if (cli_get_opt("takeover-test") != NULL) {
+        int test_rc = replay_run_takeover_test_cli(cli_get_opt("takeover-test"));
+        shutdown_front();
+        return test_rc;
+    }
+    if (cli_get_opt("record") != NULL && test_run) {
+        const char* seed_opt = cli_get_opt("seed");
+        uint32_t seed = seed_opt ? (uint32_t)strtoul(seed_opt, NULL, 0) : 0x12345678u;
+        int test_rc = replay_run_record_cli(cli_get_opt("record"), frames_left > 0 ? (int)frames_left : 900, seed);
+        shutdown_front();
+        return test_rc;
+    }
+    if (cli_get_opt("replay") != NULL) {
+        if (!replay_session_open(cli_get_opt("replay"))) {
+            shutdown_front();
+            return 1;
+        }
     }
     while (!quit) {
         SDL_Event e;
@@ -859,25 +924,23 @@ int main(int argc, char** argv) {
         }
         {
             Uint64 start = SDL_GetPerformanceCounter(), presenting = present_ticks;
-            naomi_run_frame();
-            sdl_audio_frame();
+            if (replay_session_is_active()) {
+                replay_session_step_frame(net_pack_input(input.player[0]), net_pack_input(input.player[1]));
+            } else {
+                naomi_run_frame();
+            }
+            if (!host_is_headless()) {
+                sdl_audio_frame();
+            } else {
+                sdl_audio_step_silent();
+            }
             game_ticks += SDL_GetPerformanceCounter() - start - (present_ticks - presenting);
         }
         if (frames_left > 0 && --frames_left == 0) {
             quit = 1;
         }
     }
-    save_window();
-    snd_close();
-    sdl_audio_close();
-    host_stub_report();
-#ifdef MVC2_SDL3
-    if (gpu) {
-        SDL_DestroyRenderer(renderer);
-        rd_gpu_quit();
-        SDL_DestroyGPUDevice(gpu);
-    }
-#endif
-    SDL_Quit();
+    replay_session_close();
+    shutdown_front();
     return 0;
 }

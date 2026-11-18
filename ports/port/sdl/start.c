@@ -16,6 +16,9 @@
 #endif
 
 #include "naomi_host.h"
+#if defined(_WIN32) && !defined(__3DS__)
+#include "patch_dll.h"
+#endif
 
 #define CONFIG "mvc2.cfg"
 
@@ -424,8 +427,9 @@ static int found[MODES];
 static int is_value_option(const char* a) {
     static const char* const opts[] = {
         "--config", "--join", "--connect", "--host", "--spectate", "--relay", "--server",
-        "--replay", "--record", "--patch", "--synctest", "--netsim", "--local-port",
-        "--peer-port", "--takeover-frame", "--seed", "--token", "--match-id", "--lobby",
+        "--replay", "--replay-verify", "--takeover-test", "--record", "--patch", "--synctest",
+        "--netsim", "--local-port", "--peer-port", "--takeover-frame", "--seed", "--token",
+        "--match-id", "--lobby",
     };
     size_t i;
     if (strchr(a, '=') != NULL) {
@@ -535,8 +539,10 @@ int start_game(void) {
 #endif
 #ifdef MVC2_DC
     if (mode == DC) {
-        host_keep_program(&dc_program);
-        return dc_init(&dc_program, path[mode]);
+        const HOST_PROGRAM* prog = patch_dll_program(&dc_program);
+        host_keep_program(prog);
+        patch_dll_apply_overlay();
+        return dc_init(prog, path[mode]);
     }
 #endif
     return 0;

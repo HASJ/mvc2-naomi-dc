@@ -283,6 +283,30 @@ target_compile_options(mvc2_dc PRIVATE -O2 -std=gnu17 -fwrapv -fno-strict-aliasi
 mvc2_program(dc PROGRAM dc SOURCES ${DC_SOURCES} DEFINITIONS TARGET_DC BUILD_DATE=20000529
              HOST mvc2_port mvc2_lib mvc2_dc)
 
+if(WIN32 AND NOT NINTENDO_3DS)
+    set(PATCH_GEN ${GEN}/patch_api)
+    add_custom_command(
+        OUTPUT ${PATCH_GEN}/patch_api_gen.h ${PATCH_GEN}/host_api_fill.c ${PATCH_GEN}/dll_thunks.c ${PATCH_GEN}/patch_id.txt
+        COMMAND Python3::Interpreter ${PORT}/tools/gen_patch_api.py
+                ${CMAKE_NM} ${CMAKE_BINARY_DIR}/dc.o ${PATCH_GEN} ${GAME} ${UNDERSCORE}
+        DEPENDS ${CMAKE_BINARY_DIR}/dc.o ${PORT}/tools/gen_patch_api.py
+        COMMENT "Generating MVC2_HOST_API table and dc_game.dll thunks")
+    add_custom_target(mvc2_patch_api_gen
+        DEPENDS ${PATCH_GEN}/patch_api_gen.h ${PATCH_GEN}/host_api_fill.c ${PATCH_GEN}/dll_thunks.c ${PATCH_GEN}/patch_id.txt)
+
+    add_library(mvc2_dc_patch SHARED ${CMAKE_BINARY_DIR}/dc.o ${PATCH_GEN}/dll_thunks.c)
+    add_dependencies(mvc2_dc_patch mvc2_patch_api_gen)
+    target_include_directories(mvc2_dc_patch PRIVATE ${PORT}/include ${PATCH_GEN})
+    target_compile_options(mvc2_dc_patch PRIVATE -O2 -std=gnu17 -Wall ${HOST_FLOAT})
+    set_target_properties(mvc2_dc_patch PROPERTIES OUTPUT_NAME dc_game PREFIX "" SUFFIX ".dll")
+    target_link_options(mvc2_dc_patch PRIVATE
+        @${GEN}/dc/host_defsyms.rsp
+        -Wl,--image-base,0x20000000
+        -Wl,--disable-dynamicbase
+        -static-libgcc)
+    set_property(TARGET mvc2_dc_patch APPEND PROPERTY LINK_DEPENDS ${GEN}/dc/host_defsyms.rsp)
+endif()
+
 # an executable of the host and one or more programs (arc, dc), with the front end told which
 function(mvc2_executable TARGET)
     set(HOST_LIBS mvc2_port mvc2_lib)
@@ -318,8 +342,19 @@ function(mvc2_executable TARGET)
         DEPENDS ${HOST_DEPENDS} ${HOST_RSP}
         COMMENT "Making the host's layers one relocatable for ${TARGET}")
     set_source_files_properties(${CMAKE_BINARY_DIR}/${TARGET}_host.o PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
-    add_executable(${TARGET} ${OBJECTS} ${FRONT_SOURCES} ${PORT}/sys/restart.c)
-    target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd)
+    set(EXTRA_FRONT)
+    if(WIN32 AND NOT NINTENDO_3DS)
+        list(APPEND EXTRA_FRONT ${PORT}/net/ed25519_verify.c ${PORT}/net/replay.c ${PORT}/sys/patch_dll.c)
+        if("dc" IN_LIST ARGN)
+            list(APPEND EXTRA_FRONT ${GEN}/patch_api/host_api_fill.c)
+        endif()
+    endif()
+    add_executable(${TARGET} ${OBJECTS} ${FRONT_SOURCES} ${EXTRA_FRONT} ${PORT}/sys/restart.c)
+    target_include_directories(${TARGET} PRIVATE ${PORT}/include ${PORT}/render ${PORT}/snd ${PORT}/net)
+    if(WIN32 AND NOT NINTENDO_3DS)
+        add_dependencies(${TARGET} mvc2_patch_api_gen)
+        target_include_directories(${TARGET} PRIVATE ${GEN}/patch_api)
+    endif()
     target_compile_definitions(${TARGET} PRIVATE ${DEFS})
     target_compile_options(${TARGET} PRIVATE -O2 -std=gnu17 -Wall ${HOST_FLOAT})
     foreach(p ${ARGN})
@@ -441,4 +476,19 @@ if(NOT NINTENDO_3DS)
     install(CODE "if(NOT EXISTS \"\${CMAKE_INSTALL_PREFIX}/mvc2.cfg\")
         file(INSTALL \"${PORT}/dist/mvc2.cfg\" DESTINATION \"\${CMAKE_INSTALL_PREFIX}\")
     endif()")
+endif()
+if(WIN32 AND NOT NINTENDO_3DS)
+    install(CODE "
+        file(READ \"${GEN}/patch_api/patch_id.txt\" _MVC2_PID)
+        string(STRIP \"\${_MVC2_PID}\" _MVC2_PID)
+        set(_PATCH_DEST \"\${CMAKE_INSTALL_PREFIX}/patches/\${_MVC2_PID}\")
+        file(MAKE_DIRECTORY \"\${_PATCH_DEST}\")
+        file(INSTALL \"$<TARGET_FILE:mvc2_dc_patch>\" DESTINATION \"\${_PATCH_DEST}\")
+        execute_process(
+            COMMAND \"${Python3_EXECUTABLE}\" \"${GAME}/tools/sign_patch_manifest.py\" \"\${_PATCH_DEST}\" \"\${_MVC2_PID}\"
+            RESULT_VARIABLE _SIGN_RC)
+        if(NOT _SIGN_RC EQUAL 0)
+            message(FATAL_ERROR \"sign_patch_manifest.py failed with \${_SIGN_RC}\")
+        endif()
+    ")
 endif()
