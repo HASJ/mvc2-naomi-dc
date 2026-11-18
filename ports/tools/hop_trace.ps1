@@ -14,6 +14,9 @@
   -Shots   optional MVC2_SHOT frames, e.g. '600,900' (writes shot_n.bmp in build-dist)
   -Menu    put the recorded Dreamcast menu route ($MenuDc) in front of -Press: P1 Ruby Heart (pl 13) against
            Cable, the fight under way by frame 4500. Implies -Dc.
+  -Point   with -Menu, P1's point character as a hex id (include/fighter.h), e.g. 05 for Strider: the cursor is
+           walked there on the Dreamcast grid (ef05_home_grid_tbl, src/ef05_card.c) before the first pick; the
+           other two picks are the cells to its right.
 
   Output per jump: first frame, frames to apex, apex height (units above the ground), spd.x at the apex, whether
   sjump_flag was set, and the largest hop_stop_cnt seen.
@@ -34,19 +37,55 @@
       forward superjump +/- hop   spd.x identical frame by frame
       b1 at 4915, no 2            720.5                  the air attack's own path (cnt stays 0); b1 + 2: 402.1
       normal jump '4900+5:up'     239.5 with or without 2, also right after landing from a hop
+  - Task 3, air jumps (-Point 05 Strider, superjump apex 756.3; air jump '4950+3:up' from y 711.75):
+      no 2                        1069.3 (+357.6)
+      2 at 4953 / 4955            839.5 (+127.7) / 876.2 (+164.5)
+      2 for 2 frames at 4912, up at 4914 (air jump mid-stop): the air jump rises fully (648.1), was cut at 313.7
+      -Point 1b Chun-Li: second air jump at 4962, 2 at 4966: stops at 1069.8
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Press,
     [int]$Frames = 1500,
     [switch]$Dc,
     [string]$Shots = '',
-    [switch]$Menu
+    [switch]$Menu,
+    [string]$Point = '13'
 )
 
 # Dreamcast: title, mode, join, three picks a side (cursor moved right between them), assist types, then b1 on
 # both sides through the later screens
 $MenuDc = '300:start,500:start,700:start,900:start,1000:b1,1100:right,1200:b1,1300:right,1400:b1,1600:b1,1700:start,1800:p2:start,2000:p2:b1,2100:p2:right,2200:p2:b1,2300:p2:right,2400:p2:b1,2600:p2:b1,2700:p2:start,2900:b1,2900:p2:b1,3050:b1,3050:p2:b1,3200:b1,3200:p2:b1,3350:b1,3350:p2:b1,3500:b1,3500:p2:b1,3650:b1,3650:p2:b1,3800:b1,3800:p2:b1,3950:b1,3950:p2:b1,4100:b1,4100:p2:b1,4250:b1,4250:p2:b1,4400:b1,4400:p2:b1'
-if ($Menu) { $Press = "$MenuDc,$Press"; $Dc = $true }
+# the Dreamcast select grid, ef05_home_grid_tbl in src/ef05_card.c (-1: no cell); P1's cursor starts on 0x13 (3, 3)
+$Grid = @(
+    @(-1, 0x20, 0x1c, 0x38, 0x07, 0x2d, 0x36, -1),
+    @(-1, 0x23, 0x02, 0x15, 0x06, 0x39, 0x2e, -1),
+    @(0x27, 0x1f, 0x00, 0x14, 0x16, 0x08, 0x2f, 0x2b),
+    @(0x21, 0x1e, 0x01, 0x13, 0x17, 0x09, 0x28, 0x35),
+    @(0x25, 0x37, 0x04, 0x12, 0x0b, 0x0c, 0x29, 0x31),
+    @(0x26, 0x03, 0x22, 0x10, 0x0f, 0x0e, 0x2c, 0x32),
+    @(-1, 0x24, 0x05, 0x11, 0x0a, 0x0d, 0x33, -1),
+    @(-1, 0x3a, 0x1d, 0x1b, 0x30, 0x2a, 0x34, -1)
+)
+if ($Menu) {
+    $want = [Convert]::ToInt32($Point, 16)
+    $moves = @()
+    for ($r = 0; $r -lt 8; $r++) {
+        for ($c = 0; $c -lt 8; $c++) {
+            if ($Grid[$r][$c] -eq $want) {
+                $keys = @()
+                if ($r -gt 3) { $keys += @('down') * ($r - 3) } elseif ($r -lt 3) { $keys += @('up') * (3 - $r) }
+                if ($c -gt 3) { $keys += @('right') * ($c - 3) } elseif ($c -lt 3) { $keys += @('left') * (3 - $c) }
+                $t = 940
+                foreach ($k in $keys) { $moves += "${t}:$k"; $t += 12 }
+            }
+        }
+    }
+    if ($want -ne 0x13 -and $moves.Count -eq 0) { Write-Error "no grid cell for point $Point"; exit 1 }
+    $route = $MenuDc
+    if ($moves.Count) { $route = $MenuDc -replace '900:start,', ('900:start,' + ($moves -join ',') + ',') }
+    $Press = "$route,$Press"
+    $Dc = $true
+}
 
 $ErrorActionPreference = 'Stop'
 $dist = Join-Path $PSScriptRoot '..\build-dist' | Resolve-Path
