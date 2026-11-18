@@ -1,4 +1,40 @@
-# Marvel vs. Capcom 2 - NAOMI and Dreamcast program source
+# Ultimate Marvel vs. Super Capcom 2 (`mvc2-naomi-dc` fork)
+
+This repository is a gameplay, netplay, and quality-of-life fork of [gibletto/mvc2-naomi-dc](https://github.com/gibletto/mvc2-naomi-dc), the decompilation and native PC/3DS port of *Marvel vs. Capcom 2: New Age of Heroes*.
+
+Instead of keeping an untouched byte-for-byte retail ROM/disc match, this fork uses the decompiled Dreamcast/PC source as a foundation to build an expanded, rebalanced, and netplay-ready edition of MvC2.
+
+## Intent & Philosophy
+
+- **Buff rather than nerf:** Elevate weaker characters and options instead of stripping away what makes characters strong.
+- **Preserve unique character traits:** Signature tools (such as Sentinel's lasers dealing chip damage) stay intact unless they cause game-breaking bugs.
+- **Dynamic combos over infinites:** Remove true infinites (tentatively capping loops at ~3 repetitions) while expanding expressive combo routes and neutral/defensive options.
+
+See [docs/Ultimate Marvel vs Super Capcom 2.md](docs/Ultimate%20Marvel%20vs%20Super%20Capcom%202.md) and [docs/Ultimate Marvel vs Super Capcom 2 - Character balance.md](docs/Ultimate%20Marvel%20vs%20Super%20Capcom%202%20-%20Character%20balance.md) for the full design document, balance notes, and roadmap.
+
+## Key Changes in This Fork
+
+- **New & Updated Combat Mechanics**
+  - **Active Tag & Counter-Tag:** Tag mechanics and counter-tag support (`src/pl_team.c`, `src/pl_main.c`).
+  - **Expanded Assists:** Double assists, extra assists with directional input checks, and special-move assist calls.
+  - **Ground & Wall Bounces:** Data-driven ground/wall bounce system and data-driven cancel rule table.
+  - **Super Hop:** Holding `1`/`2`/`3` eases a rising superjump to a stop over 5 frames, with fresh stops on air jumps and wall jumps.
+  - **Input & Defense Fixes:** Two-button Dash and Super Jump shortcuts, dedicated Dash/Super Jump bindings on PC, kara cancels, and fixes for air-dash blocking and repeated air guards in normal jumps.
+- **Character Reworks & Balance**
+  - Balance and move-set updates (including Akuma, Ken, and Magneto) plus a move editor GUI in `tools/`.
+- **Rollback Netplay & Replays**
+  - GGPO rollback netplay (`pond3r/ggpo`) with deterministic copy-on-write savestates, Dreamcast main-menu **Netplay** entry, F4 SDL netplay overlay, serverless clickable `umvc2://p2p/` direct P2P links, `.mvc2r` replay recording, **Replay Takeover**, and Ed25519-signed `dc_game.dll` patches.
+  - See [docs/Netplay implementation.md](docs/Netplay%20implementation.md) for architecture details.
+- **Menus & Quality of Life**
+  - Faster boot and menu transitions, live character previews on Character Select, pick undo, direct assist-type selection, and move name labels on assist pillars.
+
+## Upstream Decompilation Base
+
+The sections below come from the upstream [gibletto/mvc2-naomi-dc](https://github.com/gibletto/mvc2-naomi-dc) project and document the original decompilation, layout, compiler toolchain, and PC/3DS ports. Note that because this fork modifies game code and data, the original retail ROM/disc SHA-1 checks apply to upstream rather than modified builds.
+
+---
+
+### Original Upstream README
 
 **AI Disclosure**:
 Yes, this used Claude.
