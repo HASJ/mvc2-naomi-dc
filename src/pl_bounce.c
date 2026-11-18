@@ -41,7 +41,40 @@ static const BOUNCE_RULE bounce_rules[] = {
 	{ PL_AKUMA,   64,            1, BOUNCE_PROP_GROUND, 1, 8.0f },	/* Akuma j236p (Zankuu Hadouken fireball) */
 	{ PL_AKUMA,   65,            1, BOUNCE_PROP_GROUND, 1, 8.0f },	/* Akuma j236p (Zankuu Hadouken level 1) */
 	{ PL_MAGNETO, ATCK_STAND_HP, 1, BOUNCE_PROP_WALL,   1, 6.5f },	/* Magneto 5HP vs non-grounded opponents */
+	{ PL_KEN,     ATCK_STAND_HK, 0, BOUNCE_PROP_WALL,   1, 6.5f },	/* Ken 5HK: launches (launch_rules), bounces if it reaches the wall */
 } ;
+
+/* Launches for rules above: the speed, in dots a frame, a matching wall bounce throws the victim
+   at, away from the attacker and up, in place of the hit's own knock-back when that is weaker.
+   The victim bounces only if the arc reaches the wall; one that lands first is down in a soft
+   knockdown. Kept apart from bounce_rules so the move editor's table keeps its shape. */
+typedef struct LAUNCH_RULE {
+	Uint8 pl_type;
+	Uint8 atck_no;
+	Float spd_x;
+	Float spd_y;
+} LAUNCH_RULE;
+
+static const LAUNCH_RULE launch_rules[] = {
+	{ PL_KEN, ATCK_STAND_HK, 5.0f, 6.5f },	/* Ken 5HK */
+} ;
+
+static void bounce_launch_set( PLAYER_WORK *dm_w, const PLAYER_WORK *at_w, Float dir )
+{
+	Uint8 atck_no = ( Uint8 )( dm_w->dm_atck_no & ATCK_NO_MASK ) ;
+	int i ;
+	int count = ( int )( sizeof( launch_rules ) / sizeof( launch_rules[0] ) ) ;
+
+	for( i = 0 ; i < count ; i ++ ){
+		const LAUNCH_RULE *l = &launch_rules[i] ;
+
+		if( l->pl_type != at_w->pl_type || l->atck_no != atck_no ) continue ;
+		if( dm_w->spd.x * dir < DOT_X( l->spd_x ) ) dm_w->spd.x = dir * DOT_X( l->spd_x ) ;
+		if( dm_w->spd.y < DOT_Y( l->spd_y ) ) dm_w->spd.y = DOT_Y( l->spd_y ) ;
+		dm_w->pl_stance = STANCE_AIR ;
+		return ;
+	}
+}
 
 static void bounce_clear_motion( Uint8 work_no )
 {
@@ -295,6 +328,7 @@ void pl_bounce_on_damage_post( PLAYER_WORK *dm_w, const PLAYER_WORK *at_w, BOUNC
 		dm_w->acc.x = 0.0f ;
 		dm_w->spd.y = dm_w->back_spd_y ;
 		dm_w->acc.y = -DOT_Y( 0.375f ) ;
+		bounce_launch_set( dm_w, at_w, dir ) ;
 		st->wall_dir = dir > 0.0f ? 1 : -1 ;
 		st->char_switched = 0 ;
 		bounce_spin_face_dir( dm_w ) ;
