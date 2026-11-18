@@ -481,7 +481,9 @@ typedef struct PLAYER_WORK {
 	void	*prg_adrs;		/* 554: on the Dreamcast, where the character's program file is read to */
 	Uint32	play_time;	/* 558: frames the side has played in the arcade */
 	Uint8	pic_buff_no;		/* 55c: on the Dreamcast, which of pic_adrs_tbl's buffers the player's files use */
-	Uint8	unk_55d[0x5a4 - 0x55d];
+	Uint8	hop_stop_cnt;	/* 55d: Super Hop (pl_hop_ck): frames left of the rise easing to a stop, 0x80 a press waiting for the minimum height, 0 neither */
+	Uint8	unk_55e;
+	Uint8	unk_55f[0x5a4 - 0x55f];
 } PLAYER_WORK;
 
 /* pl_tbl: a character's routines */

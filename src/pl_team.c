@@ -515,6 +515,7 @@ static void change_active_tag( PLAYER_WORK *pl_w, Uint8 idx )
 		nw->acc.y = -DOT_Y( 0.375f ) ;
 		nw->pl_stance = STANCE_AIR ;
 		nw->sjump_flag = 0 ;
+		nw->hop_stop_cnt = 0 ;
 		nw->jump_atk_cnt = JATK_ONE ;
 		nw->jump_com_cnt = 0 ;
 		nw->jump_dash_cnt = 0 ;
@@ -617,6 +618,7 @@ static void change_counter_tag( PLAYER_WORK *pl_w, Uint8 idx, Uint8 pos_kind )
 	counter_tag_in_pos[nw->work_no] = pos_kind ;
 	nw->fly_flag = 0 ;
 	nw->sjump_flag = 0 ;
+	nw->hop_stop_cnt = 0 ;
 	nw->sjump_cnt = 0 ;
 	nw->sp_ng_timer = 0 ;
 	nw->atck_ng_timer = 0 ;

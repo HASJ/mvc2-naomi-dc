@@ -841,7 +841,7 @@ static void hop_trace( PLAYER_WORK *pl_w )
 	if( on < 0 ) on = host_env_on( "MVC2_HOP_TRACE" ) ;
 	if( !on || pl_w->team_no || pl_w->pl_no != 0 ) return ;
 	host_log( "HOPTRACE n=%u f=%u pl=%02x act=%d sj=%d y=%.2f sx=%.3f sy=%.3f cnt=%d", seq ++, host_frame(), pl_w->pl_type, pl_w->act_st, pl_w->sjump_flag,
-		pl_w->pos.y - pl_w->ground_y, pl_w->spd.x, pl_w->spd.y, 0 ) ;
+		pl_w->pos.y - pl_w->ground_y, pl_w->spd.x, pl_w->spd.y, pl_w->hop_stop_cnt ) ;
 }
 #endif
 
@@ -884,6 +884,42 @@ void pl_jump_move( PLAYER_WORK *pl_w )
 }
 
 /****************************************************************/
+/*			Super Hop: down (1, 2 or 3) while a super jump is	*/
+/*			rising eases the rise to a stop over				*/
+/*			HOP_STOP_FRAMES frames; the later the press, the	*/
+/*			higher the hop. A press below HOP_MIN_RISE waits	*/
+/*			(HOP_PENDING) until the fighter has risen that		*/
+/*			far, so the lowest hop is about half a normal		*/
+/*			jump. Only the rise speed changes, and only			*/
+/*			downward, so steering, the fall and air actions		*/
+/*			stay as they were. A jump that follows a super		*/
+/*			jump (an air jump, a wall jump) keeps sjump_flag	*/
+/*			and can stop too; a normal jump can't				*/
+/****************************************************************/
+#define HOP_STOP_FRAMES	5
+#define HOP_PENDING		0x80
+#define HOP_MIN_RISE	60.0f
+
+void pl_hop_ck( PLAYER_WORK *pl_w )
+{
+	if( !pl_w->sjump_flag || pl_w->cpu_flag ) return ;
+	if( !( pl_w->spd.y > 0.0f ) ){
+		pl_w->hop_stop_cnt = 0 ;
+		return ;
+	}
+	if( !pl_w->hop_stop_cnt ){
+		if( !( pl_w->pl_sw_new & KEY_DOWN ) ) return ;
+		pl_w->hop_stop_cnt = HOP_PENDING ;
+	}
+	if( pl_w->hop_stop_cnt == HOP_PENDING ){
+		if( pl_w->pos.y - pl_w->ground_y < HOP_MIN_RISE ) return ;
+		pl_w->hop_stop_cnt = HOP_STOP_FRAMES ;
+	}
+	pl_w->spd.y *= ( Float )( pl_w->hop_stop_cnt - 1 ) / ( Float )pl_w->hop_stop_cnt ;
+	pl_w->hop_stop_cnt -- ;
+}
+
+/****************************************************************/
 /*			Steer a super jump with the stick					*/
 /****************************************************************/
 void pl_sjump_ctrl( PLAYER_WORK *pl_w )
@@ -891,6 +927,7 @@ void pl_sjump_ctrl( PLAYER_WORK *pl_w )
 	Float d ;
 
 	if( !pl_w->sjump_flag ) return ;
+	pl_hop_ck( pl_w ) ;
 	if( pl_w->sjump_cnt < 7 ){
 		pl_w->sjump_cnt ++ ;
 		return ;

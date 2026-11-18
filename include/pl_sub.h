@@ -38,6 +38,7 @@ extern void pl_brake_stop( PLAYER_WORK *pl_w );
 extern void pl_stand_ret( PLAYER_WORK *pl_w );
 extern void pl_jump_hit_ck( PLAYER_WORK *pl_w );
 extern void pl_sjump_ctrl( PLAYER_WORK *pl_w );
+extern void pl_hop_ck( PLAYER_WORK *pl_w );
 extern void pl_jump_move( PLAYER_WORK *pl_w );
 extern void pl_sjump_top_ck( PLAYER_WORK *pl_w );
 extern Uint8 pl_land_ck( PLAYER_WORK *pl_w );

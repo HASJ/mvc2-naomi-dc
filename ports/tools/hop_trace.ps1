@@ -26,6 +26,14 @@
   - Baseline, before Super Hop: Ruby Heart (13) superjump apex 719.3, 40 frames to the apex, 90 frames in the air.
     Two runs gave identical numbers.
   - The game's getenv is a generated stub, so the trace reads MVC2_HOP_TRACE through the port's host_env_on().
+  - Task 2, Super Hop on a ground superjump (Ruby Heart 13; launch '4900+3:down,4903+5:up', first air frame 4907):
+      no 2                       719.3 (40 frames)      unchanged
+      2 at 4906 (held or tapped)  130.4 (5 frames)       earliest hop: waits for HOP_MIN_RISE, then 5-frame ease-off
+      2 at 4908                   161.4                  1 and 3 give the same
+      2 at 4918                   467.3 (19 frames)
+      forward superjump +/- hop   spd.x identical frame by frame
+      b1 at 4915, no 2            720.5                  the air attack's own path (cnt stays 0); b1 + 2: 402.1
+      normal jump '4900+5:up'     239.5 with or without 2, also right after landing from a hop
 #>
 param(
     [Parameter(Mandatory = $true)][string]$Press,
@@ -75,13 +83,13 @@ $rows = Select-String -Path $log -Pattern '^.*HOPTRACE n=(\d+) f=(\d+) pl=([0-9a
 
 if (-not $rows) { Write-Output 'no HOPTRACE lines (is the build installed, and did the run reach a fight?)'; exit 2 }
 
-# split into jumps: a new jump starts after a gap in the trace's sequence (the fighter was on the ground) or when
-# y falls back to the ground
+# split into rises: a new one starts after a gap in frames (the fighter was on the ground), when the speed turns
+# upward again (a new jump, an air jump) or when y falls back to the ground
 $jumps = @()
 $cur = @()
 $prev = $null
 foreach ($r in $rows) {
-    if ($prev -and ($r.N -ne $prev.N + 1 -or ($prev.Y -gt 1.0 -and $r.Y -le 1.0 -and $prev.Sy -lt 0))) {
+    if ($prev -and ($r.F -gt $prev.F + 2 -or ($r.Sy -gt 0 -and $prev.Sy -le 0) -or ($prev.Y -gt 1.0 -and $r.Y -le 1.0 -and $prev.Sy -lt 0))) {
         if ($cur.Count) { $jumps += , $cur }
         $cur = @()
     }

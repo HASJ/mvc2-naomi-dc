@@ -969,6 +969,7 @@ Uint8 pl_land_ck( PLAYER_WORK *pl_w )
 	pl_w->pos.y = pl_w->ground_y ;
 	if( pl_w->fly_flag ) return 0 ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->air_guard_cnt = 0 ;
 	pl_w->pl_stance = STANCE_STAND ;
 	return 1 ;
@@ -985,6 +986,7 @@ Uint8 pl_land_y_ck( PLAYER_WORK *pl_w, Float y )
 	}
 	pl_w->pos.y = pl_w->ground_y ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->air_guard_cnt = 0 ;
 	pl_w->pl_stance = STANCE_STAND ;
 	return 1 ;
@@ -998,6 +1000,7 @@ Uint8 pl_land_ck3( PLAYER_WORK *pl_w )
 	if( pl_w->pos.y > pl_w->ground_y ) return 0 ;
 	pl_w->pos.y = pl_w->ground_y ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->air_guard_cnt = 0 ;
 	return 1 ;
 }
@@ -1109,6 +1112,7 @@ void pl_air_set( PLAYER_WORK *pl_w )
 	if( pl_w->pl_stance == STANCE_AIR ) return ;
 	pl_w->pl_stance = STANCE_AIR ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->jump_com_cnt = 0 ;
 	pl_w->jump_dash_cnt = 0 ;
 	pl_w->jump_atk_cnt = JATK_ONE ;
@@ -1229,6 +1233,7 @@ static void act_stand( PLAYER_WORK *pl_w )
 		pl_w->float_wait = 0 ;
 	}
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->pl_stance = STANCE_STAND ;
 	pl_w->jump_dir = -1 ;
 	switch( pl_w->pl_type ){
@@ -1259,6 +1264,7 @@ static void act_walk( PLAYER_WORK *pl_w )
 	pl_w->acc.x = 0.0f ;
 	pl_w->acc.y = 0.0f ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->pl_stance = STANCE_STAND ;
 	no = ( pl_w->pl_sw_new & KEY_BACK ) >> 10 ;
 	pl_w->jump_dir = no ;
@@ -1275,6 +1281,7 @@ static void act_jump( PLAYER_WORK *pl_w )
 	pl_w->pl_stance = STANCE_STAND ;
 	pl_w->sjump_cnt = 0 ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->jump_com_cnt = 0 ;
 	pl_w->jump_dash_cnt = 0 ;
 	pl_w->jump_atk_cnt = JATK_ONE ;
@@ -1442,6 +1449,7 @@ static void act_sjump( PLAYER_WORK *pl_w )
 
 	pl_w->pl_stance = STANCE_STAND ;
 	pl_w->sjump_flag = 1 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->sjump_cnt = 0 ;
 	pl_w->jump_hit_flag = 0 ;
 	pl_w->jump_com_cnt = 0 ;
@@ -1482,6 +1490,7 @@ static void act_air_recover( PLAYER_WORK *pl_w )
 	pl_w->jump_atk_cnt = -1 ;
 	pl_w->routine_2 = 2 ;
 	pl_w->sjump_flag = 1 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_char_set( pl_w, Char_Damage, 30 ) ;
 	combo_reset( pl_w ) ;
 }
@@ -1618,6 +1627,7 @@ static void act_escape( PLAYER_WORK *pl_w )
 		pl_w->pl_stance = STANCE_AIR ;
 		pl_w->sjump_cnt = 0 ;
 		pl_w->sjump_flag = 0 ;
+		pl_w->hop_stop_cnt = 0 ;
 		pl_w->jump_com_cnt = 0 ;
 		pl_w->jump_dash_cnt = 0 ;
 		pl_w->jump_atk_cnt = JATK_ONE ;
@@ -1634,6 +1644,7 @@ static void act_escape( PLAYER_WORK *pl_w )
 		pl_w->pl_stance = STANCE_CROUCH ;
 		pl_w->sjump_cnt = 0 ;
 		pl_w->sjump_flag = 0 ;
+		pl_w->hop_stop_cnt = 0 ;
 		pl_w->jump_com_cnt = 0 ;
 		pl_w->jump_dash_cnt = 0 ;
 		pl_w->spd.x = DOT_X( 8.0f ) ;

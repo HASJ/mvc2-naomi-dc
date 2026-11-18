@@ -1311,6 +1311,7 @@ static void dm_curse_jump_set( PLAYER_WORK *pl_w )
 	pl_w->routine_2 = 3 ;
 	pl_w->routine_3 = 0 ;
 	pl_w->sjump_flag = 0 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->pl_stance = STANCE_AIR ;
 	if( !( pl_w->pl_sw_new & ( KEY_FORWARD | KEY_BACK ) ) ) pl_w->jump_dir = -1 ;
 	else if( pl_w->pl_sw_new & KEY_FORWARD ) pl_w->jump_dir = 0 ;

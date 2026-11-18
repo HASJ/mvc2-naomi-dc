@@ -1440,6 +1440,7 @@ static void act_change_out_recover( PLAYER_WORK *pl_w )
 	pl_w->routine_2 ++ ;
 	pl_w->jump_dir = 1 ;
 	pl_w->sjump_flag = 1 ;
+	pl_w->hop_stop_cnt = 0 ;
 	pl_w->pl_stance = STANCE_AIR ;
 	pl_w->acc.y = -DOT_Y( 0.375f ) ;
 	pl_char_set( pl_w, Char_Jump, 11 ) ;
@@ -1821,6 +1822,7 @@ static void act_change_counter_tag( PLAYER_WORK *pl_w )
 		pl_w->pos.y = pl_w->ground_y ;
 		pl_w->pl_stance = STANCE_STAND ;
 		pl_w->sjump_flag = 0 ;
+		pl_w->hop_stop_cnt = 0 ;
 		pl_land_ef_set( pl_w ) ;
 		pl_stop_stand_ret( pl_w ) ;
 	} else if( pos_kind == 1 ){
@@ -1831,6 +1833,7 @@ static void act_change_counter_tag( PLAYER_WORK *pl_w )
 		pl_w->acc.y = -DOT_Y( 0.375f ) ;
 		pl_w->pl_stance = STANCE_AIR ;
 		pl_w->sjump_flag = 0 ;
+		pl_w->hop_stop_cnt = 0 ;
 		pl_w->jump_atk_cnt = JATK_ONE ;
 		pl_w->jump_com_cnt = 0 ;
 		pl_w->jump_dash_cnt = 0 ;
@@ -1852,6 +1855,7 @@ static void act_change_counter_tag( PLAYER_WORK *pl_w )
 		pl_w->jump_dir = 0 ;
 		pl_sjump_ret( pl_w ) ;
 		pl_w->sjump_flag = 1 ;
+		pl_w->hop_stop_cnt = 0 ;
 		pl_sjump_top_ck( pl_w ) ;
 	}
 }
