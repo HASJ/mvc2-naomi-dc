@@ -989,10 +989,16 @@ int main(int argc, char** argv) {
         }
         if (menu_active()) {
             present_menu();
+            if (frames_left > 0 && --frames_left == 0) {
+                quit = 1;
+            }
             continue;
         }
         if (net_ui_is_open()) {
             present_net_ui();
+            if (frames_left > 0 && --frames_left == 0) {
+                quit = 1;
+            }
             continue;
         }
         read_input();
