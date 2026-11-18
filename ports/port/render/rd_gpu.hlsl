@@ -79,7 +79,7 @@ cbuffer Frame : register(b1, space3) {
     uint zero;          /* 0, for hold() */
     float inv_scale;    /* the game's pixels a pixel drawn */
     int sprite_mode;    /* drawn larger, a flat triangle's texture: 0 as the game has it, 1 sharp, 2 the nearest texel,
-                           3 smooth */
+                           3 smooth, 4 texel (sharp where its texels fall) */
 };
 
 #define F_TEX 1
@@ -119,8 +119,8 @@ int4 texel(int x, int y, int k) {
     return int4(t.a * 255.0 + 0.5, t.r * 255.0 + 0.5, t.g * 255.0 + 0.5, t.b * 255.0 + 0.5);
 }
 
-/* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0; 2: the nearest texel; 3: as the
-   game filters it; 4: bilinear, with the nearest texel's alpha. Each reads only the sprite's own texels, between uvb's
+/* smode 1: bilinear only across a texel's edges, fw the texels a pixel at level 0 (5: and none where a pixel only
+   touches the edge); 2: the nearest texel; 3: as the game filters it; 4: bilinear, with the nearest texel's alpha. Each reads only the sprite's own texels, between uvb's
    corners */
 int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
     uint uvm = flags / F_UV & 15;
@@ -133,7 +133,7 @@ int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
         bilinear = false;
     } else if (smode == 4) {
         bilinear = true;
-    } else if (smode == 1) {
+    } else if (smode == 1 || smode == 5) {
         float2 f = fw * exp2(-(float)k);
         if (max(f.x, f.y) < 1.0) {
             /* the blend's width in texels: a pixel's, or for a texture the game magnifies and filters, up to a
@@ -144,7 +144,13 @@ int4 sample_tex(int k, float u, float v, int smode, float2 fw, float4 uvb) {
                 wide = lerp(f, 1.0, saturate((m - 1.25) / 0.75));
             }
             float2 s = float2(su, sv), seam = floor(s + 0.5);
-            s = seam + clamp((s - seam) / max(wide, 1.0e-4), -0.5, 0.5);
+            float2 t = clamp((s - seam) / max(wide, 1.0e-4), -0.5, 0.5);
+            if (smode == 5) {
+                /* a pixel reaching less than a 64th past a texel's edge is the slopes' rounding: none of it */
+                t.x = abs(t.x) > 0.5 - 1.0 / 64 ? sign(t.x) * 0.5 : t.x;
+                t.y = abs(t.y) > 0.5 - 1.0 / 64 ? sign(t.y) * 0.5 : t.y;
+            }
+            s = seam + t;
             su = s.x, sv = s.y;
             bilinear = true;
         }
@@ -294,6 +300,17 @@ float4 ps_main(VOut i) : SV_Target0 {
     /* the helper pixels carry the steps past the edges */
     float2 uvz_x = ddx_fine(i.uv), uvz_y = ddy_fine(i.uv);
     float z_x = ddx_fine(i.q), z_y = ddy_fine(i.q);
+    float4 base_x = ddx_fine(i.base), base_y = ddy_fine(i.base);
+    float3 offs_x = ddx_fine(i.offs), offs_y = ddy_fine(i.offs);
+    [branch] if (i.cf.w == 4) {
+        /* the game's front in its own pixels: each pixel all of the game pixel it's in, as at 640 by 480 */
+        float2 c = floor(at) + 0.5, d = (c - at) / inv_scale;
+        i.q += z_x * d.x + z_y * d.y;
+        i.uv += uvz_x * d.x + uvz_y * d.y;
+        i.base += base_x * d.x + base_y * d.y;
+        i.offs += offs_x * d.x + offs_y * d.y;
+        at = c, z = i.q;
+    }
     /* the edge test last, as the dearest (fxc's || doesn't skip) */
     if (!(z > 0.0)) {
         discard;
@@ -332,8 +349,12 @@ float4 ps_main(VOut i) : SV_Target0 {
     int4 c = base;
     if (flags & F_TEX) {
         int k = 0;
-        /* cf.w: a flat triangle, a sprite */
-        int smode = i.cf.w != 0 ? sprite_mode : 0;
+        /* cf.w: a flat triangle, a sprite (4: the front, as the game has it) */
+        bool sprite = i.cf.w != 0 && i.cf.w != 4;
+        int smode = sprite ? sprite_mode : 0;
+        /* texel: a sprite on the lattice read where its texels fall, any other as sharp reads it */
+        bool texel_space = smode == 4 && i.cf.w == 3;
+        smode = smode == 4 ? 1 : smode;
         float2 uv = float2(u, v), fw = 0;
         if (levels > 0) {
             /* as rd_soft.c takes the steps */
@@ -347,10 +368,13 @@ float4 ps_main(VOut i) : SV_Target0 {
         float2 m = (abs(jx) + abs(jy)) * float2(width, height);
         int4 t;
         bool bilinear = (flags & F_BILINEAR) != 0;
-        [branch] if (i.cf.w == 2) {
+        [branch] if (texel_space) {
+            /* each pixel the mean of the texels under it, where the game puts them */
+            t = sample_tex(k, u, v, 5, fw, i.uvb);
+        } else if (i.cf.w == 2) {
             /* an upright sprite drawn larger, its texels fitted to it: read where they fall */
             t = sample_tex(k, u, v, smode == 0 ? 3 : smode == 3 ? 4 : smode, fw, i.uvb);
-        } else if (i.cf.w != 0 && inv_scale < 1.0 && !(bilinear && max(m.x, m.y) < 0.8)) {
+        } else if (sprite && inv_scale < 1.0 && !(bilinear && max(m.x, m.y) < 0.8)) {
             /* pixel art drawn larger: its colours at the game's pixel centres, as at 640 by 480, each from the
                sprite's own texels, blended weighed by alpha: sharp over a pixel at their edges, smooth all the way
                across, and arcade all the way when the game filters it */

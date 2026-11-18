@@ -6,8 +6,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __3DS__
+#if defined(__3DS__)
 #include "ctr_front.h"
+#elif defined(__PSP__)
+#include "psp_front.h"
 #else
 #include "sdl_front.h"
 #endif
@@ -57,9 +59,9 @@ static const char* beside_exe(const char* path, char* buf, size_t size) {
     if (path[0] == '/' || path[0] == '\\' || (path[0] != 0 && path[1] == ':')) {
         return path;
     }
-#ifdef __3DS__
+#if defined(__3DS__) || defined(__PSP__)
     (void)base;
-    snprintf(buf, size, "%s", path);    /* the 3DS starts in its data folder, sdmc:/3ds/mvc2 */
+    snprintf(buf, size, "%s", path);    /* each starts in its data folder, sdmc:/3ds/mvc2 or ms0:/PSP/GAME/MVC2 */
     return buf;
 #else
     if (base[0] == 0) {
@@ -226,6 +228,8 @@ static void front_tell(const char* title, const char* text) {
     if (getenv("MVC2_FRAMES") == NULL) {   /* a test run shows no boxes */
         ctr_tell(title, text);
     }
+#elif defined(__PSP__)
+    psp_tell(title, text);
 #endif
 }
 
@@ -235,7 +239,7 @@ const char* pick_message(void) {
 
 /* -1 to quit */
 static int ask(const char* const path[MODES]) {
-#ifndef __3DS__
+#if !defined(__3DS__) && !defined(__PSP__)
     static const SDL_MessageBoxButtonData buttons[] = {
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, ARCADE, "Arcade" },
         { 0, DC, "Dreamcast" },
@@ -255,8 +259,10 @@ static int ask(const char* const path[MODES]) {
         fprintf(stderr, "%s\n", text);
         return -1;
     }
-#ifdef __3DS__
+#if defined(__3DS__)
     return ctr_ask(text);
+#elif defined(__PSP__)
+    return psp_ask(text);
 #else
     if (!SDL_SUCCEEDED(SDL_ShowMessageBox(&box, &chosen))) {
         return -1;
@@ -299,6 +305,15 @@ int pick_game(int argc, char** argv) {
         front_tell("Marvel vs. Capcom 2", "This build has no such mode.");
         return 0;
     }
+    /* main RAM too small for the arcade's program (an Old 3DS's 3dsx): the Dreamcast's */
+    if (host_ram_size < SH4_RAM_SIZE && built[ARCADE] && flag != DC) {
+        if (flag == ARCADE || missing[DC] != NULL) {
+            front_tell("Marvel vs. Capcom 2", "Arcade mode needs more memory than a 3dsx has on an Old 3DS. Install the "
+                                              "CIA (with FBI) and start it from the HOME Menu, or play the Dreamcast version.");
+            return 0;
+        }
+        flag = DC;
+    }
     if (flag >= 0) {
         mode = flag;
     } else if (missing[ARCADE] == NULL && missing[DC] == NULL && getenv("MVC2_FRAMES") != NULL) {
@@ -339,7 +354,7 @@ int pick_game(int argc, char** argv) {
 }
 
 #ifdef MVC2_DC
-#ifndef __3DS__
+#if !defined(__3DS__) && !defined(__PSP__)
 /* the window's title says how far it is, and the window keeps answering */
 static void unpack_progress(uint32_t done, uint32_t total) {
     static uint32_t shown = ~0u;
@@ -370,6 +385,15 @@ static int unpack_disc(const char* dir) {
     ctr_unpack_screen(text);
     err = dc_image_unpack(dir, ctr_unpack_progress);
     ctr_unpack_screen(NULL);
+#elif defined(__PSP__)
+    snprintf(text, sizeof text,
+             "ONE-TIME DISC UNPACK\n\nThe disc's files are unpacked from %.40s\ninto %.50s (210 MB),\n"
+             "so the game can read them quickly.\n\nThis happens only once. Please don't turn off the PSP\n"
+             "or take out the Memory Stick.\n",
+             image != NULL ? image : "", dir);
+    psp_unpack_screen(text);
+    err = dc_image_unpack(dir, psp_unpack_progress);
+    psp_unpack_screen(NULL);
 #else
     (void)image;
     err = dc_image_unpack(dir, unpack_progress);
@@ -389,8 +413,10 @@ static int unpack_disc(const char* dir) {
                  missing);
     }
     host_log("%s", text);
-#ifdef __3DS__
+#if defined(__3DS__)
     ctr_rom_error = text;
+#elif defined(__PSP__)
+    psp_tell("Marvel vs. Capcom 2", text);
 #else
     if (getenv("MVC2_FRAMES") == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Marvel vs. Capcom 2", text, NULL);
@@ -427,10 +453,16 @@ int start_game(void) {
 #endif
 #ifdef MVC2_DC
     if (mode == DC) {
-        if (dc_disc_missing(path[mode]) != NULL && !unpack_disc(path[mode])) {
+        HOST_CRUMB("checking the disc's files");
+        /* MVC2_UNPACK_AGAIN=1 (tests): the image unpacked even over its files */
+        int again = getenv("MVC2_UNPACK_AGAIN") != NULL && atoi(getenv("MVC2_UNPACK_AGAIN")) != 0 &&
+                    dc_image_find(path[mode]) != NULL;
+        if (!dc_gd_mount(path[mode]) && (again || dc_disc_missing(path[mode]) != NULL) && !unpack_disc(path[mode])) {
             return 0;
         }
+        HOST_CRUMB("host_keep_program");
         host_keep_program(&dc_program);
+        HOST_CRUMB("dc_init");
         return dc_init(&dc_program, path[mode]);
     }
 #endif

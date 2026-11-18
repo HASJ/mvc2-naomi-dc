@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the Windows and 3DS zips, and the 3DS CIA, and attaches them to the release (by hand: with a tag, or none to only
+# Builds the Windows, 3DS and PSP zips, and the 3DS CIA, and attaches them to the release (by hand: with a tag, or none to only
 # build). The ROM-exact builds can't run here: SHC and Sega's SDK libraries can't be redistributed.
 on:
   release:
@@ -139,6 +139,60 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  psp:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/pspdev/pspdev:v20261101@sha256:ee385df3aa783189d5a033af5eb1d4a9cdd93718fb8bf652ec7bb48e54038a8b
+    defaults:
+      run:
+        shell: bash
+        working-directory: ports
+    steps:
+      - name: Install build tools
+        working-directory: .
+        shell: sh
+        run: |
+          apk add --no-cache bash ninja python3 zip
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Build
+        run: |
+          psp-cmake -G Ninja -B build-psp
+          ninja -C build-psp
+
+      - name: Package
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          version="${TAG:-$(git rev-parse --short=7 HEAD)}"
+          name="mvc2-psp-$version"
+          dir="../dist/$name"
+          mkdir -p "$dir/PSP/GAME/MVC2/disc"
+          cp build-psp/EBOOT.PBP "$dir/PSP/GAME/MVC2/"
+          touch "$dir/PSP/GAME/MVC2/disc/PUT THE USA DISC HERE (AN IMAGE OR ITS FILES).txt"
+          cp PSP.md "$dir/README.md"
+          cp ../LICENSE "$dir/LICENSE.txt"
+          cp NOTICE.md "$dir/NOTICE.md"
+          (cd ../dist && zip -r -9 "$name.zip" "$name")
+          (cd ../dist && sha256sum "$name.zip" > "$name.zip.sha256")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/${{ steps.package.outputs.name }}.zip
+            dist/${{ steps.package.outputs.name }}.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+
   # 32-bit: the game stores addresses in 32 bits
   pc:
     runs-on: windows-2025
@@ -213,7 +267,7 @@ jobs:
           retention-days: 30
 
   publish:
-    needs: [package, pc]
+    needs: [package, pc, psp]
     if: github.event_name == 'release' || inputs.tag != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10

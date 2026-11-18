@@ -85,6 +85,7 @@ static void state(RD_STATE* s, int translucent, const NL_TEX* t, int offset) {
     s->use_alpha = (uint8_t)translucent;
     s->tex_alpha = 1;
     s->offset = (uint8_t)offset;
+    s->origin = disp_coord ? RD_SCENE : RD_FRONT;
     s->tex = t != NULL ? &t->tex : NULL;
     s->palette = t != NULL ? nl_palette_base(t, nl_palette_direct ? disp_palette : t->palette) : 0;
 }

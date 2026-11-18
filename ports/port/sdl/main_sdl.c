@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "frame_log.h"
 #include "sdl_front.h"
 #ifdef MVC2_SDL3
 #include <SDL3/SDL_main.h>
@@ -20,6 +21,7 @@
 #include "input_sdl.h"
 #include "menu_sdl.h"
 #include "test_mode.h"
+#include "hunt.h"
 
 void sdl_audio_open(void);         /* sdl_audio.c */
 void sdl_audio_frame(void);
@@ -47,8 +49,9 @@ static int switch_req;      /* F9 */
 static int coin_req;
 static int test_run;        /* MVC2_FRAMES: the press list is the only input */
 
-/* MVC2_PRESS=n:key,...: player 1 holds the key for 5 frames from frame n; coin and switch happen at n */
-static uint32_t pressed(void) {
+/* MVC2_PRESS=n:key,...: player 1 holds the key for 5 frames from frame n (p2key: player 2); coin and switch
+   happen at n */
+static uint32_t pressed(int side) {
     static const struct {
         const char* name;
         uint32_t bit;
@@ -69,8 +72,9 @@ static uint32_t pressed(void) {
             coin_req = 1;
         }
         if (sscanf(p, "%u:%15[a-z0-9]", &at, name) == 2 && presented >= at && presented < at + 5) {
+            const char* key = side == 0 ? name : name[0] == 'p' && name[1] == '2' ? name + 2 : "";
             for (i = 0; i < sizeof keys / sizeof keys[0]; i++) {
-                if (strcmp(name, keys[i].name) == 0) {
+                if (strcmp(key, keys[i].name) == 0) {
                     bits |= keys[i].bit;
                 }
             }
@@ -81,9 +85,16 @@ static uint32_t pressed(void) {
     return bits;
 }
 
+static int hunting, hunt_done;
+
 static void read_input(void) {
-    input.player[0] = pressed();
-    input.player[1] = 0;
+    if (hunting) {
+        hunt_done = hunt_frame(&input, presented);
+        input.test = 0;
+        return;
+    }
+    input.player[0] = pressed(0);
+    input.player[1] = pressed(1);
     input.coin = 0;
     input.test = 0;
     if (!test_run) {
@@ -220,26 +231,40 @@ static void pace(void) {
     next_frame += step;
 }
 
+static int scaling;     /* 0 aspect, 1 integer, 2 stretch */
+
 #ifdef MVC2_SDL3
 static SDL_GPUTexture* gpu_wrapped;     /* gpu_screen's */
 static int gpu_wrapped_w, gpu_wrapped_h;
+static int gpu_one_to_one;  /* the frame shown pixel for pixel, in the middle of the window */
 
-/* the GPU's picture settings from mvc2.cfg: resolution (auto or 1 to 12), aa (1 to 4), sprites */
-static int view_res, view_aa = 1, view_sprites = RD_SPRITES_SHARP;
-static const char* const sprite_names[] = { "arcade", "sharp", "pixel", "smooth" };
+/* the GPU's picture settings from mvc2.cfg: resolution (auto or 1 to 12, 4.2 say), aa (1 to 4), sprites, hud */
+static float view_res;
+static int view_aa = 1, view_sprites = RD_SPRITES_SHARP, view_hud = RD_HUD_ARCADE, view_grid;
+static const char* const sprite_names[] = { "arcade", "sharp", "pixel", "smooth", "texel" };
+static const char* const hud_names[] = { "sharp", "smooth", "arcade" };
 
 void view_settings(void) {
     const char* r = config_get("resolution");
     const char* a = config_get("aa");
     const char* sp = config_get("sprites");
+    const char* hud = config_get("hud");
+    const char* grid = config_get("texel_grid");
     int i;
-    view_res = r != NULL && atoi(r) > 0 ? atoi(r) : 0;
+    view_res = r != NULL && atof(r) >= 1 ? (float)atof(r) : 0;
     view_aa = a != NULL && atoi(a) > 0 ? atoi(a) : 1;
     view_aa = view_aa > 4 ? 4 : view_aa;
     view_sprites = RD_SPRITES_SHARP;
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < (int)(sizeof sprite_names / sizeof sprite_names[0]); i++) {
         if (sp != NULL && strcmp(sp, sprite_names[i]) == 0) {
             view_sprites = i;
+        }
+    }
+    view_grid = grid == NULL || strcmp(grid, "object") != 0;
+    view_hud = RD_HUD_ARCADE;
+    for (i = 0; i < (int)(sizeof hud_names / sizeof hud_names[0]); i++) {
+        if (hud != NULL && strcmp(hud, hud_names[i]) == 0) {
+            view_hud = i;
         }
     }
 }
@@ -261,9 +286,29 @@ static SDL_Texture* gpu_frame(void) {
         return gpu_screen;
     }
     view_size(&w, &h);
-    rd_gpu_view(view_res, view_aa, w, h, view_sprites);
+    gpu_one_to_one = 0;
+    if (view_sprites == RD_SPRITES_TEXEL && scaling == 1) {
+        /* texel sprites in whole pixels: 2688 by 2016 when it fits, 7 by 9 to a character's pixel, else the largest
+           whole multiple of 640 by 480; each shown pixel for pixel */
+        int ow, oh, fw, fh;
+        float res = view_res;
+        SDL_GetRenderOutputSize(renderer, &ow, &oh);
+        if (res <= 0) {
+            int k = oh / RD_HEIGHT < ow / RD_WIDTH ? oh / RD_HEIGHT : ow / RD_WIDTH;
+            res = ow >= 2688 && oh >= 2016 ? 4.2f : k < 1 ? 1 : (float)k;
+        }
+        fh = 3 * (int)(RD_HEIGHT * res / 3 + 0.5f), fw = fh / 3 * 4;
+        if (fw <= ow && fh <= oh) {
+            w = fw, h = fh, gpu_one_to_one = 1;
+        }
+        rd_gpu_view(res * (view_aa < 1 ? 1 : view_aa), 1, w, h, view_sprites);
+    } else {
+        rd_gpu_view(view_res, view_aa, w, h, view_sprites);
+    }
+    rd_gpu_hud(view_hud);
+    rd_gpu_texel_grid(view_grid);
     t = rd_gpu_end_frame(cmd);
-    SDL_SubmitGPUCommandBuffer(cmd);
+    rd_gpu_submit(cmd);
     rd_gpu_frame_size(&w, &h);
     if (gpu_screen != NULL && (t != gpu_wrapped || w != gpu_wrapped_w || h != gpu_wrapped_h)) {
         SDL_DestroyTexture(gpu_screen);
@@ -327,8 +372,21 @@ static void times_update(void) {
     SDL_UpdateTexture(times_tex, NULL, text, TIMES_W * 4);
 }
 
+static void set_scaling(void);
+
 static void show(SDL_Texture* t) {
     SDL_RenderClear(renderer);
+#ifdef MVC2_SDL3
+    if (gpu && gpu_one_to_one && t != NULL) {
+        int ow, oh;
+        SDL_FRect r;
+        SDL_SetRenderLogicalPresentation(renderer, 0, 0, SDL_LOGICAL_PRESENTATION_DISABLED);
+        SDL_GetRenderOutputSize(renderer, &ow, &oh);
+        r.w = (float)t->w, r.h = (float)t->h, r.x = (float)((ow - t->w) / 2), r.y = (float)((oh - t->h) / 2);
+        SDL_RenderTexture(renderer, t, NULL, &r);
+        set_scaling();
+    } else
+#endif
     SDL_RenderTexture(renderer, t, NULL, NULL);
     if (times_on && times_tex != NULL) {
         render_at(renderer, times_tex, 4, 4, TIMES_W, TIMES_H);
@@ -336,6 +394,9 @@ static void show(SDL_Texture* t) {
     pace();
     SDL_RenderPresent(renderer);
 }
+
+static Uint64 fl_draw;     /* MVC2_FRAMELOG */
+static uint32_t fl_hash;
 
 void host_present(void) {
     SDL_Texture* t = screen;
@@ -355,7 +416,16 @@ void host_present(void) {
     if (!gpu) {
         SDL_UpdateTexture(screen, NULL, frame, RD_WIDTH * 4);
     }
+    if (getenv("MVC2_FRAMELOG")) {
+        uint32_t h = 2166136261u;
+        int i;
+        for (i = 0; i < RD_WIDTH * RD_HEIGHT; i += 7) {
+            h = (h ^ frame[i]) * 16777619u;
+        }
+        fl_hash = h;
+    }
     draw_ticks += SDL_GetPerformanceCounter() - start;
+    fl_draw = SDL_GetPerformanceCounter() - start;
     times_frames++;
     if (times_on) {
         times_update();
@@ -371,7 +441,6 @@ void host_present(void) {
 #endif
 
 static const char* const scalings[] = { "aspect", "integer", "stretch" };
-static int scaling;
 static int keep_settings;
 
 static void set_scaling(void) {
@@ -745,6 +814,7 @@ int main(int argc, char** argv) {
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
 
     test_run = frames_left >= 0;
+    hunting = test_run && hunt_init();
 
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
@@ -773,7 +843,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "SDL: %s\n", SDL_GetError());
         return 1;
     }
-    if (frames_left < 0) {
+    if (frames_left < 0 || getenv("MVC2_FL_AUDIO")) {
         sdl_audio_open();
     }
     host_keep_start();
@@ -843,8 +913,23 @@ int main(int argc, char** argv) {
             naomi_run_frame();
             sdl_audio_frame();
             game_ticks += SDL_GetPerformanceCounter() - start - (present_ticks - presenting);
+            if (getenv("MVC2_FRAMELOG")) {
+                static FILE* f;
+                static uint32_t last_hash;
+                double ms = 1000.0 / (double)SDL_GetPerformanceFrequency();
+                if (f == NULL) {
+                    f = fopen(getenv("MVC2_FRAMELOG"), "w");
+                    fprintf(f, "frame game_ms draw_ms gd_ms gd_kb sync req open tex_calls conv conv_ms same hash wall_ms\n");
+                }
+                fprintf(f, "%u %.3f %.3f %.3f %u %u %u %u %u %u %.3f %d %08X %.3f\n", presented,
+                        (double)(SDL_GetPerformanceCounter() - start - (present_ticks - presenting)) * ms,
+                        (double)fl_draw * ms, fl.gd_ns / 1e6, fl.gd_bytes >> 10, fl.gd_sync, fl.gd_req, fl.gd_open,
+                        fl.tex_calls, fl.tex_conv, fl.conv_ns / 1e6, fl_hash == last_hash, fl_hash, (double)SDL_GetPerformanceCounter() * ms);
+                last_hash = fl_hash;
+                memset(&fl, 0, sizeof fl);
+            }
         }
-        if (frames_left > 0 && --frames_left == 0) {
+        if ((frames_left > 0 && --frames_left == 0) || hunt_done) {
             quit = 1;
         }
     }

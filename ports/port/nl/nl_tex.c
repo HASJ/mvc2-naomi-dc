@@ -7,9 +7,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host_cache.h"
+#include "frame_log.h"
 #include "naomi_host.h"
 #include "nl_port.h"
 #include "prof.h"
+
+#if defined(__PSP__)
+#define big_copy psp_copy       /* by DMA */
+#else
+#define big_copy memcpy
+#endif
 
 NL_TEX nl_tex[NL_MAX_TEX];
 int nl_tex_offset;
@@ -201,7 +209,7 @@ static int unpack_level(int kind, int w, int h, const void* data, void* out) {
     }
     case KM_RECTANGLE:
     case KM_STRIDE:
-        memcpy(out, p, (size_t)w * h * 2);
+        big_copy(out, p, (size_t)w * h * 2);
         return 1;
     default:
         return 0;
@@ -214,20 +222,27 @@ static int mipmapped(int kind) {
 
 static size_t source_size(int kind, int w, int h);
 
-/* The 3DS tiles a PAL4 square straight from its source, kept after the texels. A VQ square keeps only its source,
-   unpacked when its GPU texture is made. */
+int nl_tex_sources;
+int nl_tex_sync;
+
+/* The 3DS tiles a PAL4 texture straight from its source, kept after the texels. A VQ square keeps only its source,
+   unpacked when its GPU texture is made. Elsewhere, with nl_tex_sources, a PAL4 or VQ texture keeps only its source,
+   unpacked when the renderer wants it. */
 static size_t source_kept(int type, int w, int h) {
 #ifdef __3DS__
     int kind = type >> 8 & 0xff;
-    if (w == h && w >= 8 && (w & (w - 1)) == 0) {
-        if (kind == KM_PAL4) {
-            return (size_t)w * h / 2;
-        }
+    if (kind == KM_PAL4 && w >= 8 && h >= 8 && (w & (w - 1)) == 0 && (h & (h - 1)) == 0) {
+        return (size_t)w * h / 2;
+    }
 #ifndef CTR_SOFT
-        if (kind == KM_VQ || kind == KM_VQ_MM) {
-            return source_size(kind, w, h);
-        }
+    if ((kind == KM_VQ || kind == KM_VQ_MM) && w == h && w >= 8 && (w & (w - 1)) == 0) {
+        return source_size(kind, w, h);
+    }
 #endif
+#else
+    int kind = type >> 8 & 0xff;
+    if (nl_tex_sources && (kind == KM_PAL4 || kind == KM_PAL4_MM || kind == KM_VQ || kind == KM_VQ_MM)) {
+        return source_size(kind, w, h);
     }
 #endif
     return 0;
@@ -236,21 +251,21 @@ static size_t source_kept(int type, int w, int h) {
 /* Without the software renderer nothing reads the texels of one drawn from its kept source, so they aren't
    made. Its source and texels are one to one: the same source is the same texels. */
 static int texels_made(int type, int w, int h) {
-#if defined(__3DS__) && !defined(CTR_SOFT)
-    return source_kept(type, w, h) == 0;
-#else
+#if defined(__3DS__) && defined(CTR_SOFT)
     (void)type, (void)w, (void)h;
     return 1;
+#else
+    return source_kept(type, w, h) == 0;
 #endif
 }
 
 static void set_mips(RD_TEXTURE* t, size_t texel);
 static size_t texel_bytes(int type, int w, int h, size_t* texel);
 
-/* a VQ square's texels from its kept source */
+/* a VQ square's texels from its kept source, or with nl_tex_sources a PAL4 or VQ texture's (t is an NL_TEX's) */
 static void unpack_kept(const RD_TEXTURE* t, RD_TEXTURE* out) {
-    int kind = t->levels > 0 ? KM_VQ_MM : KM_VQ, k;
-    set_mips(out, 2);
+    int kind = ((const NL_TEX*)t)->type >> 8 & 0xff, k;
+    set_mips(out, t->format == RD_PAL4 ? 1 : 2);
     unpack_level(kind, t->width, t->height, t->texels, out->texels);
     for (k = 1; k <= t->levels; k++) {
         unpack_level(kind, t->width >> k, t->height >> k, t->texels, (void*)out->mip[k]);
@@ -263,7 +278,7 @@ static int unpack_texels(RD_TEXTURE* t, int type, const void* data) {
     t->format = kind >= KM_PAL4 && kind <= KM_PAL8_MM ? (kind <= KM_PAL4_MM ? RD_PAL4 : RD_PAL8) : type & 0xff;
     t->unpack = NULL;
     if (!texels_made(type, t->width, t->height)) {
-        if (kind == KM_VQ || kind == KM_VQ_MM) {
+        if (kind == KM_VQ || kind == KM_VQ_MM || nl_tex_sources) {
             size_t texel;
             t->unpack = unpack_kept;
             t->unpacked = (uint32_t)texel_bytes(type, t->width, t->height, &texel);
@@ -296,10 +311,13 @@ static size_t source_at(int type, int w, int h, size_t bytes) {
     return texels_made(type, w, h) ? bytes : 0;
 }
 
+/* of a corner tile, the source of its corner alone */
 static void keep_source(NL_TEX* t, const void* src, size_t bytes) {
-    size_t n = source_kept(t->type, t->tex.width, t->tex.height);
-    void* at = n != 0 ? memcpy((uint8_t*)t->tex.texels + source_at(t->type, t->tex.width, t->tex.height, bytes), src, n)
+    size_t n = source_kept(t->type, t->tex.width, t->tex.height), c = (size_t)t->tex.corner * t->tex.corner / 2;
+    void* at = n != 0 ? big_copy((uint8_t*)t->tex.texels + source_at(t->type, t->tex.width, t->tex.height, bytes), src,
+                               c != 0 && c < n ? c : n)
                       : NULL;
+    HOST_WRITTEN(HOST_W_KEEP, at != NULL ? (c != 0 && c < n ? c : n) : 0);
     t->tex.twiddled = (t->type >> 8 & 0xff) == KM_PAL4 ? at : NULL;
 }
 
@@ -366,6 +384,38 @@ static size_t source_size(int kind, int w, int h) {
 
 #define ROR16(v) ((v) >> 16 | (v) << 16)
 
+#if defined(__PSP__)
+#define ROR(v, k) ((v) >> (k) | (v) << (32 - (k)))
+
+/* the PSP's: four lanes added, rotated and xored, no multiply until the end (a third faster there) */
+static uint64_t source_hash64(const void* src, size_t n) {
+    const uint32_t* p = src;
+    const uint8_t* b8 = src;
+    uint32_t a = (uint32_t)n ^ 0x2545F491u, b = 0x68E31DA4u, c = 0x1B873593u, d = 0xCC9E2D51u, w;
+    size_t i = 0;
+    if (((uintptr_t)src & 3) == 0) {
+        for (; i + 4 <= n / 4; i += 4) {
+            a = (a ^ p[i]) + ROR(a, 11);
+            b = (b ^ p[i + 1]) + ROR(b, 7);
+            c = (c ^ p[i + 2]) + ROR(c, 13);
+            d = (d ^ p[i + 3]) + ROR(d, 19);
+        }
+        i *= 4;
+    }
+    for (; i + 4 <= n; i += 4) {
+        memcpy(&w, b8 + i, 4);
+        a = (a ^ w) + ROR(a, 11);
+    }
+    for (; i < n; i++) {
+        a = (a ^ b8[i]) + ROR(a, 11);
+    }
+    a = (a ^ ROR(c, 16)) * 0x9E3779B1u;
+    b = (b ^ ROR(d, 16)) * 0x85EBCA77u;
+    a = (a ^ ROR(b, 16)) * 0xC2B2AE3Du;
+    b = (b ^ ROR(a, 16)) * 0x27D4EB2Fu;
+    return (uint64_t)(a ^ a >> 15) << 32 | (b ^ b >> 13);
+}
+#else
 /* 64 bits of a texture's source, in two lanes of words: the same texels are not unpacked again */
 static uint64_t source_hash64(const void* src, size_t n) {
     const uint32_t* p = src;
@@ -392,6 +442,7 @@ static uint64_t source_hash64(const void* src, size_t n) {
     b = (b ^ ROR16(a)) * 0x27D4EB2Fu;
     return (uint64_t)(a ^ a >> 15) << 32 | (b ^ b >> 13);
 }
+#endif
 
 uint64_t nl_hash64(const void* src, size_t n) {
     return source_hash64(src, n);
@@ -402,7 +453,7 @@ static uint8_t hash_ok[NL_MAX_TEX];
 
 uint32_t host_fills;
 
-/* MVC2_TEX_SKIP (on by default on the 3DS): a slot loaded again in the same frame from the same source, with no
+/* MVC2_TEX_SKIP (on by default; 0 turns it off): a slot loaded again in the same frame from the same source, with no
    ROM or disc read since, is taken as the same without reading it again */
 static struct {
     const void* src;
@@ -413,11 +464,7 @@ static int tex_skip(void) {
     static int on = -1;
     if (on < 0) {
         const char* e = getenv("MVC2_TEX_SKIP");
-#ifdef __3DS__
         on = e == NULL || strcmp(e, "0") != 0;
-#else
-        on = e != NULL && strcmp(e, "0") != 0;
-#endif
     }
     return on;
 }
@@ -488,6 +535,11 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
             levels++;
         }
     }
+    if (t->tex.corner != 0) {
+        t->tex.corner = 0;
+        t->tex.serial = ++serials;
+        hash_ok[t - nl_tex] = 0;
+    }
     bytes = texel_bytes(thd->type, w, h, &texel);
     n = source_size(kind, w, h);
     if (t->loaded && t->type == thd->type && t->tex.width == w && t->tex.height == h && t->tex.levels == levels &&
@@ -517,7 +569,7 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
         if (n != 0 && hash_ok[t - nl_tex] && loaded_hash[t - nl_tex] == hash) {
             return 1;                                   /* the same source: the same texels and serial */
         }
-        t->loaded = unpack_again(t, thd->address, bytes, texel);
+        { uint64_t c0 = fl_now(); t->loaded = unpack_again(t, thd->address, bytes, texel); fl.conv_ns += fl_now() - c0; fl.tex_conv++; }
         loaded_hash[t - nl_tex] = hash;
         hash_ok[t - nl_tex] = n != 0 && t->loaded;
         return t->loaded;
@@ -548,7 +600,7 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
     t->tex.levels = levels;
     set_mips(&t->tex, texel);
     t->type = thd->type;
-    t->loaded = unpack_texels(&t->tex, thd->type, thd->address);
+    { uint64_t c0 = fl_now(); t->loaded = unpack_texels(&t->tex, thd->type, thd->address); fl.conv_ns += fl_now() - c0; fl.tex_conv++; }
     keep_source(t, thd->address, bytes);
     t->tex.serial = ++serials;
     loaded_hash[t - nl_tex] = hash;
@@ -558,7 +610,10 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
 
 int nl_tex_load(NL_TEX* t, const NLthd* thd) {
     PROF_START(t0);
+    fl.tex_calls++;
+    uint64_t f0 = fl_now();
     int r = tex_load(t, thd);
+    fl.tex_ns += fl_now() - f0;
     last_load[t - nl_tex].serial = t->tex.serial;
     PROF_STOP(PZ_NL_TEX, t0);
     return r;
@@ -568,7 +623,12 @@ int nl_tex_load(NL_TEX* t, const NLthd* thd) {
    by their source's hash with their serial, and their texels where they are made. Only kinds whose texels and
    source are one to one are kept, so new source is new texels. */
 #define CACHE_WAYS 4
-#define CACHE_SETS 64
+#define TEXEL_SETS 64
+#ifdef __PSP__
+#define CACHE_SETS 1024     /* those kept as their sources, a serial each */
+#else
+#define CACHE_SETS TEXEL_SETS
+#endif
 #define CACHE_SOURCE 512
 #define CACHE_TEXELS 1024
 
@@ -593,30 +653,56 @@ static size_t source_bytes(int kind, int w, int h) {
     }
 }
 
-/* 0 when the reload is not one the cache takes */
-static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes) {
+/* the sources' hashes by their keys from nl_lz (MVC2_LZ_KEYS): a tile from a cell seen before not hashed again */
+#define KEY_SETS 4096
+
+typedef struct {
+    uint64_t key, hash;
+} KEYED;
+
+static KEYED* keyed;
+
+static uint64_t keyed_hash(const uint8_t* src, size_t n) {
+    uint64_t k;
+    KEYED* e;
+    if (!nl_lz_key(src, n, &k) || (keyed == NULL && (keyed = host_try_calloc(KEY_SETS, sizeof *keyed)) == NULL)) {
+        return source_hash64(src, n);
+    }
+    e = &keyed[(uint32_t)(k >> 32) & (KEY_SETS - 1)];
+    if (e->key != k || e->hash == 0) {
+        e->key = k;
+        e->hash = source_hash64(src, n);
+    }
+    return e->hash;
+}
+
+/* 0 when the reload is not one the cache takes; the source's first `drawn` bytes alone tell one reload from another */
+static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes, size_t drawn) {
     int kind = t->type >> 8 & 0xff, i, made = texels_made(t->type, t->tex.width, t->tex.height);
     size_t n = source_bytes(kind, t->tex.width, t->tex.height), at = (size_t)(t - nl_tex);
     uint64_t h;
+    unsigned sn;
     CACHED *set, *e = NULL;
     if (n == 0 || n > CACHE_SOURCE || (n & 3) != 0 || bytes > CACHE_TEXELS || t->tex.levels != 0) {
         return 0;
     }
-    if (made && cache_texels == NULL && (cache_texels = host_try_calloc(CACHE_SETS, sizeof *cache_texels)) == NULL) {
+    if (made && cache_texels == NULL && (cache_texels = host_try_calloc(TEXEL_SETS, sizeof *cache_texels)) == NULL) {
         return 0;
     }
-    h = source_hash64(src, n);
+    h = keyed_hash(src, drawn < n ? drawn : n);
     if (hash_ok[at] && loaded_hash[at] == h) {
         return 1;       /* the source it has */
     }
-    set = cache[h % CACHE_SETS];
+    sn = made ? h % TEXEL_SETS : h % CACHE_SETS;
+    set = cache[sn];
     for (i = 0; i < CACHE_WAYS; i++) {
         CACHED* c = &set[i];
         if (c->serial != 0 && c->hash == h && c->type == t->type && c->width == t->tex.width && c->height == t->tex.height) {
             c->used = ++cache_clock;
             if (t->tex.serial != c->serial) {
                 if (made) {
-                    memcpy(t->tex.texels, cache_texels[h % CACHE_SETS][i], bytes);
+                    memcpy(t->tex.texels, cache_texels[sn][i], bytes);
+                    HOST_WRITTEN(HOST_W_TEX, bytes);
                 }
                 keep_source(t, src, bytes);
                 t->tex.serial = c->serial;
@@ -630,11 +716,12 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes) {
         }
     }
     if (made) {
-        uint8_t* out = cache_texels[h % CACHE_SETS][e - set];
+        uint8_t* out = cache_texels[sn][e - set];
         if (!unpack_level(kind, t->tex.width, t->tex.height, src, out)) {
             return 0;
         }
         memcpy(t->tex.texels, out, bytes);
+        HOST_WRITTEN(HOST_W_TEX, bytes);
     }
     keep_source(t, src, bytes);
     e->type = (uint16_t)t->type;
@@ -648,19 +735,31 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes) {
     return 1;
 }
 
-int nl_tex_reload(NL_TEX* t, const void* texels) {
-    size_t texel, bytes;
+/* side: the corner drawn, 0 all of it */
+static int reload(NL_TEX* t, const void* texels, int side) {
+    size_t texel, bytes, drawn = side != 0 ? (size_t)side * side / 2 : (size_t)-1;
     PROF_START(t0);
     if (!t->loaded) {
         return 0;
     }
+    if (t->tex.corner != side) {
+        t->tex.corner = side;
+        t->tex.serial = ++serials;
+        hash_ok[t - nl_tex] = 0;
+    }
     bytes = texel_bytes(t->type, t->tex.width, t->tex.height, &texel);
-    if (!reload_cached(t, texels, bytes)) {
+    if (!reload_cached(t, texels, bytes, drawn)) {
+        uint64_t c0 = fl_now();
         hash_ok[t - nl_tex] = 0;
         unpack_again(t, texels, bytes, texel);
+        fl.conv_ns += fl_now() - c0; fl.tex_conv++;
     }
     PROF_STOP(PZ_NL_TEX, t0);
     return 1;
+}
+
+int nl_tex_reload(NL_TEX* t, const void* texels) {
+    return reload(t, texels, 0);
 }
 
 /* Texels the game has freed, given back once RETIRE_FRAMES more frames have gone to the renderer: a frame in flight
@@ -711,7 +810,7 @@ static void retire_all(void) {
 
 void nl_tex_frame(void) {
     int i, n = 0;
-    if (!rd_discard) {
+    if (!rd_discard || nl_tex_sync) {
         drawn++;
     }
 #ifdef __3DS__
@@ -754,6 +853,15 @@ void nl_tex_free(NL_TEX* t) {
     t->tex.texels = NULL;
     t->tex.levels = 0;
     t->bytes = 0;
+}
+
+size_t nl_tex_held(void) {
+    size_t n = 0;
+    int i;
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        n += nl_tex[i].bytes;
+    }
+    return n;
 }
 
 /* when the board stops */
@@ -801,6 +909,23 @@ int nlCommonTextureReloadA(int index, const void* texels) {
         return 0;
     }
     return nl_tex_reload(&nl_tex[index], texels);
+}
+
+/* a PAL4 square whose sprite draws, point sampled, only the corner its first `drawn` bytes of source hold: the rest,
+   never seen, doesn't make it a new texture */
+int nlCommonTextureReloadDrawn(int index, const void* texels, int drawn) {
+    NL_TEX* t;
+    int side;
+    if (index < 0 || index >= NL_MAX_TEX) {
+        return 0;
+    }
+    t = &nl_tex[index];
+    for (side = 8; side < t->tex.width && side * side / 2 != drawn; side *= 2) {
+    }
+    if ((t->type >> 8 & 0xff) != KM_PAL4 || t->tex.width != t->tex.height || side >= t->tex.width) {
+        return nl_tex_reload(t, texels);
+    }
+    return reload(t, texels, side);
 }
 
 /* palettes */

@@ -2,17 +2,12 @@
    files, each work's buffers and palette lines, and where the sides start. A file of data alone,
    linked after flashing. */
 #include "player.h"
+#include "load.h"
 
-/* the eighth work's buffers: the console's memory ends at 0d000000, and it has the first work's */
-#ifdef TARGET_DC
-#define PL7_DATA_ADRS	0x0c420000
-#define PL7_SPR_SET_BUFF	0x0c565000
-#define PL7_PIC_ADRS	0x0c568000
-#else
-#define PL7_DATA_ADRS	0x0d080000
-#define PL7_SPR_SET_BUFF	0x0d1c5000
-#define PL7_PIC_ADRS	0x0d1c8000
-#endif
+/* by work, its buffer off from its data: the eighth has the first one's */
+#define PL_BUFF_TBL( off )	{ PL0_DATA_ADRS + ( off ), PL1_DATA_ADRS + ( off ), PL2_DATA_ADRS + ( off ), \
+	PL3_DATA_ADRS + ( off ), PL4_DATA_ADRS + ( off ), PL5_DATA_ADRS + ( off ), PL6_DATA_ADRS + ( off ), \
+	PL0_DATA_ADRS + ( off ) }
 
 /* by character: its player data, picture and versus model files. The disc's loader has the
    player data files in a table of its own, and the disc's files have other numbers. */
@@ -120,29 +115,33 @@ const Uint16 unk_0C22A264[9][60] = {
 
 /* by work: buffers of nine more kinds, never used */
 const Uint32 unk_0C22A69C[9][8] = {
-	{ 0x0c550000, 0x0c940000, 0x0c6a0000, 0x0ca90000, 0x0c7f0000, 0x0cbe0000, 0x0cd30000, 0x0c550000 },
-	{ 0x0c55c000, 0x0c94c000, 0x0c6ac000, 0x0ca9c000, 0x0c7fc000, 0x0cbec000, 0x0cd3c000, 0x0c55c000 },
-	{ 0x0c55d000, 0x0c94d000, 0x0c6ad000, 0x0ca9d000, 0x0c7fd000, 0x0cbed000, 0x0cd3d000, 0x0c55d000 },
-	{ 0x0c55e000, 0x0c94e000, 0x0c6ae000, 0x0ca9e000, 0x0c7fe000, 0x0cbee000, 0x0cd3e000, 0x0c55e000 },
-	{ 0x0c560000, 0x0c950000, 0x0c6b0000, 0x0caa0000, 0x0c800000, 0x0cbf0000, 0x0cd40000, 0x0c560000 },
-	{ 0x0c561000, 0x0c951000, 0x0c6b1000, 0x0caa1000, 0x0c801000, 0x0cbf1000, 0x0cd41000, 0x0c561000 },
-	{ 0x0c562000, 0x0c952000, 0x0c6b2000, 0x0caa2000, 0x0c802000, 0x0cbf2000, 0x0cd42000, 0x0c562000 },
-	{ 0x0c563000, 0x0c953000, 0x0c6b3000, 0x0caa3000, 0x0c803000, 0x0cbf3000, 0x0cd43000, 0x0c563000 },
-	{ 0x0c564000, 0x0c954000, 0x0c6b4000, 0x0caa4000, 0x0c804000, 0x0cbf4000, 0x0cd44000, 0x0c564000 }
+	PL_BUFF_TBL( 0x130000 ),
+	PL_BUFF_TBL( 0x13c000 ),
+	PL_BUFF_TBL( 0x13d000 ),
+	PL_BUFF_TBL( 0x13e000 ),
+	PL_BUFF_TBL( 0x140000 ),
+	PL_BUFF_TBL( 0x141000 ),
+	PL_BUFF_TBL( 0x142000 ),
+	PL_BUFF_TBL( 0x143000 ),
+	PL_BUFF_TBL( 0x144000 )
 } ;
 #endif
 
 Uint8 * const pl_data_adrs_tbl[8] = {	/* by work: where its player data is loaded */
-	( Uint8 * )0x0c420000, ( Uint8 * )0x0c810000, ( Uint8 * )0x0c570000, ( Uint8 * )0x0c960000,
-	( Uint8 * )0x0c6c0000, ( Uint8 * )0x0cab0000, ( Uint8 * )0x0cc00000, ( Uint8 * )PL7_DATA_ADRS
+	( Uint8 * )PL0_DATA_ADRS, ( Uint8 * )PL1_DATA_ADRS, ( Uint8 * )PL2_DATA_ADRS, ( Uint8 * )PL3_DATA_ADRS,
+	( Uint8 * )PL4_DATA_ADRS, ( Uint8 * )PL5_DATA_ADRS, ( Uint8 * )PL6_DATA_ADRS, ( Uint8 * )PL7_DATA_ADRS
 } ;
 Uint8 * const spr_set_buff_tbl[8] = {	/* and its sprite set's buffer */
-	( Uint8 * )0x0c565000, ( Uint8 * )0x0c955000, ( Uint8 * )0x0c6b5000, ( Uint8 * )0x0caa5000,
-	( Uint8 * )0x0c805000, ( Uint8 * )0x0cbf5000, ( Uint8 * )0x0cd45000, ( Uint8 * )PL7_SPR_SET_BUFF
+	( Uint8 * )( PL0_DATA_ADRS + PL_SPR_SET_BUFF ), ( Uint8 * )( PL1_DATA_ADRS + PL_SPR_SET_BUFF ),
+	( Uint8 * )( PL2_DATA_ADRS + PL_SPR_SET_BUFF ), ( Uint8 * )( PL3_DATA_ADRS + PL_SPR_SET_BUFF ),
+	( Uint8 * )( PL4_DATA_ADRS + PL_SPR_SET_BUFF ), ( Uint8 * )( PL5_DATA_ADRS + PL_SPR_SET_BUFF ),
+	( Uint8 * )( PL6_DATA_ADRS + PL_SPR_SET_BUFF ), ( Uint8 * )( PL7_DATA_ADRS + PL_SPR_SET_BUFF )
 } ;
 Sint32 * const pic_adrs_tbl[8] = {	/* and its picture file */
-	( Sint32 * )0x0c568000, ( Sint32 * )0x0c958000, ( Sint32 * )0x0c6b8000, ( Sint32 * )0x0caa8000,
-	( Sint32 * )0x0c808000, ( Sint32 * )0x0cbf8000, ( Sint32 * )0x0cd48000, ( Sint32 * )PL7_PIC_ADRS
+	( Sint32 * )( PL0_DATA_ADRS + PL_PIC_FILE ), ( Sint32 * )( PL1_DATA_ADRS + PL_PIC_FILE ),
+	( Sint32 * )( PL2_DATA_ADRS + PL_PIC_FILE ), ( Sint32 * )( PL3_DATA_ADRS + PL_PIC_FILE ),
+	( Sint32 * )( PL4_DATA_ADRS + PL_PIC_FILE ), ( Sint32 * )( PL5_DATA_ADRS + PL_PIC_FILE ),
+	( Sint32 * )( PL6_DATA_ADRS + PL_PIC_FILE ), ( Sint32 * )( PL7_DATA_ADRS + PL_PIC_FILE )
 } ;
 const Sint8 col_no_tbl[8] = { 0x10, 0x18, 0x20, 0x28, 0x30, 0x38, 0x10, 0x18 } ;	/* by work: the first of its eight palette lines */
 const Float prio_z_tbl[8] = { 15.0f, 17.0f, 19.0f, 21.0f, 23.0f, 25.0f, 27.0f, 29.0f } ;

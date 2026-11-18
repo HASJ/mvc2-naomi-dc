@@ -11,7 +11,7 @@ void ctr_hung(const char* text, int cpu_too);           /* the same with the GPU
 extern volatile int ctr_ending;                         /* the program is ending: no stop reported after */
 extern const char* ctr_alloc_error;                     /* another thread's failed allocation, or NULL */
 int ctr_ask(const char* text);                          /* 0 arcade, 1 Dreamcast, -1 quit (START) */
-uint32_t* ctr_art_pillars(int target_w, int scale);
+uint32_t* ctr_art_pillars(int target_w, int bar);
 #include <stddef.h>
 void* ctr_art_unpack(const unsigned char* lz, unsigned size, size_t bytes);   /* a tex3ds picture, or NULL */
 int ctr_art_texel(int x, int y, int w);                 /* x, y's place in such a picture w wide */

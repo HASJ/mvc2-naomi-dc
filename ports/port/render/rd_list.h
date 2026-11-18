@@ -10,10 +10,16 @@
 #include "rd.h"
 
 #define RD_LISTS 3
-#ifdef __3DS__
+#if defined(__3DS__) || defined(__PSP__)
 /* the frame's triangles, the lists sharing them by their recent use, a full part growing into the rest: an Old
-   3DS's heap has no room for each list's most at once (the game sends at most about 3800 a frame) */
+   3DS's heap has no room for each list's most at once, nor the PSP's for two frames of them (the game sends at most
+   about 3800 a frame) */
+#define RD_SHARED_POOL
+#ifdef __3DS__
 #define RD_POOL_TRIS 7168
+#else
+#define RD_POOL_TRIS 8192
+#endif
 #define RD_MAX_TRIS RD_POOL_TRIS
 #else
 #define RD_MAX_TRIS 32768
@@ -30,6 +36,46 @@ typedef struct {
 } RD_TRI;
 
 #define RD_SHARE(a, b) (((a) + 1) | ((b) + 1) << 2)
+
+#ifdef __PSP__
+/* with rd_items set (psp_render.c), runs of triangles kept in fewer bytes, each item looking like its first triangle:
+   a quad whose fourth corner rd_quad_last makes from its first three, as one item, stays | RD_QUAD; a run of a
+   strip's triangles, stays | RD_STRIP, its later corners in the slots after it, 3 to a slot, the first of those
+   slots' state their count */
+#define RD_QUAD 2
+#define RD_STRIP 4
+#define RD_ODD 8        /* the run's first triangle at an odd place in its strip */
+extern int rd_items;
+
+/* the corner after c, at a's x and u where a and b are level, else at its y and v */
+static inline void rd_quad_last(const RD_VTX* a, const RD_VTX* b, const RD_VTX* c, RD_VTX* d) {
+    *d = *c;
+    if (a->y == b->y) {
+        d->x = a->x;
+        d->u = a->u;
+    } else {
+        d->y = a->y;
+        d->v = a->v;
+    }
+}
+
+/* the slots item t takes */
+static inline int rd_slots(const RD_TRI* t) {
+    return t->stays & RD_STRIP ? 1 + (t[1].state + 1) / 3 : 1;
+}
+
+/* the strip's corner k of run t, from its first triangle's on */
+static inline const RD_VTX* rd_run_corner(const RD_TRI* t, int k) {
+    if (k < 2) {
+        return &t->v[t->stays & RD_ODD ? 1 - k : k];
+    }
+    if (k == 2) {
+        return &t->v[2];
+    }
+    k -= 3;
+    return &t[1 + k / 3].v[k % 3];
+}
+#endif
 
 #ifdef __3DS__
 /* a triangle's flags as the 3DS back end reads them: culled by its state, no pixel on the screen, its corners' 1/w
@@ -124,11 +170,13 @@ typedef struct {
     RD_GPU_DRAW groups[RD_GPU_GROUPS];
     int ngroups;
     RD_TRI pool[RD_POOL_TRIS];
+#ifdef RD_SHARED_POOL
+    int dropped;                    /* triangles past a full pool */
+    int moved;                      /* times the parts were laid out again for a full one */
+#endif
 #ifdef __3DS__
     RD_TRI_INFO* info[RD_LISTS];   /* in step with tris */
     RD_TRI_INFO info_pool[RD_POOL_TRIS];
-    int dropped;                    /* triangles past a full pool */
-    int moved;                      /* times the parts were laid out again for a full one */
     uint8_t seen[RD_MAX_STATES];    /* with rd_seen, by state */
     RD_GPU_INFO ginfo[RD_GPU_GROUPS];   /* with rd_group_info, by group */
 #endif

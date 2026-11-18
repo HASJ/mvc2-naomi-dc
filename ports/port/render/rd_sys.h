@@ -6,8 +6,9 @@
 #ifndef RD_SYS_H
 #define RD_SYS_H
 
-#if defined(__3DS__)
-/* the 3DS draws with its GPU (port/ctr); rd_soft runs there on the one thread, for checks (CTR_SOFT) */
+#if defined(__3DS__) || defined(__PSP__)
+/* the 3DS draws with its GPU (port/ctr); rd_soft runs there on the one thread, for checks (CTR_SOFT), and on the
+   PSP's one CPU */
 #include <time.h>
 typedef int RD_SEM;
 #define rd_sem_wait(s) ((void)(s))

@@ -21,19 +21,22 @@
 #include "controls_lz.h"
 #include "unlock_lz.h"
 #include "dip_lz.h"
+#include "hires_lz.h"
+#include "lores_lz.h"
 #include "test_mode.h"
 
 volatile int ctr_bottom_lost;
 
 enum { BUTTON_W = 116, BUTTON_H = 29, DIM = 110 };
-enum { B_SCALE, B_VERSION, B_CONTROLS, B_UNLOCK, B_DIP, BUTTONS };
-static const struct {
+enum { B_SCALE, B_VERSION, B_CONTROLS, B_UNLOCK, B_DIP, B_WIDE, BUTTONS };
+static struct {
     int x, y;
-} place[BUTTONS] = { { 28, 84 }, { 176, 84 }, { 28, 137 }, { 102, 190 }, { 176, 137 } };
+} place[BUTTONS] = { { 28, 84 }, { 176, 84 }, { 28, 137 }, { 102, 190 }, { 176, 137 }, { 28, 190 } };
 
 static int shown;           /* the screen is ours: drawn once, and again only when it changes */
 static int pressed = -1;    /* the button under a touch held */
 static int stretch;
+static int wide;            /* -1: not on this model */
 static int apt_hooked;
 static aptHookCookie apt_cookie;
 
@@ -49,7 +52,7 @@ static int arcade(void) {
 }
 
 static int visible(int b) {
-    return (b != B_CONTROLS && b != B_DIP) || arcade();
+    return b == B_WIDE ? wide >= 0 : (b != B_CONTROLS && b != B_DIP) || arcade();
 }
 
 static int at_button(int x, int y) {
@@ -125,8 +128,8 @@ static void draw_button(u16* fb, int b, int dim) {
         const unsigned int* size;
     } art[] = { { native_lz, &native_lz_size }, { stretch_lz, &stretch_lz_size }, { switch_lz, &switch_lz_size },
                 { controls_lz, &controls_lz_size }, { unlock_lz, &unlock_lz_size },
-                { dip_lz, &dip_lz_size } };
-    int i = b == B_SCALE ? stretch : b + 1, x, y;
+                { dip_lz, &dip_lz_size }, { lores_lz, &lores_lz_size }, { hires_lz, &hires_lz_size } };
+    int i = b == B_SCALE ? stretch : b == B_WIDE ? 6 + wide : b + 1, x, y;
     u32* px = ctr_art_unpack(art[i].lz, *art[i].size, 128 * 32 * 4);
     if (px == NULL) {
         return;
@@ -360,6 +363,8 @@ void ctr_options_show(void) {
         if (getenv("MVC2_STRETCH") != NULL) {
             stretch = strcmp(getenv("MVC2_STRETCH"), "0") != 0;
         }
+        wide = ctr_render_wide();
+        place[B_UNLOCK].x = wide >= 0 ? 176 : 102;
     }
     pressed = -1;
     draw();
@@ -390,6 +395,11 @@ int ctr_options_input(void) {
             stretch = !stretch;
             config_set("scale", stretch ? "stretch" : "aspect");
             ctr_render_set_stretch(stretch);
+            break;
+        case B_WIDE:
+            wide = !wide;
+            config_set("wide", wide ? "on" : "off");
+            ctr_render_set_wide(wide);
             break;
         case B_VERSION: {
             int now = arcade() ? 0 : 1, want;

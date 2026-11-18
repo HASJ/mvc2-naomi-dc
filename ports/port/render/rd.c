@@ -5,6 +5,7 @@
 #include <math.h>
 #include <string.h>
 
+#include "host_cache.h"
 #include "rd.h"
 #include "rd_list.h"
 
@@ -22,7 +23,7 @@ void rd_quality(const char* words) {
     rd_q.nosort = words != NULL && strstr(words, "nosort") != NULL;
 }
 
-#ifdef __3DS__
+#ifdef RD_SHARED_POOL
 /* each list's part of the pool: its share of their recent most, each with a quarter more and 512 over. A list that
    ran out with the pool full is taken to want twice its part. Its most falls by a 64th a frame */
 static void share_pool(RD_FRAME* f) {
@@ -37,7 +38,9 @@ static void share_pool(RD_FRAME* f) {
     for (i = 0; i < RD_LISTS; i++) {
         int room = (int)((int64_t)RD_POOL_TRIS * want[i] / sum);
         f->tris[i] = &f->pool[at];
+#ifdef __3DS__
         f->info[i] = &f->info_pool[at];
+#endif
         f->room[i] = room;
         at += room;
     }
@@ -67,16 +70,22 @@ static int grow_part(RD_FRAME* f, int list) {
     for (i = RD_LISTS - 1; i >= 0; i--) {
         if (&f->pool[start[i]] > f->tris[i]) {
             memmove(&f->pool[start[i]], f->tris[i], (size_t)f->ntris[i] * sizeof(RD_TRI));
+#ifdef __3DS__
             memmove(&f->info_pool[start[i]], f->info[i], (size_t)f->ntris[i] * sizeof(RD_TRI_INFO));
+#endif
         }
     }
     for (i = 0; i < RD_LISTS; i++) {
         if (&f->pool[start[i]] < f->tris[i]) {
             memmove(&f->pool[start[i]], f->tris[i], (size_t)f->ntris[i] * sizeof(RD_TRI));
+#ifdef __3DS__
             memmove(&f->info_pool[start[i]], f->info[i], (size_t)f->ntris[i] * sizeof(RD_TRI_INFO));
+#endif
         }
         f->tris[i] = &f->pool[start[i]];
+#ifdef __3DS__
         f->info[i] = &f->info_pool[start[i]];
+#endif
         f->room[i] = room[i];
     }
     f->moved++;
@@ -86,7 +95,7 @@ static int grow_part(RD_FRAME* f, int list) {
 
 void rd_begin_frame(void) {
     int i;
-#ifdef __3DS__
+#ifdef RD_SHARED_POOL
     share_pool(rd_frame);
 #else
     for (i = 0; i < RD_LISTS; i++) {
@@ -100,6 +109,9 @@ void rd_begin_frame(void) {
     rd_frame->nstates = 0;
     rd_frame->nputs = 0;
     rd_frame->ngroups = 0;
+#ifdef __PSP__
+    rd_zrange_begin();
+#endif
 }
 
 RD_FOG rd_fog;
@@ -153,7 +165,7 @@ static int add_tri(int list, int state, const RD_VTX* a, const RD_VTX* b, const 
     RD_TRI* t;
     int i = rd_frame->ntris[list];
     if (i >= rd_frame->room[list]) {
-#ifdef __3DS__
+#ifdef RD_SHARED_POOL
         if (!grow_part(rd_frame, list)) {
             rd_frame->dropped++;
             return 0;
@@ -162,7 +174,12 @@ static int add_tri(int list, int state, const RD_VTX* a, const RD_VTX* b, const 
         return 0;
 #endif
     }
+#ifdef __PSP__
+    rd_tri_z(list, a, b, c);
+#endif
     t = &rd_frame->tris[list][rd_frame->ntris[list]++];
+    host_lines_new(t, sizeof *t, rd_frame->tris[list] + rd_frame->room[list]);
+    HOST_WRITTEN(HOST_W_TRIS, sizeof *t);
     t->state = (uint16_t)state;
     t->share = (uint8_t)share;
     t->stays = (uint8_t)stays;
@@ -183,28 +200,113 @@ int rd_discard;
 int rd_seen, rd_group_info;
 #endif
 
-/* the back ends' area, from the same corners in the same order */
-static double area(const RD_VTX* a, const RD_VTX* b, const RD_VTX* c) {
-    return ((double)b->x - a->x) * ((double)c->y - a->y) - ((double)b->y - a->y) * ((double)c->x - a->x);
+/* the back ends' area, from the same corners in the same order: in floats where doubles are library calls (the
+   PSP's FPU has none) */
+#ifdef __PSP__
+typedef float RD_AREA;
+#else
+typedef double RD_AREA;
+#endif
+
+static RD_AREA area(const RD_VTX* a, const RD_VTX* b, const RD_VTX* c) {
+    return ((RD_AREA)b->x - a->x) * ((RD_AREA)c->y - a->y) - ((RD_AREA)b->y - a->y) * ((RD_AREA)c->x - a->x);
 }
+
+static int tiny(RD_AREA d) {
+    return (d < 0 ? -d : d) < (RD_AREA)RD_CULL_VAL;
+}
+
+#ifdef __PSP__
+int rd_items;
+
+/* run item's last triangle added: its count of them kept, or it made a plain triangle */
+static void run_end(int list, int item, int ntri) {
+    RD_TRI* t = &rd_frame->tris[list][item];
+    if (ntri == 1) {
+        t->stays = 1;
+    } else {
+        t[1].state = (uint16_t)ntri;
+    }
+}
+
+/* rd_strip with rd_items: its runs of triangles that stay, from one whose share isn't (0, 2), as RD_STRIP items */
+static void strip_items(const RD_STATE* s, int st, const RD_VTX* v, int n) {
+    int list = s->list, i, added = 0, item = -1, ntri = 0;
+    for (i = 2; i < n; i++) {
+        const RD_VTX *a = i & 1 ? &v[i - 1] : &v[i - 2], *b = i & 1 ? &v[i - 2] : &v[i - 1];
+        int stays = 1, share;
+        if (s->cull != 0) {
+            RD_AREA d = area(a, b, &v[i]);
+            if (s->cull >= 2 && (s->cull == 2 ? d < 0 : d > 0)) {
+                if (item >= 0) {
+                    run_end(list, item, ntri);
+                    item = -1;
+                }
+                added = 0;
+                continue;
+            }
+            stays = !tiny(d);
+        }
+        if (item >= 0 && stays) {
+            RD_TRI* tris = rd_frame->tris[list];      /* read again: a full part's add_tri may move it */
+            int k = ntri - 1;
+            if (k % 3 != 0 || rd_frame->ntris[list] < rd_frame->room[list]) {
+                if (k % 3 == 0) {
+                    RD_TRI* x = &tris[rd_frame->ntris[list]++];
+                    host_lines_new(x, sizeof *x, tris + rd_frame->room[list]);
+                    HOST_WRITTEN(HOST_W_TRIS, sizeof *x);
+                }
+                rd_tri_z(list, a, b, &v[i]);
+                tris[item + 1 + k / 3].v[k % 3] = v[i];
+                ntri++;
+                continue;
+            }
+        }
+        if (item >= 0) {
+            run_end(list, item, ntri);
+            item = -1;
+        }
+        share = !added ? 0 : i & 1 ? RD_SHARE(2, 1) : RD_SHARE(0, 2);
+        if (stays && share != RD_SHARE(0, 2)) {
+            int at = rd_frame->ntris[list];
+            added = add_tri(list, st, a, b, &v[i], share, 1 | RD_STRIP | (i & 1 ? RD_ODD : 0), 0);
+            if (added) {
+                item = at;
+                ntri = 1;
+            }
+        } else {
+            added = add_tri(list, st, a, b, &v[i], share, stays, 0);
+        }
+    }
+    if (item >= 0) {
+        run_end(list, item, ntri);
+    }
+}
+#endif
 
 void rd_strip(const RD_STATE* s, const RD_VTX* v, int n) {
     int st, i, added = 0;
     if (rd_discard || (st = add_state(s)) < 0) {
         return;
     }
+#ifdef __PSP__
+    if (rd_items) {
+        strip_items(s, st, v, n);
+        return;
+    }
+#endif
     for (i = 2; i < n; i++) {
         /* one winding for the whole strip */
         const RD_VTX *a = i & 1 ? &v[i - 1] : &v[i - 2], *b = i & 1 ? &v[i - 2] : &v[i - 1];
         int stays = 1;
         if (s->cull != 0) {
-            double d = area(a, b, &v[i]);
+            RD_AREA d = area(a, b, &v[i]);
             /* every back end culls it by its winding (cull 2: area below 0, 3: above) */
             if (s->cull >= 2 && (s->cull == 2 ? d < 0 : d > 0)) {
                 added = 0;
                 continue;
             }
-            stays = !(fabs(d) < RD_CULL_VAL);
+            stays = !tiny(d);
         }
         added = add_tri(s->list, st, a, b, &v[i], !added ? 0 : i & 1 ? RD_SHARE(2, 1) : RD_SHARE(0, 2), stays,
                         s->cull != 0 && !stays);
@@ -214,12 +316,12 @@ void rd_strip(const RD_STATE* s, const RD_VTX* v, int n) {
 #ifdef __3DS__
 /* a quad's triangle culled by its state, by its area as the back ends find it */
 static int quad_culled(const RD_STATE* s, const RD_VTX* a, const RD_VTX* b, const RD_VTX* c) {
-    double d;
+    RD_AREA d;
     if (s->cull == 0) {
         return 0;
     }
     d = area(a, b, c);
-    return fabs(d) < RD_CULL_VAL || (s->cull == 2 && d < 0) || (s->cull == 3 && d > 0);
+    return tiny(d) || (s->cull == 2 && d < 0) || (s->cull == 3 && d > 0);
 }
 #else
 #define quad_culled(s, a, b, c) 0
@@ -240,6 +342,18 @@ void rd_quad(const RD_STATE* s, const RD_VTX* v) {
         q[1].x = q[2].x = ceilf(v[1].x - 0.5f);
         v = q;
     }
+#ifdef __PSP__
+    if (rd_items) {
+        RD_VTX d;
+        rd_quad_last(&v[0], &v[1], &v[2], &d);
+        if (memcmp(&d, &v[3], sizeof d) == 0) {
+            if (add_tri(s->list, st, &v[0], &v[1], &v[2], 0, RD_QUAD | (s->cull == 0), 0)) {
+                rd_tri_z(s->list, &v[0], &v[2], &v[3]);     /* its second triangle's */
+            }
+            return;
+        }
+    }
+#endif
     first = add_tri(s->list, st, &v[0], &v[1], &v[2], 0, s->cull == 0, quad_culled(s, &v[0], &v[1], &v[2]));
     add_tri(s->list, st, &v[0], &v[2], &v[3], first ? RD_SHARE(0, 2) : 0, s->cull == 0, quad_culled(s, &v[0], &v[2], &v[3]));
 }
@@ -291,7 +405,7 @@ __attribute__((section(".text.nlhot"))) int rd_gpu_group(int put, const RD_STATE
         return 0;
     }
     if (put < 0 || put >= rd_frame->nputs || rd_frame->ngroups + 1 + deep > rd_gpu_tl_max || !(rd_gpu_tl_kinds >> g->kind & 1) ||
-        (st = add_state(s)) < 0) {
+        (rd_gpu_take != NULL && !rd_gpu_take(s, g, rd_frame->puts[put].m)) || (st = add_state(s)) < 0) {
         return 0;
     }
     d = &rd_frame->groups[rd_frame->ngroups++];
@@ -332,8 +446,10 @@ __attribute__((section(".text.nlhot"))) int rd_gpu_group(int put, const RD_STATE
     return 1;
 }
 
-#ifndef __3DS__
-/* only the 3DS's back end draws them */
+int (*rd_gpu_take)(const RD_STATE* s, const RD_GPU_GROUP* g, const float m[16]);
+
+#if !defined(__3DS__) && !defined(__PSP__)
+/* only the 3DS's and the PSP's back ends draw them */
 int rd_gpu_mesh_make(const NL_MESH* m) {
     (void)m;
     return -1;

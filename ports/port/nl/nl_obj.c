@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "host_cache.h"
 #include "naomi_host.h"
 #include "nl_port.h"
 #include "prof.h"
@@ -27,6 +28,8 @@ extern float nl_cnv_proj_pers[16];
 static NLV3 light = { 1.0f, 0.0f, 0.0f };
 static float global_ambience = 0.3f;
 static int trnsl_blend = 0x68;      /* nlObjPutSetTrnslMode's form: SRC_ALPHA, INV_SRC_ALPHA */
+/* each list's last intensity-mode-1 face colour, which an intensity-mode-2 group takes as the PVR does */
+static float last_face[8][4] = { [0 ... 7] = { 1.0f, 1.0f, 1.0f, 1.0f } };
 
 /* nlproj.c's NLOBJPUTPARAM: libnlobj cuts at -znear (0x0c) against the matrix's fourth row, -w */
 extern uint8_t nl_objput_param[];
@@ -83,6 +86,28 @@ static float flt(const uint8_t* p) {
     return f;
 }
 
+#ifdef __PSP__
+/* d = a x b, 4x4 by rows, on the VFPU: element (r, c) in column c, row r of a VFPU matrix, which vmmul multiplies as
+   written. Its sums round as the VFPU's do, which only the drawing sees */
+static __attribute__((section(".text.nlhot"))) void mul(float* restrict d, const float* restrict a, const float* restrict b) {
+    __asm__ volatile("lv.s S100, 0(%1); lv.s S110, 4(%1); lv.s S120, 8(%1); lv.s S130, 12(%1)\n"
+                     "lv.s S101, 16(%1); lv.s S111, 20(%1); lv.s S121, 24(%1); lv.s S131, 28(%1)\n"
+                     "lv.s S102, 32(%1); lv.s S112, 36(%1); lv.s S122, 40(%1); lv.s S132, 44(%1)\n"
+                     "lv.s S103, 48(%1); lv.s S113, 52(%1); lv.s S123, 56(%1); lv.s S133, 60(%1)\n"
+                     "lv.s S200, 0(%2); lv.s S210, 4(%2); lv.s S220, 8(%2); lv.s S230, 12(%2)\n"
+                     "lv.s S201, 16(%2); lv.s S211, 20(%2); lv.s S221, 24(%2); lv.s S231, 28(%2)\n"
+                     "lv.s S202, 32(%2); lv.s S212, 36(%2); lv.s S222, 40(%2); lv.s S232, 44(%2)\n"
+                     "lv.s S203, 48(%2); lv.s S213, 52(%2); lv.s S223, 56(%2); lv.s S233, 60(%2)\n"
+                     "vmmul.q M000, M100, M200\n"
+                     "sv.s S000, 0(%0); sv.s S010, 4(%0); sv.s S020, 8(%0); sv.s S030, 12(%0)\n"
+                     "sv.s S001, 16(%0); sv.s S011, 20(%0); sv.s S021, 24(%0); sv.s S031, 28(%0)\n"
+                     "sv.s S002, 32(%0); sv.s S012, 36(%0); sv.s S022, 40(%0); sv.s S032, 44(%0)\n"
+                     "sv.s S003, 48(%0); sv.s S013, 52(%0); sv.s S023, 56(%0); sv.s S033, 60(%0)\n"
+                     :
+                     : "r"(d), "r"(a), "r"(b)
+                     : "memory");
+}
+#else
 /* d = a x b, 4x4 by rows, d neither of them; a row's four sums made side by side */
 static __attribute__((section(".text.nlhot"))) void mul(float* restrict d, const float* restrict a, const float* restrict b) {
     int r;
@@ -108,6 +133,7 @@ static __attribute__((section(".text.nlhot"))) void mul(float* restrict d, const
         d[r * 4 + 3] = c3;
     }
 }
+#endif
 
 /* the PowerVR2 state of a polygon header */
 
@@ -118,6 +144,8 @@ static const RD_TEXTURE* group_texture(uint32_t pcw, uint32_t tcw, int texno) {
     }
     return &nl_tex[index].tex;
 }
+
+static uint8_t put_origin;  /* RD_SCENE or RD_FRONT */
 
 static void pvr_state(RD_STATE* s, uint32_t pcw, uint32_t isp, uint32_t tsp, uint32_t tcw, const RD_TEXTURE* tex) {
     int list = pcw >> 24 & 7;
@@ -140,6 +168,7 @@ static void pvr_state(RD_STATE* s, uint32_t pcw, uint32_t isp, uint32_t tsp, uin
     s->uv_mode = (uint8_t)(tsp >> 15 & 15);
     s->mip_d = (uint8_t)(tsp >> 8 & 15);
     s->offset = pcw >> 2 & 1;
+    s->origin = put_origin;
     s->tex = tex;
     if (tex != NULL) {
         int fmt = tcw >> 27 & 7;
@@ -187,6 +216,8 @@ static const CVTX* cache_find(const uint8_t* r) {
 static void cache_put(const uint8_t* r, const RD_VTX* s, float w) {
     int k = cache_slot(r);
     if (k >= 0 && ncache < CACHE_VTX) {
+        host_lines_new(&cache[ncache], sizeof cache[0], cache + CACHE_VTX);
+        HOST_WRITTEN(HOST_W_VCACHE, sizeof cache[0]);
         cache[ncache].s = *s;
         cache[ncache].w = w;
         slot[k] = cache_group << 16 | ncache++;
@@ -194,7 +225,7 @@ static void cache_put(const uint8_t* r, const RD_VTX* s, float w) {
 }
 
 /* the record at *pp: its position's record, and *pp moved past it */
-static const uint8_t* record(const uint8_t** pp) {
+static inline __attribute__((always_inline)) const uint8_t* record(const uint8_t** pp) {
     const uint8_t* p = *pp;
     if (word(p) & 1) {
         *pp = p + 32;
@@ -354,6 +385,7 @@ static __attribute__((noinline)) const uint8_t* primitive(GROUP* g, const XFORM*
     for (k = 0; k < n; k++) {
         int full = word(p) & 1;
         const CVTX* c;
+        host_prefetch(p + 128);
         rec[k] = record(&p);
         c = full ? NULL : cache_find(rec[k]);
         cached[k] = c != NULL;
@@ -997,6 +1029,11 @@ static void draw(const int* obj, const float* model, const float* toscreen, floa
         uint32_t pcw = word(p), isp = word(p + 4), tsp = word(p + 8), tcw = word(p + 12), t0 = 0;
         int texno = (int32_t)word(p + 32), mode = (int8_t)p[36], k;
         const uint8_t *prim = p + 80, *end = prim + word(p + 76);
+        host_prefetch(end);         /* the next group's header */
+        host_prefetch(end + 64);
+        if (meshes != NULL) {
+            host_prefetch(&meshes[mesh_home(p)]);
+        }
 #ifdef MVC2_PROF
         group_on = prof_groups > 0 && ++group_seq % prof_groups == 0;
         t0 = GROUP_NOW();
@@ -1020,13 +1057,20 @@ static void draw(const int* obj, const float* model, const float* toscreen, floa
         for (k = 0; k < 4; k++) {
             g.xf.face[k] = flt(p + 44 + k * 4);
         }
-        if ((pcw >> 4 & 3) != 2 || g.xf.vtxcol) {
-            g.xf.face[0] = g.xf.face[1] = g.xf.face[2] = g.xf.face[3] = 1.0f;
+        if ((pcw >> 4 & 3) == 3 && !g.xf.vtxcol) {
+            memcpy(g.xf.face, last_face[pcw >> 24 & 7], sizeof g.xf.face);
+        } else {
+            if ((pcw >> 4 & 3) != 2 || g.xf.vtxcol) {
+                g.xf.face[0] = g.xf.face[1] = g.xf.face[2] = g.xf.face[3] = 1.0f;
+            }
+            g.xf.face[0] *= trnsl;
+            g.xf.face[1] *= nl_fade_r;
+            g.xf.face[2] *= nl_fade_g;
+            g.xf.face[3] *= nl_fade_b;
+            if ((pcw >> 4 & 3) == 2 && !g.xf.vtxcol) {
+                memcpy(last_face[pcw >> 24 & 7], g.xf.face, sizeof g.xf.face);
+            }
         }
-        g.xf.face[0] *= trnsl;
-        g.xf.face[1] *= nl_fade_r;
-        g.xf.face[2] *= nl_fade_g;
-        g.xf.face[3] *= nl_fade_b;
         g.xf.face_one = g.xf.face[0] == 1.0f && g.xf.face[1] == 1.0f && g.xf.face[2] == 1.0f && g.xf.face[3] == 1.0f;
         g.xf.face_argb = nl_float_argb(g.xf.face[0], g.xf.face[1], g.xf.face[2], g.xf.face[3]);
         GROUP_ADD(PZ_NLG_PRE, t0, GROUP_NOW());
@@ -1035,6 +1079,7 @@ static void draw(const int* obj, const float* model, const float* toscreen, floa
             continue;
         }
         x = g.xf;
+        HOST_WRITTEN(HOST_W_MODELS, word(p + 76));
         t0 = GROUP_NOW();
         while (prim < end) {
             uint32_t head = word(prim);
@@ -1077,6 +1122,7 @@ static __attribute__((section(".text.nlhot"))) void put(const int* obj, float tr
     } else {
         memcpy(to_screen, nl_cnv_proj_pers, sizeof to_screen);
     }
+    put_origin = use_view ? RD_SCENE : RD_FRONT;
     if (obj_log_frame(&logged)) {
         host_log("obj %p view %d trnsl %g", (const void*)obj, use_view, (double)trnsl);
         obj_log = 1;

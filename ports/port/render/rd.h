@@ -26,6 +26,9 @@ enum { RD_NEVER, RD_LESS, RD_EQUAL, RD_LEQUAL, RD_GREATER, RD_NOTEQUAL, RD_GEQUA
 enum { RD_ZERO, RD_ONE, RD_OTHER, RD_INV_OTHER, RD_SRC_ALPHA, RD_INV_SRC_ALPHA, RD_DST_ALPHA, RD_INV_DST_ALPHA };
 enum { RD_DECAL, RD_MODULATE, RD_DECAL_ALPHA, RD_MODULATE_ALPHA };
 enum { RD_ARGB1555, RD_RGB565, RD_ARGB4444, RD_PAL4 = 5, RD_PAL8 = 6 };
+/* a model in the scene; the game's front (a model put without the camera's view, or a strip at screen places: the
+   timer, gauges, words and menus); a sprite */
+enum { RD_SCENE, RD_FRONT, RD_SPRITE };
 
 /* untwiddled, a byte a texel for the palette formats */
 typedef struct rd_texture {
@@ -35,11 +38,14 @@ typedef struct rd_texture {
     uint32_t serial;    /* changes when its texels do */
     int levels;         /* mip[k], k from 1 to levels, is width >> k by height >> k */
     const void* mip[11];
-    const void* twiddled;   /* on the 3DS, a PAL4 square's source, which it converts from */
+    const void* twiddled;   /* on the 3DS, a PAL4 texture's source, which it converts from */
     /* on the 3DS, a VQ square whose texels aren't kept (texels is its source): unpack makes them, and its mip levels
        after, in the unpacked bytes at out->texels, and sets out's mip[] */
     void (*unpack)(const struct rd_texture* t, struct rd_texture* out);
     uint32_t unpacked;
+    /* a PAL4 square drawn, point sampled, only from its corner this many texels on a side (0: all of it), its texels
+       past that whatever they were: a front end may draw them as the corner's edge */
+    int corner;
 } RD_TEXTURE;
 
 typedef struct {
@@ -57,6 +63,7 @@ typedef struct {
     uint8_t uv_mode;        /* the TSP's bits 15-18: 1 clamp v, 2 clamp u, 4 flip v, 8 flip u */
     uint8_t mip_d;          /* the TSP's D adjust */
     uint8_t cull;           /* 0 none, 1 tiny, 2 also counter-clockwise, 3 also clockwise */
+    uint8_t origin;         /* what drew it (RD_SCENE...) */
     const RD_TEXTURE* tex;
     uint16_t palette;       /* the first entry the texels index */
 } RD_STATE;
@@ -132,11 +139,55 @@ void rd_gpu_mesh_free(int id);              /* kept while a frame drawing it may
 uint32_t rd_gpu_mesh_room(void);            /* bytes */
 int rd_gpu_put(const float m[16], float near_w);    /* its index, or -1 when there is no room */
 int rd_gpu_group(int put, const RD_STATE* s, const RD_GPU_GROUP* g);     /* 0: not taken, for the caller to draw */
+/* set by a back end that draws only some: 0 for one the caller is to draw */
+extern int (*rd_gpu_take)(const RD_STATE* s, const RD_GPU_GROUP* g, const float m[16]);
+
+#ifdef __PSP__
+/* psp_render.c: the frame's 1/w range and flat 1/w values, taken as its triangles are added */
+typedef struct {
+    float lo, hi, last[RD_TRANS + 1];
+    int has3d;
+} RD_ZRANGE;
+#define RD_ZCUT 64.0f              /* game pixels past the screen a triangle's corners may be with their 1/w taken */
+extern RD_ZRANGE rd_zrange;
+void rd_zrange_begin(void);
+void rd_flat_z(float z);
+
+static inline void rd_z_take(float z) {
+    if (z > 0.0f && z < 1e30f) {
+        rd_zrange.lo = z < rd_zrange.lo ? z : rd_zrange.lo;
+        rd_zrange.hi = z > rd_zrange.hi ? z : rd_zrange.hi;
+    }
+}
+
+void rd_tri_z_cut(const RD_VTX* a, const RD_VTX* b, const RD_VTX* c);
+
+static inline void rd_tri_z(int list, const RD_VTX* a, const RD_VTX* b, const RD_VTX* c) {
+    if (a->z == b->z && b->z == c->z) {
+        if (a->z != rd_zrange.last[list]) {
+            rd_zrange.last[list] = a->z;
+            rd_flat_z(a->z);
+        }
+        return;
+    }
+    rd_zrange.has3d = 1;
+    /* one far past the screen: only the 1/w its part on the screen can have */
+    if (a->x < -RD_ZCUT || b->x < -RD_ZCUT || c->x < -RD_ZCUT || a->y < -RD_ZCUT || b->y < -RD_ZCUT || c->y < -RD_ZCUT ||
+        a->x > RD_WIDTH + RD_ZCUT || b->x > RD_WIDTH + RD_ZCUT || c->x > RD_WIDTH + RD_ZCUT ||
+        a->y > RD_HEIGHT + RD_ZCUT || b->y > RD_HEIGHT + RD_ZCUT || c->y > RD_HEIGHT + RD_ZCUT) {
+        rd_tri_z_cut(a, b, c);
+        return;
+    }
+    rd_z_take(a->z);
+    rd_z_take(b->z);
+    rd_z_take(c->z);
+}
+#endif
 
 /* "exact" (or NULL), or words: fast, half, nofog, nosort */
 void rd_quality(const char* words);
 
-/* rd_soft.c: the frame into ARGB */
+/* rd_soft.c: the frame into ARGB (ABGR when built with RD_ABGR) */
 void rd_end_frame(uint32_t* frame, int pitch);
 
 #endif

@@ -3,9 +3,12 @@
 #include "player.h"
 #include "nl.h"
 #include "shinobi.h"
+#include "load.h"
 
-#define FONT_ADRS	( ( FONT_WORK * )0x0c420000 )
-#define FONT_PIXEL	( ( void * )0x0c678000 )	/* the glyph textures' pixels */
+#define FONT_ADRS	( ( FONT_WORK * )RAM_ADRS( 0x0c420000 ) )
+#define FONT_FILE0	( ( Uint8 * )RAM_ADRS( 0x0c4c8000 ) )	/* the console's two fonts */
+#define FONT_FILE1	( ( Uint8 * )RAM_ADRS( 0x0c598000 ) )
+#define FONT_PIXEL	( ( void * )RAM_ADRS( 0x0c678000 ) )	/* the glyph textures' pixels */
 
 extern Uint32 file_load( Sint32 no, void *adrs, Sint32 a ) ;
 
@@ -39,8 +42,8 @@ void font_init( void )
 
 	font_w = FONT_ADRS ;
 	memset( font_w, 0, sizeof( FONT_WORK ) ) ;
-	font_file_load( ( Uint8 * )0x0c4c8000, 0 ) ;
-	font_file_load( ( Uint8 * )0x0c598000, 1 ) ;
+	font_file_load( FONT_FILE0, 0 ) ;
+	font_file_load( FONT_FILE1, 1 ) ;
 	memset( FONT_PIXEL, 0, 0x800 ) ;
 	for( i = 0 ; i < FONT_SLOT * 2 ; i ++ ){
 		nlSetCommonTextureOffset( FONT_TEX_NO + i ) ;

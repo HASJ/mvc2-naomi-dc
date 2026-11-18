@@ -5,8 +5,16 @@
 #include "naomi.h"
 #include "load.h"
 
-#define SEL_OBJ		( ( OBJ_FILE * )DM00_OBJ_ADRS )	/* the model file of scene 4 */
-#define VS_OBJ		( ( OBJ_FILE * )DM06_OBJ_ADRS )	/* the model file of scene 10 */
+#ifdef HOST_PORT
+/* a model file's pointers are to where it was built to sit in the board's RAM: a host's RAM is elsewhere */
+static OBJ_FILE *obj_file_host( OBJ_FILE *of ) ;
+#define OBJ_FILE_AT( a )	obj_file_host( ( OBJ_FILE * )( a ) )
+#else
+#define OBJ_FILE_AT( a )	( ( OBJ_FILE * )( a ) )
+#endif
+
+#define SEL_OBJ		OBJ_FILE_AT( DM00_OBJ_ADRS )	/* the model file of scene 4 */
+#define VS_OBJ		OBJ_FILE_AT( DM06_OBJ_ADRS )	/* the model file of scene 10 */
 
 /* a part of a loaded file, from the table of offsets at its start */
 #define FILE_PART( p, n )	( ( void * )&( ( Uint8 * )( p ) )[( ( Sint32 * )( p ) )[n]] )
@@ -41,8 +49,8 @@ Sint32 stg_obj_tbl[17] = {
 /* where each player's picture file was read ahead to, for each of tex_buff's two places; 0 for a
    player whose file is read to its own place */
 static Uint8 *pic_keep_tbl[12] = {
-	( Uint8 * )0x0cc55000, 0, ( Uint8 * )0x0c800000, 0, 0, 0,
-	0, ( Uint8 * )0x0cc55000, 0, ( Uint8 * )0x0cbf0000, 0, 0
+	( Uint8 * )PIC_KEEP0_ADRS, 0, ( Uint8 * )PIC_KEEP1_ADRS, 0, 0, 0,
+	0, ( Uint8 * )PIC_KEEP0_ADRS, 0, ( Uint8 * )PIC_KEEP2_ADRS, 0, 0
 } ;
 #else
 Sint32 stg_file_tbl[9] = { 0x316, 0x318, 0x31a, 0x31c, 0x31e, 0x320, 0x322, 0x324, 0x326 } ;
@@ -60,12 +68,12 @@ static NLthd tex05_thd[] = {
 #ifdef TARGET_DC
 /* the versus mode's stage pictures: the one shown, and the small ones */
 static NLthd selstg_thd[] = {
-	{ 0x80, 0x80, 0x101, ( void * )0x0cc60000, 0 },
+	{ 0x80, 0x80, 0x101, ( void * )STG_PIC_ADRS, 0 },
 	{ -1, -1, -1, ( void * )-1, -1 },
 } ;
 
 static NLthd selstg_s_thd[] = {
-	{ 0x40, 0x40, 0x102, ( void * )0x0ccf0000, 0 },
+	{ 0x40, 0x40, 0x102, ( void * )( STG_PIC_ADRS + 0x90000 ), 0 },
 	{ -1, -1, -1, ( void * )-1, -1 },
 } ;
 #endif
@@ -81,7 +89,7 @@ static NLthd tex09_thd[] = {
 static Sint8 pl_pic_no[6] = { 0, 3, 1, 4, 2, 5 } ;
 
 static NLthd tex0e_thd[] = {
-	{ 0x80, 0x80, 0x102, ( void * )0x0cc80000, 0 },
+	{ 0x80, 0x80, 0x102, ( void * )( TEX_ADRS + 0x80000 ), 0 },
 	{ -1, -1, -1, ( void * )-1, -1 },
 } ;
 
@@ -133,7 +141,7 @@ void pl_data_load( PLAYER_WORK *pl_w, int no )
 	pl_w->prg_adrs = prg ;
 	file_load2( FILE_S_PL + pl_w->pl_index * 59 + pl_w->load_type, prg, 1 ) ;
 #else
-	src = FILE_PART( 0x0dd00000, pl_w->load_type ) ;
+	src = FILE_PART( CHAR_LZ_ADRS, pl_w->load_type ) ;
 	lz_unpack16( src, ( Uint16 * )( chr = adrs + 0x130000 ) ) ;
 	pl_w->char_adrs = FILE_PART( chr, 0 ) ;
 	pl_w->frame_box_tbl = FILE_PART( chr, 1 ) ;
@@ -251,7 +259,7 @@ void tex_load_stage( void )
 	int i ;
 
 	nlSetCommonTextureOffset( 0xc10 ) ;
-	obj_stg = ( OBJ_FILE * )STG_OBJ_ADRS ;
+	obj_stg = OBJ_FILE_AT( STG_OBJ_ADRS ) ;
 	for( i = 0 ; i < obj_stg->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_stg->obj[i], obj_stg->thd ) ;
 	}
@@ -300,6 +308,23 @@ void obj_file_reloc( void *data, Uint8 *adrs )
 }
 #endif
 
+#ifdef HOST_PORT
+/* a board's RAM address, where the host has it; any other (one moved already) as it is */
+#define HOST_PTR( p )	( ( Uint32 )( p ) - 0x0c000000 < 0x02000000 ? ( void * )RAM_ADRS( ( Uint32 )( p ) ) : ( void * )( p ) )
+
+static OBJ_FILE *obj_file_host( OBJ_FILE *of )
+{
+	NLthd *thd ;
+	int i ;
+
+	of->obj = HOST_PTR( of->obj ) ;
+	of->thd = HOST_PTR( of->thd ) ;
+	for( i = 0 ; i < of->cnt ; i ++ ) of->obj[i] = HOST_PTR( of->obj[i] ) ;
+	for( thd = of->thd ; thd->width ; thd ++ ) thd->address = HOST_PTR( thd->address ) ;
+	return of ;
+}
+#endif
+
 /****************************************************************/
 /*			Load the textures of a model file					*/
 /****************************************************************/
@@ -308,7 +333,7 @@ void obj_tex_load( Sint32 ofs, OBJ_FILE **ofp, OBJ_FILE *of )
 	int i ;
 
 	nlSetCommonTextureOffset( ofs ) ;
-	*ofp = of ;
+	*ofp = OBJ_FILE_AT( of ) ;
 	for( i = 0 ; i < ( *ofp )->cnt ; i ++ ){
 		nlObjPutLoadTexture( ( *ofp )->obj[i], ( *ofp )->thd ) ;
 	}
@@ -461,9 +486,9 @@ void tex_load_opening( void )
 	const FILE_DATA *ft ;
 	char *dst ;
 
-	file_load( FILE_DM08CAB, ( void * )0x0c420000, 0 ) ;
+	file_load( FILE_DM08CAB, ( void * )TEX_BUFF0, 0 ) ;
 	ft = &stream_tbl[141] ;
-	dst = ( char * )0x0c520000 ;
+	dst = ( char * )NAME_PIC_ADRS ;
 	rom_dma_flag = 1 ;
 	cache_inv( dst, 0x200000 ) ;
 	nlaReadROMDMA( ft->adrs, dst, 0x200000, 1 ) ;
@@ -545,7 +570,7 @@ void tex_set_select( void )
 {
 	int i ;
 
-	obj_dm01 = ( OBJ_FILE * )DM01_OBJ_ADRS ;
+	obj_dm01 = OBJ_FILE_AT( DM01_OBJ_ADRS ) ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm01->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm01->obj[i], obj_dm01->thd ) ;
@@ -555,8 +580,8 @@ void tex_set_select( void )
 #ifdef TARGET_DC
 	/* the versus mode chooses its stage: the stages' pictures */
 	if( Sys->home_mode != HOME_VERSUS ) return ;
-	file_load( FILE_SELSTG, ( void * )0x0ccf8000, 0 ) ;
-	lz_unpack16( ( Sint16 * )0x0ccf8000, ( Uint16 * )0x0cc60000 ) ;
+	file_load( FILE_SELSTG, ( void * )SELSTG_FILE_ADRS, 0 ) ;
+	lz_unpack16( ( Sint16 * )SELSTG_FILE_ADRS, ( Uint16 * )STG_PIC_ADRS ) ;
 	nlSetCommonTextureOffset( 0 ) ;
 	nlDispStripLoadTexture( 11, selstg_s_thd ) ;
 	nlSetCommonTextureOffset( 0x914 ) ;
@@ -569,8 +594,8 @@ void tex_set_staff( void )
 {
 	int i ;
 
-	obj_dm05 = ( OBJ_FILE * )DM05_OBJ_ADRS ;
-	obj_dm07 = ( OBJ_FILE * )DM05_OBJ_ADRS ;
+	obj_dm05 = OBJ_FILE_AT( DM05_OBJ_ADRS ) ;
+	obj_dm07 = OBJ_FILE_AT( DM05_OBJ_ADRS ) ;
 	nlSetCommonTextureOffset( 0x810 ) ;
 	for( i = 0 ; i < obj_dm05->cnt ; i ++ ){
 		nlObjPutLoadTexture( obj_dm05->obj[i], obj_dm05->thd ) ;
@@ -590,7 +615,7 @@ void tex_set_st_demo( void )
 	void *pic ;
 	int i ;
 
-	obj_dm02 = ( OBJ_FILE * )DM02_OBJ_ADRS ;
+	obj_dm02 = OBJ_FILE_AT( DM02_OBJ_ADRS ) ;
 	for( i = 0 ; i < 6 ; i ++ ){
 		pl_w = &pl_work[i] ;
 		pic = FILE_PART( pl_w->pic_adrs, 2 ) ;

@@ -4,6 +4,9 @@
 #include "pl_char.h"
 #include "pl_color.h"
 #include "pl2a_def.h"
+#ifdef HOST_PORT
+#include "load.h"
+#endif
 
 void pl2a_main( PLAYER_WORK *pl_w );
 void pl2a_com_ck( PLAYER_WORK *pl_w );
@@ -222,7 +225,21 @@ static int lattack_ck( PLAYER_WORK *pl_w )
 	Uint16 sw ;
 
 	if( !sw_now_ck( pl_w, 0x0140, &sw, 4 ) ) return 0 ;
+#ifdef HOST_PORT
+	{
+		/* cw->sw is 6 bytes past sw: on the board, the high half of the return address into pl2a_com_ck */
+		COM_WORK cw ;
+
+#ifdef TARGET_DC
+		cw.sw = ( S_PL_ADRS + pl_w->pl_index * 0x8000 ) >> 16 ;
+#else
+		cw.sw = 0x0c0f ;
+#endif
+		com_sw_set( pl_w, &cw ) ;
+	}
+#else
 	com_sw_set( pl_w, ( COM_WORK * )&sw ) ;
+#endif
 	if( pl_w->ground_y + DOT_Y( 32.0f ) > pl_w->pos.y && ( pl_w->pl_sw_new & KEY_DOWN ) ) return 0 ;
 	if( pl_w->act_st == N_SPECIAL && pl_w->pl_sp_type == pl2a_sp_lattack ){
 		if( pl_w->tlocal[TL_DASH_WAIT] ) return 0 ;

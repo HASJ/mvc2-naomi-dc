@@ -22,8 +22,16 @@ int rd_frame_load(const char* name) {
     rd_begin_frame();
     ok &= fread(magic, 1, 4, f) == 4 && memcmp(magic, "RDF1", 4) == 0;
     ok &= fread(rd_frame->ntris, sizeof(int), RD_LISTS, f) == RD_LISTS;
-    for (i = 0; i < RD_LISTS; i++) {
-        ok &= rd_frame->ntris[i] >= 0 && rd_frame->ntris[i] <= rd_frame->room[i];
+    /* the lists' parts of the pool by their counts */
+    for (i = k = 0; i < RD_LISTS; i++) {
+        ok &= rd_frame->ntris[i] >= 0;
+        k += rd_frame->ntris[i];
+    }
+    ok &= k <= RD_POOL_TRIS;
+    for (i = k = 0; ok && i < RD_LISTS; i++) {
+        rd_frame->tris[i] = &rd_frame->pool[k];
+        rd_frame->room[i] = i == RD_LISTS - 1 ? RD_POOL_TRIS - k : rd_frame->ntris[i];
+        k += rd_frame->ntris[i];
     }
     ok &= fread(&rd_frame->nstates, sizeof(int), 1, f) == 1;
     for (i = 0; ok && i < RD_LISTS; i++) {
@@ -62,6 +70,7 @@ int rd_frame_load(const char* name) {
     }
     free(texno);
     fclose(f);
+    rd_palette_serial++;
     return ok;
 }
 

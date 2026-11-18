@@ -5,9 +5,13 @@
 
 #include <stdint.h>
 
-int ctr_render_init(int full, int stretch);   /* full: 640x480 drawn, halved (else 320x240); 0: no GPU */
+/* full: 640x480 drawn, halved (else 320x240); wide: the top screen's 800 columns (-1: not on this model); 0: no GPU */
+int ctr_render_init(int full, int stretch, int wide);
 void ctr_render_set_stretch(int stretch);     /* between frames: the game across the screen or between the pillars,
                                                  from the next frame built */
+void ctr_render_set_wide(int wide);           /* the same for wide */
+int ctr_render_wide(void);                    /* 1 wide, 0 not, -1 not on this model */
+int ctr_render_top_w(void);                   /* the top screen's columns: 400, or 800 wide */
 int ctr_render_reserve(void);  /* before the heap is shared out: the memory for drawing beside the game */
 const char* ctr_render_mode(void);
 void ctr_render_frame(void);
@@ -16,7 +20,8 @@ void ctr_render_exit(void);
 void ctr_render_note(void);     /* the bottom screen's text shown without a frame drawn */
 void ctr_render_alive(void);    /* each vertical blank while a screen holds the game */
 extern unsigned ctr_presented;
-int ctr_render_read(uint32_t* frame, int screen);  /* 640x480 ARGB, or the top screen's 400x240; for test runs */
+int ctr_render_read(uint32_t* frame, int screen);  /* 640x480 ARGB, or the top screen's 400x240 (800x240 wide);
+                                                      for test runs */
 
 /* system ticks and counts */
 enum { CTR_TICKS_SYNC, CTR_TICKS_LISTS, CTR_TICKS_TEX, CTR_TICKS_SORT, CTR_TICKS_TRANS, CTR_TICKS_DRAW, CTR_TICKS_END, CTR_TICKS };

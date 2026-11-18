@@ -5,6 +5,7 @@
 #include "shinobi.h"
 #include "adx.h"
 #include "dm.h"
+#include "load.h"
 
 /* SHC's built-ins, as its smachine.h names them */
 #define set_imask( mask )	_builtin_set_imask( mask )
@@ -367,7 +368,7 @@ void system_init( void )
 	syStartGlobalConstructor() ;
 	nlSysUseLatency2V() ;
 	nlSysSetDirectListTypeLatency2V( 0 ) ;
-	nlSysSetVertexBufferBaseAddress( ( void * )0x0cf00000 ) ;
+	nlSysSetVertexBufferBaseAddress( ( void * )VERTEX_BUFF_ADRS ) ;
 	nlSysCreatePunchBuffer( 0x10000 ) ;
 	nlCreateVertexBuffer( 0, 0x4000, 0x24000, 0x4000 ) ;
 	nlInitPrint() ;
@@ -395,11 +396,11 @@ void system_init( void )
 	}
 	if( !i ) system_exit() ;
 	gdFsEntryErrFuncAll( gd_err_func, 0 ) ;
-	cfg_work = ( void * )0x0ce26000 ;
+	cfg_work = ( void * )CFG_WORK_ADRS ;
 	syCfgInit( cfg_work ) ;
 	sys_set_init( 0xff ) ;
-	file_load3( 0, ( void * )0x0cc00000, 1 ) ;
-	nlsndInit( ( void * )0x0cc00000, 0 ) ;
+	file_load3( 0, ( void * )TEX_ADRS, 1 ) ;
+	nlsndInit( ( void * )TEX_ADRS, 0 ) ;
 	com_sound_load( 0 ) ;
 	sound_init() ;
 	adxt = 0 ;
@@ -414,12 +415,12 @@ void system_init( void )
 	nlObjPutMvInit( 0x80 ) ;
 	nlObjPutMvSetMode( 1 ) ;
 	nlDispStripInit() ;
-	file_load( 0x299, ( void * )0x0ce00000, 0 ) ;
-	file_load( 0x298, ( void * )0x0ce08000, 0 ) ;
-	thd_file_load( 1, ( void * )0x0ce0a000 ) ;
-	thd_file_load( 2, ( void * )0x0ce1d000 ) ;
-	file_load( 0x94, ( void * )0x0ce1e000, 0 ) ;
-	file_load( 0x92, ( void * )0x0ce2ea00, 0 ) ;
+	file_load( 0x299, ( void * )BOOT_DM04_TEX_ADRS, 0 ) ;
+	file_load( 0x298, ( void * )BOOT_DM04_OBJ_ADRS, 0 ) ;
+	thd_file_load( 1, ( void * )SYS_FONT_ADRS ) ;
+	thd_file_load( 2, ( void * )SYS_SPR_ADRS ) ;
+	file_load( 0x94, ( void * )VMS_EXEC_ADRS, 0 ) ;
+	file_load( 0x92, ( void * )NOWLOAD_KEEP_ADRS, 0 ) ;
 	nlInitInterruptDC() ;
 	nlSetIntrFunction( 1, VBlankInIrq ) ;
 	nlSetIntrFunction( 0, vblank_func ) ;

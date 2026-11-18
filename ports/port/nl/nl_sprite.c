@@ -194,6 +194,7 @@ static int spr_put(const NLsprarg* a) {
     s.tex_alpha = 1;
     s.bilinear = (a->attr & NLSPR_BILINEAR) != 0;
     s.offset = (a->attr & NLSPR_COLORSET) != 0;
+    s.origin = RD_SPRITE;
     s.fog = (a->attr & NLSPR_FOG_EBL) ? RD_FOG_TABLE : RD_FOG_NONE;
     s.tex = &t->tex;
     s.palette = nl_palette_base(t, t->palette);

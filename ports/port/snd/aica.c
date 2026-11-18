@@ -21,10 +21,13 @@
 #ifdef MVC2_PROF
 static int game_side;               /* aica_run_cpu: the game's thread runs the CPU, the sound's waiting */
 #define IO_COUNT() do { if (!game_side) PROF_COUNT(PZ_SND_IO, 1); } while (0)
+#else
+#define IO_COUNT() ((void)0)
+#endif
+#ifdef AICA_PERF
 void (*aica_perf)(int at);
 #define PERF(at) do { if (aica_perf) aica_perf(at); } while (0)
 #else
-#define IO_COUNT() ((void)0)
 #define PERF(at) ((void)0)
 #endif
 
@@ -1512,10 +1515,13 @@ int aica_init(int ram_8mb) {
         make_tables();
         tables = 1;
     }
-    /* the NAOMI's size for both, so that a switch either way finds it whole */
-    if ((ram = host_keep_block(8u << 20)) == NULL) {
+    /* the NAOMI's size for both, so that a switch either way finds it whole (a build with the Dreamcast's RAM alone
+       has no switch) */
+    /* with cache lines of its own, for a second CPU to make the sound (psp_audio.c) */
+    if ((ram = host_keep_block((host_ram_size < SH4_RAM_SIZE ? size : 8u << 20) + 128)) == NULL) {
         return 0;
     }
+    ram = (uint8_t*)(((uintptr_t)ram + 63) & ~(uintptr_t)63);
     aica_ram = ram;
     memset(ram, 0, size);
     memset(reg, 0, sizeof reg);

@@ -1,5 +1,5 @@
 /*
- * coro.h  Stackful coroutines for the game's task kernel (coro_win32.c, coro_arm.c)
+ * coro.h  Stackful coroutines for the game's task kernel (coro_win32.c, coro_arm.c, coro_psp.c)
  */
 
 #ifndef CORO_H

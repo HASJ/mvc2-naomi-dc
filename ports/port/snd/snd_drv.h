@@ -10,5 +10,6 @@ void snd_drv_set(int mode);         /* MVC2_SNDNATIVE: 1 the FIQ, 2 it checked a
 int snd_drv_fiq(void);              /* the timer's FIQ, if due: 1 if run here, 0 to leave it to the interpreter */
 int snd_drv_main(int cycles, int rate);  /* the main loop for about that long, at rate cycles a sample; or -1 to
                                             leave it to the interpreter */
+void snd_drv_quiet(int on);         /* nothing logged from the main loop (run where there is no log: the PSP's ME) */
 
 #endif

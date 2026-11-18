@@ -402,8 +402,8 @@ static int dma_main( DMA_CTRL *ctrl )
 {
 	static Uint8 gd_stat = 0 ;	/* the last read's state */
 	static Uint8 *pl_adrs_tbl[6] = {
-		( Uint8 * )0x0c420000, ( Uint8 * )0x0c810000, ( Uint8 * )0x0c570000,
-		( Uint8 * )0x0c960000, ( Uint8 * )0x0c6c0000, ( Uint8 * )0x0cab0000
+		( Uint8 * )PL0_DATA_ADRS, ( Uint8 * )PL1_DATA_ADRS, ( Uint8 * )PL2_DATA_ADRS,
+		( Uint8 * )PL3_DATA_ADRS, ( Uint8 * )PL4_DATA_ADRS, ( Uint8 * )PL5_DATA_ADRS
 	} ;
 	DMA_REQ *req ;
 	Sint32 rc ;
@@ -701,16 +701,16 @@ void load_side_set( Uint8 side )
 void fight_load_start( int no )
 {
 	static Uint32 pic_adrs0_tbl[6] = {
-		0x0c568000, 0x0cc55000, 0x0c6b8000,
-		0x0cbf0000, 0x0c808000, 0x0cbf8000
+		PL0_DATA_ADRS + PL_PIC_FILE, PIC_KEEP0_ADRS, PL2_DATA_ADRS + PL_PIC_FILE,
+		PIC_KEEP2_ADRS, PL4_DATA_ADRS + PL_PIC_FILE, PL5_DATA_ADRS + PL_PIC_FILE
 	} ;
 	static Uint32 pic_adrs1_tbl[6] = {
-		0x0cc55000, 0x0c958000, 0x0c800000,
-		0x0caa8000, 0x0c808000, 0x0cbf8000
+		PIC_KEEP0_ADRS, PL1_DATA_ADRS + PL_PIC_FILE, PIC_KEEP1_ADRS,
+		PL3_DATA_ADRS + PL_PIC_FILE, PL4_DATA_ADRS + PL_PIC_FILE, PL5_DATA_ADRS + PL_PIC_FILE
 	} ;
 	static Uint32 pic_adrs2_tbl[6] = {
-		0x0c568000, 0x0c958000, 0x0c6b8000,
-		0x0caa8000, 0x0c808000, 0x0cbf8000
+		PL0_DATA_ADRS + PL_PIC_FILE, PL1_DATA_ADRS + PL_PIC_FILE, PL2_DATA_ADRS + PL_PIC_FILE,
+		PL3_DATA_ADRS + PL_PIC_FILE, PL4_DATA_ADRS + PL_PIC_FILE, PL5_DATA_ADRS + PL_PIC_FILE
 	} ;
 	static Uint8 order_tbl[18] = {
 		0, 1, 2, 3, 4, 5,  1, 3, 5, 0, 2, 4,  0, 2, 4, 1, 3, 5
@@ -785,9 +785,9 @@ void fight_load_start( int no )
 		load_init() ;
 		dma_req( 0, FILE_TEX( FILE_DM08POL ), TEX_ADRS ) ;
 		dma_req( 0, FILE_DM08POL, DM08_KEEP_ADRS ) ;
-		dma_req( 0, FILE_DM08CAB, 0x0c420000 ) ;
-		dma_req( 0, FILE_DM08CHR, 0x0c520000 ) ;
-		dma_req( 0, FILE_SE_SYUK, 0x0ccde000 ) ;
+		dma_req( 0, FILE_DM08CAB, TEX_BUFF0 ) ;
+		dma_req( 0, FILE_DM08CHR, NAME_PIC_ADRS ) ;
+		dma_req( 0, FILE_SE_SYUK, SE_SYUK_ADRS ) ;
 		break ;
 	case 8:
 		load_init() ;
@@ -911,7 +911,8 @@ static void pl_data_req2( PLAYER_WORK *pl_w )
 static void pl_snd_req( void )
 {
 	static Uint32 pl_snd_adrs[6] = {
-		0x0cc00000, 0x0cc30000, 0x0cc60000, 0x0cc90000, 0x0ccc0000, 0x0ccf0000
+		TEX_ADRS, TEX_ADRS + 0x30000, TEX_ADRS + 0x60000, TEX_ADRS + 0x90000, TEX_ADRS + 0xc0000,
+		TEX_ADRS + 0xf0000
 	} ;
 	Uint8 same[6] ;
 	int i ;

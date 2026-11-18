@@ -18,6 +18,7 @@
 /* ---- start-up, the heap, the boot ROM ---- */
 
 void syHwInit(void) {
+    HOST_CRUMB("syHwInit");
 }
 
 void syHwInit2(void) {
@@ -111,27 +112,6 @@ Sint32 syRtcGetDate(SYS_RTC_DATE* date) {
     date->second = (Uint8)tm->tm_sec;
     date->dayofweek = (Uint8)tm->tm_wday;
     return 1;
-}
-
-/* the general timer, which counts the time played: set to 4, it counts 48828 a second; here it
-   follows the frames, so that a run is the same every time */
-static unsigned tmr_base;
-
-void syTmrGenSetClock(Sint32 clock) {
-    (void)clock;
-}
-
-void syTmrGenStart(void) {
-    tmr_base = host_frame();
-}
-
-void syTmrGenSetCount(Uint32 count) {
-    (void)count;
-    tmr_base = host_frame();
-}
-
-Uint32 syTmrGenGetCount(void) {
-    return (Uint32)((host_frame() - tmr_base) * 48828u / 60u);
 }
 
 /* ---- the controllers ---- */

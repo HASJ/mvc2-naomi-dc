@@ -1,14 +1,15 @@
 # Ports
 
-A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC and Nintendo 3DS,
+A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC, Nintendo 3DS and PSP,
 built on their decompilation, which is the rest of this repository. It is not an emulator: the decompiled
 game is compiled for the host, and the port supplies what the NAOMI board, the Dreamcast and Sega's libraries
 did.
 
 To play on Windows, unzip a release, put the game's data in `roms/mvsc2` and `disc` beside `mvc2.exe`, and
-run it; `PLAYING.md` has the keys and settings. For the 3DS, see [3DS.md](3DS.md).
+run it; `PLAYING.md` has the keys and settings. For the 3DS, see [3DS.md](3DS.md); for the PSP, which plays the
+Dreamcast version, [PSP.md](PSP.md).
 
-For the Dreamcast version, on the PC and the 3DS alike, put any one of these in `disc`:
+For the Dreamcast version, on the PC, the 3DS and the PSP alike, put any one of these in `disc`:
 
 | What                                   | Example                                                 |
 |----------------------------------------|---------------------------------------------------------|
@@ -18,8 +19,8 @@ For the Dreamcast version, on the PC and the 3DS alike, put any one of these in 
 | track 3 alone, raw or as an ISO        | `Marvel vs. Capcom 2 (USA) (Track 3).bin`, `mvc2.iso`   |
 | the files already extracted            | `1ST_READ.BIN` and the rest                             |
 
-The first start unpacks an image's files into `disc` (210 MB; a few seconds on a PC, with the progress in the
-window's title). That happens once, and the image can be deleted after.
+On the PC an image is read where it is; the 3DS and the PSP unpack it into `disc` at the first start. A CHD made with
+zstd (`chdman createcd -c cdzs,cdfl`) unpacks fastest.
 
 Library routines the port lacks are stubs that say so in the log (`port/tools/gen_host.py`).
 
@@ -28,7 +29,7 @@ the port. `MVC2_SOUND=0` turns it off; `MVC2_WAV=file` records it. On the 3DS th
 
 **No game data is included.** You need the MAME `mvsc2` set (the zip or its files), and for the
 Dreamcast your own USA disc: an image of it (a `.chd`, a `.gdi` or Redump `.cue` with its tracks, or an `.iso`
-or `.bin` of track 3), which the first start unpacks into the folder, or its files already extracted.
+or `.bin` of track 3), or its files already extracted.
 
 ## How it fits together
 
@@ -68,12 +69,25 @@ Both versions run at their boards' own 59.94 frames a second, whatever the monit
 VGA from a 27 MHz clock, 858 by 525). `MVC2_FPS=n` sets another rate, and `MVC2_FPS=0` runs as fast as it can.
 
 The picture is drawn by the GPU through SDL_GPU (Direct3D 12 or Vulkan), by the PowerVR2's rules, at the
-window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead, `aa = 2` to `4`
-draws that many times larger again and filters it down, and `sprites = sharp`, `pixel` or `arcade` sets how a
-flat textured triangle (a sprite, the HUD, text) is read when drawn larger. `renderer = soft`, or a GPU that can't,
-draws it in software at 640 by 480 instead, on as many threads as the machine has (`MVC2_RDTHREADS=n` sets the count;
-the picture is the same for any count). On a slow machine, `MVC2_RDQUALITY=half` draws it at 320 by 240 and
-shows each pixel as four: about three and a half times faster, but small text and sprites lose detail.
+window's resolution: `resolution = 1` to `12` in `mvc2.cfg` sets a multiple of 640 by 480 instead (`4.2`, say), `aa = 2` to `4`
+draws that many times larger again and filters it down, and `sprites = sharp`, `smooth`, `pixel`, `arcade` or `texel`
+sets how a flat textured triangle (a sprite, the HUD, text) is read when drawn larger. The first four take its colours
+at the 640 by 480 frame's pixels, as the arcade shows them; `texel` reads its texels where they fall, each pixel the
+mean of those under it, so the characters' pixels (1.67 by 2.14 of the frame's) come out evenly sized, and it draws at
+the window's own size rather than a whole multiple filtered down. At 1920 by 1440 a character's pixel is 5 by 6.43;
+at `resolution = 4.2`, 2688 by 2016, it is 7 by 9 exactly. With `texel` and `scale = integer`
+the frame is shown pixel for pixel in the window's middle: 2688 by 2016 on a screen at least that size
+(a 4K screen keeps 576-pixel bars at the sides, 72 above and below), else 1920 by 1440 or 1280 by 960.
+`texel_grid = shared` (the default) moves every sprite's origin to one grid of the characters' pixels (5/3 by 15/7
+of the frame's, from the screen's corner), as the CPS2-era art was laid out, so the parts of a character drawn as
+separate sprites meet without slivers or gaps; `object` keeps each sprite on its own. [SPRITES.md](SPRITES.md) shows
+why, in pictures. `hud = arcade` (the default), `smooth` or `sharp` sets the rest: the game's front (models put
+without the camera's view, and strips: the timer, gauges, words and menus) in the 640 by 480 frame's own pixels,
+each a block, or anything that isn't a sprite read as the game filters it, or all of it as sprites are.
+`renderer = soft`, or a GPU that can't, draws it in software at 640 by 480 instead, on as many threads as the machine
+has (`MVC2_RDTHREADS=n` sets the count; the picture is the same for any count). On a slow machine,
+`MVC2_RDQUALITY=half` draws it at 320 by 240 and shows each pixel as four: about three and a half times faster, but
+small text and sprites lose detail.
 `render =` in `mvc2.cfg` sets the quality for every run, and `MVC2_RDQUALITY` overrides it for one. Its words:
 `exact` (the default, every pixel as the PowerVR2 draws it), `fast` (the nearest texel, one mip level a
 triangle), `half`, `fast+half`, `nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
@@ -81,6 +95,11 @@ triangle), `half`, `fast+half`, `nofog` (no fog) and `nosort` (translucent trian
 The front end is built with SDL3 (`SDL3.dll` beside the executable). When the GPU can't start, it says why and
 draws in software; test runs draw in software unless `mvc2.cfg` names a renderer.
 `-DMVC2_SDL3=OFF` builds it with SDL2 (`mingw-w64-i686-SDL2`), software only.
+`-DMVC2_FMAC=OFF` rounds the sums the SH-4 fuses into one instruction twice, a multiply and then an add, as
+Flycast Dojo does: for checking against Fightcade's replays. The default rounds them once, as the board does.
+`-DMVC2_RAM_BASE=0x0A000000` maps the game's 32 MB of main RAM there instead of at its own 0x0C000000, for a
+host that can't have that address (a multiple of 64 KB, clear of 0x0C000000 to 0x0E000000);
+`-DMVC2_RAM_SIZE=0x01000000` maps only the Dreamcast's 16 MB, for a build that runs only its program.
 
 `build/mvc2dc` is the Dreamcast alone. Test runs show no message boxes and run as fast as they can unless
 `MVC2_FPS` is set:
@@ -182,8 +201,15 @@ Everything is in `sdmc:/3ds/mvc2`: `mvc2.cfg`, `roms/mvsc2` and `disc` as on the
 first start unpacks the ROM set into one file, `roms/mvsc2/mvsc2.bin` (136 MB), which the game then
 reads in 64 KB blocks through a cache of what memory allows, a thread on the other core reading ahead. The
 picture is drawn by the GPU at 320 by 240, 1:1 in the middle of the top screen; `scale = stretch` (or
-`MVC2_STRETCH=1`) stretches it across, and `render = exact` draws it at 640 by 480 and halves it (slower). Test runs read `env.txt`'s
+`MVC2_STRETCH=1`) stretches it across, and `render = exact` draws it at 640 by 480 and halves it (slower). `wide = on`
+(or `MVC2_WIDE=1`, the default on a New 3DS) draws to all 800 of the top screen's columns, 640 by 240 between the
+pillars, or 640 by 480 halved down the screen alone with `render = exact`. Test runs read `env.txt`'s
 `NAME=value` lines as environment variables (`MVC2_FRAMES`, `MVC2_SHOT`, `MVC2_PRESS` as on the PC).
+
+## PSP (pspdev)
+
+The Dreamcast version alone, for now: the arcade's needs 32 MB of game RAM, more than the PSP has to spare. A PSP-2000,
+PSP-3000 or PSP Go (64 MB) with custom firmware; [PSP.md](PSP.md) has the rest.
 
 ## Which game it runs
 
@@ -193,9 +219,10 @@ At start-up `mvc2` looks for each version's data, checking that the files are th
 - the arcade's: the MAME `mvsc2` set (`epr-23085a.ic11` and `mpr-23048.ic17s` to `mpr-23084.ic32s`), or its
   `mvsc2.zip` in the folder or beside it, which the first start unpacks into `mvsc2.bin`;
 - the Dreamcast's: the files of the USA disc (`1ST_READ.BIN` and the rest), or an image of the disc there,
-  which the first start unpacks into the folder (`port/dc/dc_image.c`): a `.chd` (libchdr), a `.gdi` with its
-  tracks, a `.cue` with its `.bin`s, an `.iso` of track 3 or track 3's `.bin` alone. The files of track 3's
-  ISO 9660 file system are written one by one as `NAME.part` and renamed, `1ST_READ.BIN` last, so a stopped
+  read in place through a directory of track 3's ISO 9660 file system kept in memory (`port/dc/dc_image.c`): a
+  `.chd` (libchdr), a `.gdi` with its tracks, a `.cue` with its `.bin`s, an `.iso` of track 3 or track 3's
+  `.bin` alone. The handhelds unpack it into the folder once instead (`MVC2_DISC_IN_PLACE=1` reads it in place,
+  `MVC2_DISC_CHD=1` a CHD too), each file written as `NAME.part` and renamed, `1ST_READ.BIN` last, so a stopped
   unpack starts again.
 
 With one found, that one runs. With both, it asks which to play, once, and keeps the answer in `mvc2.cfg`

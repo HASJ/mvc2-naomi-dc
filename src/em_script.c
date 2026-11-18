@@ -26,8 +26,16 @@ static Uint8 cmd_size_tbl[128] = {
 	2, 4, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 1, 2, 1,
 } ;
 
-static CMD_FUNC cmd_start_jmp[128] ;
-static CMD_FUNC cmd_move_jmp[128] ;
+/* gcc places a static where it is first declared, SHC where it is defined: on a host the tables are
+   const, so that dist_tbl follows cmd_size_tbl, which goto_endif reads past, as on the SH-4 */
+#ifdef HOST_PORT
+#define JMP_CONST const
+#else
+#define JMP_CONST
+#endif
+
+static CMD_FUNC JMP_CONST cmd_start_jmp[128] ;
+static CMD_FUNC JMP_CONST cmd_move_jmp[128] ;
 
 /****************************************************************/
 /*			Reads the next command and starts it				*/
@@ -2308,7 +2316,7 @@ static int sp_renda_up_back( PLAYER_WORK *pl_w )
 
 /* the command tables, by the command's number */
 
-static CMD_FUNC cmd_start_jmp[128] = {
+static CMD_FUNC JMP_CONST cmd_start_jmp[128] = {
 	cmd_nop, walk_f, walk_b, cmd_reset,	/* 00 */
 	wait, wait2, crouch, stand,	/* 04 */
 	cmd_exit, cmd_next, cmd_next3, punch,	/* 08 */
@@ -2343,7 +2351,7 @@ static CMD_FUNC cmd_start_jmp[128] = {
 	if_em_team_vital, cmd_nop, if_em_jump, cmd_nop,	/* 124 */
 } ;
 
-static CMD_FUNC cmd_move_jmp[128] = {
+static CMD_FUNC JMP_CONST cmd_move_jmp[128] = {
 	cmd_end, walk_move, walk_b_move, cmd_end,	/* 00 */
 	wait_move, wait_move, cmd_end, cmd_end,	/* 04 */
 	cmd_end, cmd_end, cmd_end, cmd_end,	/* 08 */

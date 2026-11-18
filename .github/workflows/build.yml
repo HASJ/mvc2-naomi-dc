@@ -1,6 +1,6 @@
 name: Build
 
-# Builds the ports for Windows and the 3DS. The ROM-exact builds can't run here: SHC and Sega's SDK
+# Builds the ports for Windows, the 3DS and the PSP. The ROM-exact builds can't run here: SHC and Sega's SDK
 # libraries can't be redistributed.
 on:
   push:
@@ -45,6 +45,40 @@ jobs:
           cmake -G Ninja -B build-o3ds -DCMAKE_TOOLCHAIN_FILE=port/cmake/3ds-native.cmake -DDEVKITPRO="$DEVKITPRO" \
             -DOLD_3DS_TEST=ON
           ninja -C build-o3ds
+
+  psp:
+    name: PSP
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/pspdev/pspdev:v20261101@sha256:ee385df3aa783189d5a033af5eb1d4a9cdd93718fb8bf652ec7bb48e54038a8b
+    defaults:
+      run:
+        working-directory: ports
+    steps:
+      - name: Install build tools
+        working-directory: .
+        run: |
+          apk add --no-cache ninja python3
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build
+        run: |
+          psp-cmake -G Ninja -B build-psp
+          ninja -C build-psp
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: psp
+          path: |
+            ports/build-psp/EBOOT.PBP
+            ports/PSP.md
+          if-no-files-found: error
+          retention-days: 7
 
   pc:
     name: Windows

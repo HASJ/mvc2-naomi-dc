@@ -46,7 +46,12 @@ Sint32 nlAtan256(Float y, Float x) {
         y = t;
         i |= 2;
     }
+    t = y / x * 128.0f + 0.5f;
+#ifdef __mips__
+    /* MIPS's trunc.w gives 0x7fffffff for a NaN (0/0), the SH-4's ftrc 0x80000000 */
+    if (t != t) t = 0.0f;
+#endif
     /* ftrc, then the low byte: 0/0 gives 0 as on the SH-4 */
-    a = nlAtan256tbl[(Uint8)(Sint32)(y / x * 128.0f + 0.5f)];
+    a = nlAtan256tbl[(Uint8)(Sint32)t];
     return octant[i].base + (octant[i].neg ? -a : a);
 }

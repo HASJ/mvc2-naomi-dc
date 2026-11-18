@@ -286,6 +286,9 @@ static Uint8 enou_ck( PLAYER_WORK *pl_w )
 	lw = ( PL14_LOCAL_W * )pl_w->tlocal ;
 	lw->monkey_timer = 240 ;
 	if( pl_w->cpu_flag ) pl_w->pl_sp_type = pl14_sp_enou_auto ;
+#ifdef HOST_PORT
+	return 1 ;	/* the arcade's r0 is left an offset, never 0 */
+#endif
 }
 
 /*==============================================================*/

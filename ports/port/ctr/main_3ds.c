@@ -1,7 +1,7 @@
 /*
  * main_3ds.c  The 3DS front end: memory, the frame loop, input, the screens
  *
- * Main RAM is mapped at 0x0C000000, the top of the heap area, before libctru makes its heaps.
+ * Main RAM is mapped at NAOMI_RAM_BASE, the top of the heap area, before libctru makes its heaps.
  */
 
 #include <malloc.h>
@@ -13,6 +13,7 @@
 
 #include <3ds.h>
 
+#include "frame_log.h"
 #include "naomi_host.h"
 #include "naomi_input.h"
 #include "rd.h"
@@ -34,6 +35,7 @@ uint32_t aica_ram_size(void);
 #define LINEAR_SMALL (8u << 20)
 #define LINEAR_LARGE (16u << 20)
 #define HEAP_RESERVE (11u << 20)
+#define DC_RAM_SIZE (16u << 20)
 #ifdef MVC2_PROF
 #define CACHE_RESERVE (HEAP_RESERVE + (21u << 19) - (64u << 10))  /* a profile build's larger program left room */
 #else
@@ -78,6 +80,12 @@ void __system_allocateHeaps(void) {
         R_SUCCEEDED(svcControlMemory(&tmp, NAOMI_RAM_BASE, 0, RAM_SIZE, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE))) {
         ctr_ram_mapped = 1;
         remaining -= RAM_SIZE;
+    } else if (remaining >= DC_RAM_SIZE + linear + HEAP_RESERVE &&
+               R_SUCCEEDED(svcControlMemory(&tmp, NAOMI_RAM_BASE, 0, DC_RAM_SIZE, MEMOP_ALLOC, MEMPERM_READ | MEMPERM_WRITE))) {
+        /* the Dreamcast's 16 MB alone, and its 2 MB of sound RAM: an Old 3DS's 3dsx plays it */
+        ctr_ram_mapped = 1;
+        host_ram_size = DC_RAM_SIZE;
+        remaining -= DC_RAM_SIZE;
     }
     heap = remaining - linear;
     if (heap > HEAP_MAX) {
@@ -452,7 +460,122 @@ static double ms(uint64_t ticks) {
 static uint32_t linear_least = 0xFFFFFFFFu, window_least = 0xFFFFFFFFu;
 static uint32_t heap_window_least = 0xFFFFFFFFu;     /* the heap past malloc's top, the room for a new block */
 
+/* MVC2_FRAMELOG=FILE: a line a frame, kept in memory and written at exit */
+typedef struct {
+    uint32_t frame;
+    float game, draw, wait, gap, gd_ms, sync_ms, conv_ms, tex_ms, lz_ms, open_ms, end_ms, adx_ms, fopen_ms, seek_ms, fclose_ms;
+    uint32_t gd_kb, sync, req, open, conv, gd_wait, discard;
+} FL_REC;
+static FL_REC* fl_recs;
+static uint32_t fl_n, fl_max;
+
+static void fl_record(uint64_t t0, uint64_t t1, uint64_t t2, uint64_t prev_end, uint64_t prev_t2) {
+    static int on = -1;
+    FL_REC* r;
+    if (on < 0) {
+        on = getenv("MVC2_FRAMELOG") != NULL;
+        fl_max = 20000;
+        fl_recs = on ? malloc(fl_max * sizeof *fl_recs) : NULL;
+        on = fl_recs != NULL;
+    }
+    if (!on || fl_n >= fl_max) {
+        memset(&fl, 0, sizeof fl);
+        return;
+    }
+    r = &fl_recs[fl_n++];
+    r->frame = presented;
+    r->game = prev_end ? (float)((double)(t0 - prev_end) * 1000.0 / SYSCLOCK_ARM11) : 0;
+    r->draw = (float)((double)(t1 - t0) * 1000.0 / SYSCLOCK_ARM11);
+    r->wait = (float)((double)(t2 - t1) * 1000.0 / SYSCLOCK_ARM11);
+    r->gap = prev_t2 ? (float)((double)(t2 - prev_t2) * 1000.0 / SYSCLOCK_ARM11) : 0;
+    r->gd_ms = (float)(fl.gd_ns / 1e6);
+    r->sync_ms = (float)(fl.sync_ns / 1e6);
+    r->conv_ms = (float)(fl.conv_ns / 1e6);
+    r->tex_ms = (float)(fl.tex_ns / 1e6);
+    r->lz_ms = (float)(fl.lz_ns / 1e6);
+    r->open_ms = (float)(fl.open_ns / 1e6);
+    r->end_ms = (float)(fl.end_ns / 1e6);
+    r->adx_ms = (float)(fl.adx_ns / 1e6);
+    r->fopen_ms = (float)(fl.fopen_ns / 1e6);
+    r->seek_ms = (float)(fl.seek_ns / 1e6);
+    r->fclose_ms = (float)(fl.fclose_ns / 1e6);
+    r->gd_kb = fl.gd_bytes >> 10;
+    r->sync = fl.gd_sync;
+    r->req = fl.gd_req;
+    r->open = fl.gd_open;
+    r->conv = fl.tex_conv;
+    r->gd_wait = fl.gd_wait;
+    r->discard = rd_discard;
+    memset(&fl, 0, sizeof fl);
+}
+
+/* n, or v to hundredths, and a space, at p: without printf's floats, slow on an Old 3DS */
+static char* fl_int(char* p, unsigned long n) {
+    char d[12];
+    int k = 0;
+    do {
+        d[k++] = (char)('0' + n % 10);
+        n /= 10;
+    } while (n != 0);
+    while (k > 0) {
+        *p++ = d[--k];
+    }
+    *p++ = ' ';
+    return p;
+}
+
+static char* fl_ms(char* p, float v) {
+    unsigned long c = v > 0 ? (unsigned long)(v * 100.0f + 0.5f) : 0;
+    p = fl_int(p, c / 100);
+    p[-1] = '.';
+    *p++ = (char)('0' + c / 10 % 10);
+    *p++ = (char)('0' + c % 10);
+    *p++ = ' ';
+    return p;
+}
+
+static void fl_write(void) {
+    FILE* f;
+    uint32_t i;
+    if (fl_recs == NULL || (f = fopen(getenv("MVC2_FRAMELOG"), "w")) == NULL) {
+        return;
+    }
+    setvbuf(f, NULL, _IOFBF, 256 << 10);    /* the SD card written in few calls */
+    fprintf(f, "frame game draw wait gap gd_ms sync_ms gd_kb sync req open conv conv_ms gd_wait discard tex_ms lz_ms open_ms end_ms adx_ms fopen_ms seek_ms fclose_ms\n");
+    for (i = 0; i < fl_n; i++) {
+        FL_REC* r = &fl_recs[i];
+        char line[320], *p = line;
+        p = fl_int(p, r->frame);
+        p = fl_ms(p, r->game);
+        p = fl_ms(p, r->draw);
+        p = fl_ms(p, r->wait);
+        p = fl_ms(p, r->gap);
+        p = fl_ms(p, r->gd_ms);
+        p = fl_ms(p, r->sync_ms);
+        p = fl_int(p, r->gd_kb);
+        p = fl_int(p, r->sync);
+        p = fl_int(p, r->req);
+        p = fl_int(p, r->open);
+        p = fl_int(p, r->conv);
+        p = fl_ms(p, r->conv_ms);
+        p = fl_int(p, r->gd_wait);
+        p = fl_int(p, r->discard);
+        p = fl_ms(p, r->tex_ms);
+        p = fl_ms(p, r->lz_ms);
+        p = fl_ms(p, r->open_ms);
+        p = fl_ms(p, r->end_ms);
+        p = fl_ms(p, r->adx_ms);
+        p = fl_ms(p, r->fopen_ms);
+        p = fl_ms(p, r->seek_ms);
+        p = fl_ms(p, r->fclose_ms);
+        p[-1] = '\n';
+        fwrite(line, 1, (size_t)(p - line), f);
+    }
+    fclose(f);
+}
+
 static void stats(uint64_t t0, uint64_t t1, uint64_t t2) {
+    static uint64_t fl_prev_t2;
     uint32_t lin = linearSpaceFree(), heap = (uint32_t)(fake_heap_end - (char*)sbrk(0));
     linear_least = lin < linear_least ? lin : linear_least;
     window_least = lin < window_least ? lin : window_least;
@@ -463,6 +586,8 @@ static void stats(uint64_t t0, uint64_t t1, uint64_t t2) {
         ticks_draw += t1 - t0;
         ticks_wait += t2 - t1;
     }
+    fl_record(t0, t1, t2, t_end, fl_prev_t2);
+    fl_prev_t2 = t2;
     t_end = t2;
     if (t_window == 0) {
         t_window = t2;
@@ -586,11 +711,11 @@ void host_present(void) {
 #endif
     {
         ctr_render_frame();
-        /* MVC2_SHOT_SCREEN=1: the top screen's 400x240, as the display transfer makes it */
+        /* MVC2_SHOT_SCREEN=1: the top screen's 400x240 (800x240 wide), as the display transfer makes it */
         int screen = getenv("MVC2_SHOT_SCREEN") != NULL && strcmp(getenv("MVC2_SHOT_SCREEN"), "0") != 0;
         if (shot && get_frame() && ctr_render_read(frame, screen)) {
             snprintf(name, sizeof name, "shot_%u.bmp", presented);
-            save_bmp(name, frame, screen ? 400 : RD_WIDTH, screen ? 240 : RD_HEIGHT);
+            save_bmp(name, frame, screen ? ctr_render_top_w() : RD_WIDTH, screen ? 240 : RD_HEIGHT);
         }
     }
     rd_begin_frame();
@@ -640,6 +765,21 @@ static int stretched(void) {
 static int full_size(void) {
     const char* q = getenv("MVC2_RDQUALITY") != NULL ? getenv("MVC2_RDQUALITY") : config_get("render");
     return q != NULL && strcmp(q, "exact") == 0;
+}
+
+/* wide = on or off (or MVC2_WIDE): the top screen's 800 columns, on by default on a New 3DS; -1 on the original
+   2DS, which has no wide mode */
+static int wide(int n3ds) {
+    const char* e = getenv("MVC2_WIDE") != NULL ? getenv("MVC2_WIDE") : config_get("wide");
+    u8 model = CFG_MODEL_3DS;
+    if (R_SUCCEEDED(cfguInit())) {
+        CFGU_GetSystemModel(&model);
+        cfguExit();
+    }
+    if (model == CFG_MODEL_2DS) {
+        return -1;
+    }
+    return e == NULL ? n3ds : strcmp(e, "1") == 0 || strcmp(e, "on") == 0;
 }
 
 /* env.txt's NAME=value lines, for test runs; "o3ds:NAME=value" only on an Old 3DS (or the Old 3DS test build),
@@ -695,6 +835,7 @@ static void set_defaults(void) {
                                          { "MVC2_GD_NOBUF", "1" }, { "MVC2_ADX_THREAD", "1" },
                                          { "MVC2_TEX_AHEAD", "1" }, { "MVC2_GD_NEXT", "1" },
                                          { "MVC2_TEX_KEEP_FREED", "1" }, { "MVC2_GD_STEP_KB", "256" },
+                                         { "MVC2_GD_KEEP", "1" }, { "MVC2_GD_PROGS", "1" },
                                          { "MVC2_ROM_DIRECT", "1" }, { "MVC2_ROM_PRELOAD", "1" } };
     int i;
     for (i = 0; i < (int)(sizeof on / sizeof *on); i++) {
@@ -733,6 +874,7 @@ static int fail(const char* text) {
 }
 
 void ctr_stop(const char* text) {
+    ctr_save_flush();
     ctr_log_flush();
     ctr_audio_exit();
     fail(text);
@@ -804,6 +946,15 @@ static void restarting(int after) {
     }
 }
 
+/* each step of the exit in the log, from the one before */
+static uint64_t exit_tick;
+
+static void exit_step(const char* what) {
+    uint64_t now = svcGetSystemTick();
+    host_log("exit: %s, %.1f ms", what, (double)(now - exit_tick) / (SYSCLOCK_ARM11 / 1000.0));
+    exit_tick = now;
+}
+
 static void clear_top(void) {
     int i;
     for (i = 0; i < 2; i++) {
@@ -844,7 +995,7 @@ int main(int argc, char** argv) {
     ctr_log_start(stderr);
     host_log("memory %lu KB, heap %lu KB, linear %lu KB, main RAM %s", (unsigned long)(mem_total >> 10),
              (unsigned long)(__ctru_heap_size >> 10), (unsigned long)(__ctru_linear_heap_size >> 10),
-             ctr_ram_mapped ? "mapped" : "not mapped");
+             !ctr_ram_mapped ? "not mapped" : host_ram_size < RAM_SIZE ? "mapped (the Dreamcast's 16 MB)" : "mapped");
     /* MVC2_VRAM_FB=1: the screens' framebuffers in VRAM, libctru having no way to move the top's alone */
     vram_fb = getenv("MVC2_VRAM_FB") != NULL && strcmp(getenv("MVC2_VRAM_FB"), "0") != 0;
     if (vram_fb) {
@@ -930,7 +1081,10 @@ int main(int argc, char** argv) {
     if (!pick_game(args[1] != NULL ? 2 : 1, args)) {
         return fail("No game data.");
     }
-    if (!soft && !ctr_render_init(full_size(), stretched())) {
+#ifdef OLD_3DS_TEST
+    n3ds = false;
+#endif
+    if (!soft && !ctr_render_init(full_size(), stretched(), wide(n3ds))) {
 #ifdef CTR_SOFT
         host_log("no GPU renderer: drawing with rd_soft");
         soft = 1;
@@ -1012,10 +1166,19 @@ int main(int argc, char** argv) {
         }
     }
     ctr_ending = 1;
+    exit_tick = svcGetSystemTick();
+    if (quit_req) {
+        consoleClear();
+        printf("Marvel vs. Capcom 2\n\nClosing...\n");
+        ctr_render_note();
+    }
     if (rec_f != NULL) {
         rec_close();
     }
     ctr_audio_exit();
+    exit_step("the sound stopped");
+    ctr_save_flush();
+    exit_step("the saves written");
 #ifdef MVC2_PROF
     prof_stop();
 #endif
@@ -1027,18 +1190,26 @@ int main(int argc, char** argv) {
                  (unsigned long)linearSpaceFree() >> 10, (unsigned long)linear_least >> 10);
     }
     if (ctr_ram_mapped && getenv("MVC2_RAMMAP") != NULL) {
-        ram_map("main RAM", (const uint8_t*)NAOMI_RAM_BASE, RAM_SIZE);
+        ram_map("main RAM", (const uint8_t*)NAOMI_RAM_BASE, host_ram_size);
         ram_map("sound RAM", aica_sh4_ptr(0x00800000), aica_ram_size());
     }
     host_log("exit after %u frames", presented);
+    exit_step("the reports");
+    fl_write();
+    exit_step("the frame log written");
     ctr_log_flush();
+    exit_step("the log written");
     if (render_on) {
         ctr_render_exit();
         render_on = 0;
+        clear_top();
+        exit_step("drawing stopped");
     }
     if (ctr_rom_error != NULL) {
         return fail(ctr_rom_error);
     }
     gfxExit();
+    exit_step("the screens closed");
+    ctr_log_flush();
     return 0;
 }

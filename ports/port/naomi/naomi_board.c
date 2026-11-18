@@ -1,5 +1,5 @@
 /*
- * naomi_board.c  The NAOMI board as the game sees it: main RAM at 0x0C000000 (the game keeps fixed
+ * naomi_board.c  The NAOMI board as the game sees it: main RAM at NAOMI_RAM_BASE (the game keeps fixed
  * addresses there), the program image, the game as a coroutine that yields in nlWaitVSync, interrupts
  */
 
@@ -35,10 +35,15 @@ static int render_done;
 static unsigned frames;
 static void (*stop_fn)(void);
 static void (*frame_fn)(void);
-#ifdef __3DS__
 static int arcade;              /* the cartridge's program, not the Dreamcast's */
+#ifdef __3DS__
 int ctr_log_line(const char* fmt, va_list ap);  /* port/ctr/ctr_log.c: queued for a thread to write */
 #endif
+#ifdef __PSP__
+void psp_log_line(const char* fmt, va_list ap); /* port/psp/psp_log.c: written through to the file */
+#endif
+
+void (*host_crumb)(const char* what);
 
 void host_log(const char* fmt, ...) {
     va_list ap;
@@ -48,6 +53,11 @@ void host_log(const char* fmt, ...) {
         va_end(ap);
         return;
     }
+#endif
+#ifdef __PSP__
+    psp_log_line(fmt, ap);
+    va_end(ap);
+    return;
 #endif
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -102,13 +112,22 @@ void host_stub_report(void) {
 }
 
 /* first thing in main(), before SDL or a GPU driver takes the addresses */
+uint32_t host_ram_size = NAOMI_RAM_SIZE;
+
 int naomi_map_ram(void) {
 #ifdef _WIN32
     void* p = VirtualAlloc((void*)(uintptr_t)NAOMI_RAM_BASE, NAOMI_RAM_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (NAOMI_RAM_BASE != SH4_RAM_BASE) {
+        /* with the RAM moved, an SH-4 address that was not moved faults */
+        VirtualAlloc((void*)(uintptr_t)SH4_RAM_BASE, SH4_RAM_SIZE, MEM_RESERVE, PAGE_NOACCESS);
+    }
     return p == (void*)(uintptr_t)NAOMI_RAM_BASE;
 #elif defined(__3DS__)
     extern int ctr_ram_mapped;      /* mapped before libctru's heaps (port/ctr/main_3ds.c) */
     return ctr_ram_mapped;
+#elif defined(__PSP__)
+    extern int psp_ram_mapped;      /* taken before newlib's heap (port/psp/psp_mem.c) */
+    return psp_ram_mapped;
 #elif defined(__linux__)
     void* want = (void*)(uintptr_t)NAOMI_RAM_BASE;
     void* p = mmap(want, NAOMI_RAM_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
@@ -143,8 +162,7 @@ static int load_program(void) {
         if (src == 0xFFFFFFFF) {
             break;
         }
-        if (dst < NAOMI_RAM_BASE || dst + size > NAOMI_RAM_BASE + NAOMI_RAM_SIZE ||
-            !naomi_rom_read(src, (void*)(uintptr_t)dst, size)) {
+        if (dst < SH4_RAM_BASE || dst + size > SH4_RAM_BASE + NAOMI_RAM_SIZE || !naomi_rom_read(src, HOST_RAM(dst), size)) {
             return 0;
         }
     }
@@ -162,6 +180,7 @@ static void init_data(void) {
 
 static void game_entry(void* arg) {
     (void)arg;
+    HOST_CRUMB("the game's main");
     program->main();
     host_log("the game's main() returned");
     for (;;) {
@@ -170,7 +189,7 @@ static void game_entry(void* arg) {
 }
 
 /* the game's deepest use is about 29 KB */
-#ifdef __3DS__
+#if defined(__3DS__) || defined(__PSP__)
 #define GAME_STACK (256u << 10)
 #else
 #define GAME_STACK (1u << 20)
@@ -178,9 +197,12 @@ static void game_entry(void* arg) {
 
 void board_start(const HOST_PROGRAM* prog) {
     program = prog;
+    HOST_CRUMB("init_data");
     init_data();
     host_coro = coro_self();
+    HOST_CRUMB("coro_create");
     game_coro = coro_create(game_entry, NULL, GAME_STACK);
+    HOST_CRUMB("board started");
 }
 
 void board_at_stop(void (*fn)(void)) {
@@ -204,19 +226,19 @@ void board_stop(void) {
     naomi_rom_close();
     nl_tex_free_all();
     snd_free();
-    memset((void*)(uintptr_t)NAOMI_RAM_BASE, 0, NAOMI_RAM_SIZE);
-#ifdef __3DS__
+    memset((void*)(uintptr_t)NAOMI_RAM_BASE, 0, host_ram_size);
     arcade = 0;
-#endif
 }
 
 int naomi_init(const HOST_PROGRAM* prog, const char* rom_path) {
+    if (host_ram_size < SH4_RAM_SIZE) {
+        host_log("the arcade program needs 32 MB of RAM: this build maps %u KB", (unsigned)host_ram_size >> 10);
+        return 0;
+    }
     if (!naomi_rom_open(rom_path) || !load_program()) {
         return 0;
     }
-#ifdef __3DS__
     arcade = 1;
-#endif
     board_start(prog);
     return 1;
 }
@@ -234,6 +256,9 @@ void naomi_run_frame(void) {
         PROF_START(t1);
         intr[1]();                  /* vertical blank in */
         PROF_STOP(PZ_GAME_IRQ, t1);
+    }
+    if (frames == 1) {
+        HOST_CRUMB("the first switch to the game");
     }
     coro_switch(game_coro);
 }
@@ -268,6 +293,27 @@ void nlSetIntrFunction(int no, INTR_FUNC f) {
     if (no >= 0 && no < 8) {
         intr[no] = f;
     }
+}
+
+/* the general timer, which counts the time played: set to 4, it counts 48828 a second; here it
+   follows the frames, so that a run is the same every time */
+static unsigned tmr_base;
+
+void syTmrGenSetClock(int32_t clock) {
+    (void)clock;
+}
+
+void syTmrGenStart(void) {
+    tmr_base = frames;
+}
+
+void syTmrGenSetCount(uint32_t count) {
+    (void)count;
+    tmr_base = frames;
+}
+
+uint32_t syTmrGenGetCount(void) {
+    return (uint32_t)((frames - tmr_base) * 48828u / 60u);
 }
 
 /* Shinobi's timer, in microseconds: it follows the frames and moves on a little each read, so a run
@@ -323,8 +369,11 @@ static int trace_rom(void) {
     return on;
 }
 
+static int32_t rom_us;    /* nlSysMetricsCpuPowerGet's: the ROM's reads in the frame */
+
 int nlaReadROMDMA(uint32_t offset, char* dst, uint32_t size, int wait) {
     (void)wait;
+    rom_us += (int32_t)((uint64_t)size * 104 / 2048);
     if (trace_rom()) {
         host_log("rom %08X -> %08X %X", offset, (uint32_t)(uintptr_t)dst, size);
     }
@@ -360,13 +409,19 @@ int nlaCheckWaitROMDMA(void) {
     return 1;
 }
 
-/* The frame's CPU time so far, in microseconds: the load queue reads (15000 - it) / 256 blocks of 2 KB a frame, 116 KB
-   at 0. MVC2_LOAD_KB=n gives the time that reads n KB, so a stream from the SD card keeps behind its read-ahead. Its
-   value never changes, so the game's measure of the ROM's speed still comes out 0 and the queue's divisor 256.
-   The Dreamcast's program reads its disc apart from it and paces only copies by it, so it is given 0. On the PC,
-   which reads the ROM from memory, the programs' own stubs stay. */
-#ifdef __3DS__
+/* The frame's CPU time so far in microseconds, from the board's timer. The load queue reads (15000 - it) / speed blocks
+   of 2 KB a frame, speed being the time sys_data_load measured one block's read to take. As Flycast times them: 104 for
+   each block read since the frame began, and 6600 for the work before the queue runs (6500 to 7500 there), so it reads
+   80 blocks (160 KB) a frame and the first fight's 7.5 MB in 52 frames, as Flycast does; the frames the game waits for
+   its loads advance its random numbers. On the 3DS, whose SD card streams the ROM, the queue reads 116 KB a frame
+   (speed 256 at 0), or MVC2_LOAD_KB=n. The Dreamcast's program reads its disc apart from it and paces only copies by
+   it, so it is given 0. */
+void nlSysMetricsCpuPowerStart(void) {
+    rom_us = 0;
+}
+
 int32_t nlSysMetricsCpuPowerGet(void) {
+#ifdef __3DS__
     static int32_t used = -1;
     if (!arcade) {
         return 0;
@@ -380,5 +435,7 @@ int32_t nlSysMetricsCpuPowerGet(void) {
         }
     }
     return used;
-}
+#else
+    return arcade ? 6600 + rom_us : 0;
 #endif
+}

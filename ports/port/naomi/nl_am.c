@@ -159,7 +159,7 @@ static int load_file(const char* name, char* p, int size) {
 }
 
 /* through a temporary file, never half written */
-static void save_file(const char* name, const char* p, int size) {
+void host_save_file(const char* name, const void* p, int size) {
     char tmp[256];
     FILE* f;
     snprintf(tmp, sizeof tmp, "%s.tmp", name);
@@ -173,6 +173,15 @@ static void save_file(const char* name, const char* p, int size) {
     } else {
         fclose(f);
     }
+}
+
+static void save_file(const char* name, const char* p, int size) {
+#ifdef __3DS__
+    if (ctr_save_later(name, p, size)) {
+        return;
+    }
+#endif
+    host_save_file(name, p, size);
 }
 
 /* a test run keeps them in the current folder */
@@ -224,12 +233,13 @@ void nlaGetBackupData(NLA_BACKUP_BANK* bank) {
     bank->userdata = (Uint32*)user_backup;
 }
 
-/* a test run's MVC2_CLOCK (seconds from 1970, UTC) fixes it; read once */
+/* a test run's MVC2_CLOCK (seconds from 1970, UTC) fixes it; read once. The date is made again only when the second
+   changes */
 void host_clock(struct tm* out) {
     static int looked, fixed;
-    static time_t fixed_t;
+    static time_t fixed_t, last_t = -1;
+    static struct tm last;
     time_t t;
-    struct tm* tm;
     if (!looked) {
         const char* e = getenv("MVC2_FRAMES") != NULL ? getenv("MVC2_CLOCK") : NULL;
         fixed = e != NULL;
@@ -237,8 +247,11 @@ void host_clock(struct tm* out) {
         looked = 1;
     }
     t = fixed ? fixed_t : time(NULL);
-    tm = fixed ? gmtime(&t) : localtime(&t);
-    *out = *tm;
+    if (t != last_t) {
+        last = *(fixed ? gmtime(&t) : localtime(&t));
+        last_t = t;
+    }
+    *out = last;
 }
 
 int host_unlock;

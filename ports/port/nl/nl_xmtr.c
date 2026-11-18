@@ -4,6 +4,7 @@
  */
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 typedef float NLMTX[16];
@@ -26,9 +27,14 @@ typedef struct {
 #define VIEW_DEPTH 8
 #define PROJ_DEPTH 8
 
-#ifdef __3DS__
-/* on the 3DS each matrix in two cache lines, and copied in four ldm/stm pairs */
+#if defined(__3DS__) || defined(__PSP__)
+/* each matrix in whole cache lines (the PSP's are 64 bytes), and copied inline (four ldm/stm pairs on the 3DS), not
+   through memcpy */
+#ifdef __PSP__
+#define LINES __attribute__((aligned(64)))
+#else
 #define LINES __attribute__((aligned(32)))
+#endif
 typedef struct {
     float f[16];
 } MTX_COPY;
@@ -85,7 +91,27 @@ static void mul(float* d, const float* a, const float* b) {
     }
     COPY(d, t);
 }
+#endif
 
+#ifdef __PSP__
+/* every angle's sine and cosine, each made the first time it is wanted: the library's are soft doubles here, and
+   the game turns by too many angles a frame for a few to be kept */
+static struct {
+    float s, c;
+} every_turn[0x10000];
+static uint32_t turn_made[0x10000 / 32];
+
+static void sin_cos(int ang, float* s, float* c) {
+    int a = ang & 0xffff;
+    if (!(turn_made[a >> 5] >> (a & 31) & 1)) {
+        turn_made[a >> 5] |= 1u << (a & 31);
+        every_turn[a].s = sin_a(a);
+        every_turn[a].c = cos_a(a);
+    }
+    *s = every_turn[a].s;
+    *c = every_turn[a].c;
+}
+#elif defined(__3DS__)
 /* the last angles' sines and cosines, the library's being doubles' */
 static struct {
     int ang;    /* the angle + 1, 0 for none */
@@ -255,8 +281,14 @@ static void rotate(int i, int j, int ang) {
     p[0] = c * a0 + s * b0, p[1] = c * a1 + s * b1, p[2] = c * a2 + s * b2, p[3] = c * a3 + s * b3;
     q[0] = -s * a0 + c * b0, q[1] = -s * a1 + c * b1, q[2] = -s * a2 + c * b2, q[3] = -s * a3 + c * b3;
 #else
-    float s = sin_a(ang), c = cos_a(ang);
+    float s, c;
     int k;
+#ifdef __PSP__
+    sin_cos(ang, &s, &c);
+#else
+    s = sin_a(ang);
+    c = cos_a(ang);
+#endif
     for (k = 0; k < 4; k++) {
         float a = xm[i * 4 + k], b = xm[j * 4 + k];
         xm[i * 4 + k] = c * a + s * b;
@@ -341,6 +373,9 @@ void nlLookAt(const NLV3* eye, const NLV3* obj, int z) {
         NLMTX t;
         memcpy(t, unit, sizeof t);
 #ifdef __3DS__
+        sin_cos(z, &t[1], &t[0]);
+        t[5] = t[0];
+#elif defined(__PSP__)
         sin_cos(z, &t[1], &t[0]);
         t[5] = t[0];
 #else

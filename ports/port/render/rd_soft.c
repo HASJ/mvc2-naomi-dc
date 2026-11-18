@@ -42,8 +42,9 @@
 /* rd_q: half draws at half size, each pixel shown as four; fast takes the nearest texel */
 static int scale = 1, draw_w = RD_WIDTH, draw_h = RD_HEIGHT, fast, nofog, nosort;
 
-static float zbuf[RD_WIDTH * RD_HEIGHT];
-static uint32_t cbuf[RD_WIDTH * RD_HEIGHT];     /* ARGB, the alpha kept for the blend factors */
+/* made when first drawn: a front end with another renderer never needs them */
+static float* zbuf;
+static uint32_t* cbuf;      /* ARGB, the alpha kept for the blend factors */
 
 /* the translucent fragments, a list a pixel */
 typedef struct {
@@ -53,7 +54,7 @@ typedef struct {
     int next;
 } FRAG;
 
-static int fhead[RD_WIDTH * RD_HEIGHT];
+static int* fhead;
 
 typedef struct WORKER WORKER;
 
@@ -114,10 +115,20 @@ static int ifloor(float f) {
     return f < (float)i && i != INT_MIN ? i - 1 : i;
 }
 
-static uint32_t argb16[3][65536];
+static uint32_t (*argb16)[65536];
 
-static void make_tables(void) {
+/* 0 when there is no memory for them */
+static int make_tables(void) {
     uint32_t p;
+    zbuf = malloc(RD_WIDTH * RD_HEIGHT * sizeof *zbuf);
+    cbuf = malloc(RD_WIDTH * RD_HEIGHT * sizeof *cbuf);
+    fhead = malloc(RD_WIDTH * RD_HEIGHT * sizeof *fhead);
+    argb16 = malloc(3 * sizeof *argb16);
+    if (zbuf == NULL || cbuf == NULL || fhead == NULL || argb16 == NULL) {
+        free(zbuf), free(cbuf), free(fhead), free(argb16);
+        zbuf = NULL;
+        return 0;
+    }
     for (p = 0; p < 65536; p++) {
         argb16[RD_ARGB1555][p] = (p & 0x8000 ? 0xFF000000u : 0) | (p >> 10 & 31) * 255 / 31 << 16 |
                                  (p >> 5 & 31) * 255 / 31 << 8 | (p & 31) * 255 / 31;
@@ -125,6 +136,7 @@ static void make_tables(void) {
         argb16[RD_ARGB4444][p] = (p >> 12) * 0x11000000u | (p >> 8 & 15) * 0x110000u | (p >> 4 & 15) * 0x1100u |
                                  (p & 15) * 0x11u;
     }
+    return 1;
 }
 
 static uint32_t fetch(const RD_STATE* s, const void* d, int at) {
@@ -414,6 +426,12 @@ static RD_SEM* done;
 static int phase, ntotal;
 static uint32_t* out_frame;
 static int out_pitch;
+/* a pixel out: ARGB, or with RD_ABGR (the PSP's GE) ABGR */
+#ifdef RD_ABGR
+#define OUT_PIXEL(c) (0xFF000000u | ((c) & 0xFF00u) | ((c) >> 16 & 0xFFu) | ((c) & 0xFFu) << 16)
+#else
+#define OUT_PIXEL(c) (0xFF000000u | (c))
+#endif
 
 static int first_row(const WORKER* w, int y) {
     int band = y / BAND, skip = ((w->index - band) % nworkers + nworkers) % nworkers;
@@ -939,12 +957,12 @@ static void work(WORKER* w) {
         resolve_row(w, y);
         if (scale == 1) {
             for (x = 0; x < RD_WIDTH; x++) {
-                out_frame[y * out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x];
+                out_frame[y * out_pitch + x] = OUT_PIXEL(cbuf[y * RD_WIDTH + x]);
             }
         } else {
             uint32_t* o = &out_frame[2 * y * out_pitch];
             for (x = 0; x < RD_WIDTH; x++) {
-                o[x] = o[out_pitch + x] = 0xFF000000u | cbuf[y * RD_WIDTH + x / 2];
+                o[x] = o[out_pitch + x] = OUT_PIXEL(cbuf[y * RD_WIDTH + x / 2]);
             }
         }
     }
@@ -1029,8 +1047,10 @@ static void report_time(double ms) {
 void rd_end_frame(uint32_t* frame, int pitch) {
     double start = now_ms();
     int list, i;
+    if (zbuf == NULL && !make_tables()) {
+        return;
+    }
     if (nworkers == 0) {
-        make_tables();
         start_workers();
     }
     take_quality();
