@@ -388,6 +388,7 @@ static int boot_dc_match_canonical(const char* patch_id, uint32_t seed, int64_t 
         }
     }
     host_restart();
+    rd_begin_frame();
     dc_vmu_set_netplay_lock(1);
     host_set_netplay_canonical(1);
     host_clock_set_override(1, timestamp_utc > 0 ? timestamp_utc : 946684800LL);

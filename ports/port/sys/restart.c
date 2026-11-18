@@ -82,7 +82,11 @@ void* host_keep_block(size_t size) {
 void (*host_restart_hook)(int after);
 
 void host_restart(void) {
+    void* saved_log = NULL;
+    int saved_log_init = 0;
+    int saved_ww = 0;
     int i;
+    board_preserve_restart(0, &saved_log, &saved_log_init, &saved_ww);
     board_stop();
     if (host_restart_hook != NULL) {
         host_restart_hook(0);
@@ -92,6 +96,7 @@ void host_restart(void) {
         memcpy(s->data, kept[i].data, (size_t)(s->data_end - s->data));
         memset(s->bss, 0, (size_t)(s->bss_end - s->bss));
     }
+    board_preserve_restart(1, &saved_log, &saved_log_init, &saved_ww);
     if (host_restart_hook != NULL) {
         host_restart_hook(1);
     }

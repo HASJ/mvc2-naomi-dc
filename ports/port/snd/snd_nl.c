@@ -92,9 +92,10 @@ int snd_enabled(void) {
                            cli_get_opt("replay-verify") != NULL || cli_get_opt("takeover-test") != NULL ||
                            cli_get_opt("record") != NULL || cli_get_opt("replay") != NULL ||
                            cli_has_flag("synctest") || cli_get_opt("synctest") != NULL ||
-                           cli_get_opt("p2p") != NULL || cli_get_opt("connect") != NULL ||
-                           cli_get_opt("host") != NULL || cli_get_opt("join") != NULL ||
-                           cli_get_opt("spectate") != NULL ||
+                           cli_get_opt("p2p") != NULL || cli_get_opt("host-p2p") != NULL ||
+                           cli_get_opt("connect") != NULL || cli_get_opt("host") != NULL ||
+                           cli_get_opt("join") != NULL || cli_get_opt("spectate") != NULL ||
+                           host_is_netplay_canonical() ||
                            getenv("MVC2_SAVESTATE_TEST") != NULL || getenv("MVC2_SYNCTEST") != NULL ||
                            getenv("MVC2_NETPLAY") != NULL;
             sound_on = keep_snd || getenv("MVC2_FRAMES") == NULL || getenv("MVC2_WAV") != NULL;

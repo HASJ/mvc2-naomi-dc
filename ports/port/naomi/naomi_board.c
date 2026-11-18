@@ -240,6 +240,25 @@ void board_stop(void) {
 #endif
 }
 
+void board_preserve_restart(int restore, void** out_log, int* out_log_init, int* out_ww) {
+    if (!restore) {
+#ifndef __3DS__
+        *out_log = log_file;
+        *out_log_init = log_init;
+#else
+        *out_log = NULL;
+        *out_log_init = 0;
+#endif
+        *out_ww = ram_write_watch;
+    } else {
+#ifndef __3DS__
+        log_file = (FILE*)(*out_log);
+        log_init = *out_log_init;
+#endif
+        ram_write_watch = *out_ww;
+    }
+}
+
 int naomi_init(const HOST_PROGRAM* prog, const char* rom_path) {
     if (!naomi_rom_open(rom_path) || !load_program()) {
         return 0;

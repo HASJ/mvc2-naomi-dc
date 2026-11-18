@@ -63,6 +63,7 @@ static struct {
     /* Ring indexed by frame & (HASH_RING - 1) storing 64-bit savestate_hash at multiples of 60 */
     uint32_t h_frame[HASH_RING];
     uint64_t h_val[HASH_RING];
+    SAVESTATE_HASHES h_detail[HASH_RING];
 
     /* Peer checksum ring awaiting comparison (in case packet arrives out-of-order/before confirm) */
     uint32_t peer_cs_frame[HASH_RING];
@@ -112,18 +113,35 @@ static int is_pool_ptr(const void* p) {
     return -1;
 }
 
-static void record_60f_hash(int frame, uint64_t h64) {
+static void record_60f_hash(int frame) {
     uint32_t slot = ((uint32_t)frame / REPLAY_CHECKSUM_INTERVAL) & (HASH_RING - 1u);
+    savestate_hash_detail(&gg.h_detail[slot]);
     gg.h_frame[slot] = (uint32_t)frame;
-    gg.h_val[slot] = h64;
+    gg.h_val[slot] = gg.h_detail[slot].total;
 }
 
 static uint64_t lookup_60f_hash(int frame) {
     uint32_t slot = ((uint32_t)frame / REPLAY_CHECKSUM_INTERVAL) & (HASH_RING - 1u);
-    if (gg.h_frame[slot] == (uint32_t)frame) {
-        return gg.h_val[slot];
+    if (gg.h_frame[slot] != (uint32_t)frame) {
+        record_60f_hash(frame);
     }
-    return savestate_hash();
+    return gg.h_val[slot];
+}
+
+static void log_desync_hashes(uint32_t frame, uint64_t local_h, uint64_t peer_h) {
+    uint32_t slot = (frame / REPLAY_CHECKSUM_INTERVAL) & (HASH_RING - 1u);
+    host_log("NETPLAY_DESYNC frame=%u local=%016llX != peer=%016llX",
+             frame, (unsigned long long)local_h, (unsigned long long)peer_h);
+    if (gg.h_frame[slot] == frame) {
+        const SAVESTATE_HASHES* d = &gg.h_detail[slot];
+        host_log("NETPLAY_HASH[side=%d f=%u]: ram=%016llX data=%016llX bss=%016llX coro=%016llX board=%016llX nl=%016llX tex=%016llX rd=%016llX dc=%016llX snd=%016llX aica_ram=%016llX (aica=%016llX arm7=%016llX snl=%016llX s3l=%016llX)",
+                 gg.local_side, frame, (unsigned long long)d->ram, (unsigned long long)d->data,
+                 (unsigned long long)d->bss, (unsigned long long)d->coro, (unsigned long long)d->board,
+                 (unsigned long long)d->nl, (unsigned long long)d->tex, (unsigned long long)d->rd,
+                 (unsigned long long)d->dc, (unsigned long long)d->snd, (unsigned long long)d->aica_ram,
+                 (unsigned long long)d->snd_aica, (unsigned long long)d->snd_arm7,
+                 (unsigned long long)d->snd_nl, (unsigned long long)d->snd_s3l);
+    }
 }
 
 static void check_or_store_local_cs(uint32_t frame, uint64_t h) {
@@ -136,8 +154,7 @@ static void check_or_store_local_cs(uint32_t frame, uint64_t h) {
         gg.cs_verified++;
         if (gg.peer_cs_val[slot] != h) {
             gg.desyncs++;
-            host_log("NETPLAY_DESYNC frame=%u local=%016llX != peer=%016llX",
-                     frame, (unsigned long long)h, (unsigned long long)gg.peer_cs_val[slot]);
+            log_desync_hashes(frame, h, gg.peer_cs_val[slot]);
         }
         gg.peer_cs_valid[slot] = 0;
     }
@@ -149,8 +166,7 @@ static void check_or_store_peer_cs(uint32_t frame, uint64_t h) {
         gg.cs_verified++;
         if (gg.local_cs_val[slot] != h) {
             gg.desyncs++;
-            host_log("NETPLAY_DESYNC frame=%u local=%016llX != peer=%016llX",
-                     frame, (unsigned long long)gg.local_cs_val[slot], (unsigned long long)h);
+            log_desync_hashes(frame, gg.local_cs_val[slot], h);
         }
         return;
     }
@@ -188,7 +204,7 @@ static bool __cdecl cb_save_game_state(unsigned char** buffer, int* len, int* ch
     *len = (int)sizeof(SAVESTATE*);
     *checksum = (int)(fast_h ^ (fast_h >> 32));
     if (frame > 0 && (frame % (int)REPLAY_CHECKSUM_INTERVAL) == 0) {
-        record_60f_hash(frame, savestate_hash());
+        record_60f_hash(frame);
     }
     gg.sim_frame = frame;
     return true;

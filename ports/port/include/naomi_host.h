@@ -147,6 +147,7 @@ void host_keep_start(void);         /* first thing, before any of them runs */
 void host_keep_program(const HOST_PROGRAM* program);   /* before it first runs */
 void host_forget_program(const HOST_SPAN* span);
 void host_restart(void);            /* with the board stopped */
+void board_preserve_restart(int restore, void** out_log, int* out_log_init, int* out_ww);
 extern void (*host_restart_hook)(int after);   /* the front end's settings in the layers taken before it (0), given back after (1) */
 void* host_keep_block(size_t size); /* memory kept through restarts (the sound's RAM), or NULL */
 
