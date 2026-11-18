@@ -15,6 +15,7 @@ extern int sprite_disp( PLAYER_WORK *w );
 extern void pl_char_set( PLAYER_WORK *pl_w, Uint8 group, Uint8 no );
 extern Sint8 pl_char_move( PLAYER_WORK *pl_w );
 static Uint8 char_bit_get( Uint32 *bit, Sint8 no );
+extern VEC3 sel_name_pic_pos[2];	/* sel_name.c: where each side's still picture stands */
 
 extern void disp_all( void );
 extern void stage_decide( void );
@@ -268,6 +269,12 @@ static void sel_preview_set( Uint8 side, Sint8 type, Sint8 color )
 	sel_preview_active[side] = 1 ;
 }
 
+/* the side's live preview is up */
+Uint8 sel_preview_shown( Uint8 side )
+{
+	return side < 2 && sel_preview_active[side] ;
+}
+
 static void sel_preview_update( void )
 {
 	Uint8 side ;
@@ -292,6 +299,49 @@ static void sel_preview_update( void )
 	}
 }
 
+/* The still picture of sel_name.c is a quad of SEL_PIC_W by SEL_PIC_H units showing SEL_PIC_TEX texels of the
+   pose each way; the preview takes its place, its depth and its scale, standing on the picture's feet. */
+#define SEL_PIC_W	168.0f
+#define SEL_PIC_H	215.04f
+#define SEL_PIC_TEX	184.0f
+#define SEL_PIC_FOOT_Y	-93.0f	/* the poses' feet, from the quad's centre */
+
+/* the dots across half the screen over the tangent of half the camera's view */
+static Float sel_preview_focal( void )
+{
+	Sint32 ang = ( Sint32 )( scr_work.fov_x * 0.5f * 65536.0f / 360.0f + 0.5f ) & 0xffff ;
+
+	return 320.0f * nlCos( ang ) / nlSin( ang ) ;
+}
+
+/* a point of the select scene's world on the screen: its x and y in dots and its depth */
+static Float sel_preview_project( const VEC3 *p, Float *sx, Float *sy )
+{
+	VEC3 d, r, u, v ;
+	Float len, depth, f ;
+
+	d.x = scr_work.target[0].x - scr_work.eye[0].x ;
+	d.y = scr_work.target[0].y - scr_work.eye[0].y ;
+	d.z = scr_work.target[0].z - scr_work.eye[0].z ;
+	len = _builtin_sqrtf( d.x * d.x + d.y * d.y + d.z * d.z ) ;
+	d.x /= len ; d.y /= len ; d.z /= len ;
+	r.x = -d.z ; r.y = 0.0f ; r.z = d.x ;	/* d across the world's up */
+	len = _builtin_sqrtf( r.x * r.x + r.z * r.z ) ;
+	r.x /= len ; r.z /= len ;
+	u.x = r.y * d.z - r.z * d.y ;		/* r across d */
+	u.y = r.z * d.x - r.x * d.z ;
+	u.z = r.x * d.y - r.y * d.x ;
+	v.x = p->x - scr_work.eye[0].x ;
+	v.y = p->y - scr_work.eye[0].y ;
+	v.z = p->z - scr_work.eye[0].z ;
+	depth = v.x * d.x + v.y * d.y + v.z * d.z ;
+	if( depth < 1.0f ) depth = 1.0f ;
+	f = sel_preview_focal() / depth ;
+	*sx = 320.0f + ( v.x * r.x + v.y * r.y + v.z * r.z ) * f ;
+	*sy = 240.0f - ( v.x * u.x + v.y * u.y + v.z * u.z ) * f ;
+	return depth ;
+}
+
 void sel_preview_disp( void )
 {
 	Uint8 side ;
@@ -299,14 +349,24 @@ void sel_preview_disp( void )
 	if( Sys->task_no != 2 || Sys->task_step != 1 || Sys->scene_no != 1 ) return ;
 	for( side = 0 ; side < 2 ; side ++ ){
 		PLAYER_WORK *w ;
+		VEC3 foot, top ;
+		Float x, y, tx, ty, depth, dots ;
 
 		if( !sel_preview_active[side] ) continue ;
 		w = &sel_preview_w[side] ;
-		w->disp_x = side ? 535.0f : 105.0f ;
-		w->disp_y = 415.0f ;
-		w->disp_z = 26.0f ;
-		w->disp_zm_x = 1.35f ;
-		w->disp_zm_y = 1.35f ;
+		foot = sel_name_pic_pos[side] ;
+		foot.y += SEL_PIC_FOOT_Y ;
+		depth = sel_preview_project( &foot, &x, &y ) ;
+		dots = sel_preview_focal() / depth ;
+		/* drawn as deep as the picture's top, its deepest edge, so that all the picture was behind covers it too */
+		top = sel_name_pic_pos[side] ;
+		top.y += SEL_PIC_H * 0.5f ;
+		depth = sel_preview_project( &top, &tx, &ty ) ;
+		w->disp_x = x ;
+		w->disp_y = y ;
+		w->disp_z = depth ;
+		w->disp_zm_x = SEL_PIC_W / SEL_PIC_TEX * dots ;
+		w->disp_zm_y = SEL_PIC_H / SEL_PIC_TEX * dots ;
 		w->disp_ang = 0 ;
 		w->disp_flip = side ? 0 : 1 ;
 		w->disp_list = 0 ;

@@ -4,6 +4,7 @@
 
 extern void move_set_x( PLAYER_WORK *wk, Sint32 time, Float x, Sint8 x_type );
 extern void sel_dummy_1( PLAYER_WORK *w );
+extern Uint8 sel_preview_shown( Uint8 side );
 
 /* where the name plate stands for each column the cursor can be in */
 static VEC3 sel_name_pos_tbl[2][3] = {
@@ -20,6 +21,8 @@ static VEC3 sel_name_pos_tbl[2][3] = {
 } ;
 
 static void sel_name_main( PLAYER_WORK *ew );
+
+VEC3 sel_name_pic_pos[2] = { { -165.0f, 120.0f, 240.0f }, { 165.0f, 120.0f, 240.0f } } ;	/* each side's picture, for the live preview */
 
 /****************************************************************/
 /*			A plate for the side of pl_w (the cursor's);		*/
@@ -63,6 +66,10 @@ static void sel_name_main( PLAYER_WORK *ew )
 		sel_name_in, sel_name_out, sel_name_free,
 	} ;
 
+	if( ew->routine_0 <= 1 ){
+		sel_name_pic_pos[ew->type] = ew->pos ;
+		ew->disp_flag = !sel_preview_shown( ew->type ) ;	/* the live preview stands in its place */
+	}
 	ef05_plate_jmp[ew->routine_0]( ew ) ;
 }
 
