@@ -12,6 +12,7 @@
 int  net_ui_init(void);
 void net_ui_shutdown(void);
 
+void net_ui_open(void);
 int  net_ui_is_open(void);
 int  net_ui_has_hud(void);
 int  net_ui_event(const SDL_Event* e);

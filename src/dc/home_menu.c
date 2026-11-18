@@ -25,6 +25,9 @@ extern void v_point_get( void ) ;
 extern int decide_ck( void ) ;
 extern int cancel_ck( void ) ;
 extern int decide_cancel_ck( void ) ;
+#ifdef HOST_PORT
+extern void host_netplay_open( void ) ;
+#endif
 
 void home_menu_init( void ) ;
 int home_menu_2p_ck( void ) ;
@@ -229,6 +232,14 @@ void home_menu_decide( void )
 	if( ( sw_work[0].on & KEY_START ) || home_menu_sw_ck( 0 ) ) side = 1 ;
 	if( ( sw_work[1].on & KEY_START ) || home_menu_sw_ck( 1 ) ) side += 2 ;
 	if( side != 0 ){
+#ifdef HOST_PORT
+		if( Sys->home_mode == HOME_SCORE ){
+			na_req( 2 ) ;
+			Sys->timer1 = 10 ;
+			host_netplay_open() ;
+			return ;
+		}
+#endif
 		Sys->task_step ++ ;
 		Sys->scene_no = 0 ;
 		Sys->routine_0 = 0 ;

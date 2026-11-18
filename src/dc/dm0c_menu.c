@@ -52,6 +52,163 @@ static void ( *dm0c_menu_jmp[10] )( PLAYER_WORK *w ) = {
 	dm0c_title_move, wall_paper_move, dm0c_mark_move
 } ;
 
+#ifdef HOST_PORT
+#include "dm0c_netplay_art.h"
+
+#define DM0C_NETPLAY_TEX	0xfe1		/* common texture slot (sel_label.c uses 0xfe0) */
+#define DM0C_NETPLAY_W		256
+#define DM0C_NETPLAY_H		128
+#define DM0C_NETPLAY_FMT	0x902		/* KM_RECTANGLE | RD_ARGB4444 */
+#define DM0C_NETPLAY_TCW	( ( 2u << 27 ) | ( 1u << 26 ) | DM0C_NETPLAY_TEX )
+
+static Uint16 dm0c_netplay_texels[DM0C_NETPLAY_W * DM0C_NETPLAY_H] ;
+static NLthd dm0c_netplay_thd[2] = {
+	{ DM0C_NETPLAY_W, DM0C_NETPLAY_H, DM0C_NETPLAY_FMT, dm0c_netplay_texels, 0 },
+	{ 0, 0, -1, 0, 0 },
+} ;
+static Uint32 dm0c_netplay_line_obj[61] ;
+static Uint32 dm0c_netplay_title_obj[95] ;
+
+static Uint32 dm0c_f32_bits( Float f )
+{
+	union { Float f ; Uint32 u ; } u ;
+
+	u.f = f ;
+	return u.u ;
+}
+
+static Uint32 *dm0c_put_vtx( Uint32 *p, Float x, Float y, Float z, Uint32 w3, Uint32 argb, Uint32 w5, Float u, Float v )
+{
+	p[0] = dm0c_f32_bits( x ) | 1u ;	/* bit 0 tells nl_obj record() this is a 32-byte vertex */
+	p[1] = dm0c_f32_bits( y ) ;
+	p[2] = dm0c_f32_bits( z ) ;
+	p[3] = w3 ;
+	p[4] = argb ;
+	p[5] = w5 ;
+	p[6] = dm0c_f32_bits( u ) ;
+	p[7] = dm0c_f32_bits( v ) ;
+	return p + 8 ;
+}
+
+static Uint32 *dm0c_put_quad( Uint32 *p, Uint32 hdr, Float x0, Float x1, Float y0, Float y1, Float z,
+                              Uint32 w3, Uint32 argb0, Uint32 w5_0, Uint32 argb1, Uint32 w5_1,
+                              Float u0, Float u1, Float v_top, Float v_bot )
+{
+	p[0] = hdr ;
+	p[1] = 4u ;
+	p += 2 ;
+	p = dm0c_put_vtx( p, x0, y0, z, w3, argb0, w5_0, u0, v_bot ) ;
+	p = dm0c_put_vtx( p, x0, y1, z, w3, argb0, w5_0, u0, v_top ) ;
+	p = dm0c_put_vtx( p, x1, y0, z, w3, argb1, w5_1, u1, v_bot ) ;
+	p = dm0c_put_vtx( p, x1, y1, z, w3, argb1, w5_1, u1, v_top ) ;
+	return p ;
+}
+
+static Uint16 dm0c_argb4444( Uint8 b )
+{
+	return ( Uint16 )( ( ( b >> 4 ) << 12 ) | ( ( b & 15 ) * 0x0111u ) ) ;
+}
+
+static void dm0c_netplay_init( void )
+{
+	Uint32 *p ;
+	Float u0, u1, vt, vb ;
+	int i, x, y ;
+
+	/* top half transparent black outside ring glyph outlines; lower rows transparent white around banner text */
+	for( y = 0 ; y < 32 ; y ++ ){
+		for( x = 0 ; x < DM0C_NETPLAY_W ; x ++ ) dm0c_netplay_texels[y * DM0C_NETPLAY_W + x] = 0x0000u ;
+	}
+	for( y = 32 ; y < DM0C_NETPLAY_H ; y ++ ){
+		for( x = 0 ; x < DM0C_NETPLAY_W ; x ++ ) dm0c_netplay_texels[y * DM0C_NETPLAY_W + x] = 0x0fffu ;
+	}
+	for( y = 0 ; y < DM0C_NP_RING_H ; y ++ ){
+		for( x = 0 ; x < DM0C_NP_RING_W ; x ++ ){
+			dm0c_netplay_texels[( 4 + y ) * DM0C_NETPLAY_W + 4 + x] = dm0c_argb4444( dm0c_netplay_ring[y * DM0C_NP_RING_W + x] ) ;
+		}
+	}
+	for( y = 0 ; y < DM0C_NP_DESC_H ; y ++ ){
+		for( x = 0 ; x < DM0C_NP_DESC_W ; x ++ ){
+			dm0c_netplay_texels[( 36 + y ) * DM0C_NETPLAY_W + 4 + x] = dm0c_argb4444( dm0c_netplay_desc1[y * DM0C_NP_DESC_W + x] ) ;
+			dm0c_netplay_texels[( 64 + y ) * DM0C_NETPLAY_W + 4 + x] = dm0c_argb4444( dm0c_netplay_desc2[y * DM0C_NP_DESC_W + x] ) ;
+		}
+	}
+
+	/* ring label model (replaces obj_dm0c->obj[15]) */
+	p = dm0c_netplay_line_obj ;
+	p[0] = 1u ;
+	p[1] = 3u ;
+	p[2] = 0x3d75c380u ;
+	p[3] = 0x3df5c320u ;
+	p[4] = 0u ;
+	p[5] = 0x3fffedf8u ;
+	p += 6 ;
+	p[0] = 0x8200001cu ;
+	p[1] = 0x83000000u ;
+	p[2] = 0x9401a46du ;
+	p[3] = DM0C_NETPLAY_TCW ;
+	p[4] = 0x3d75c380u ;
+	p[5] = 0x3df5c320u ;
+	p[6] = 0u ;
+	p[7] = 0x3fffedf8u ;
+	p[8] = 0u ;
+	p[9] = 0xfffffffdu ;
+	p[10] = 0x3f400000u ;
+	for( i = 11 ; i < 19 ; i ++ ) p[i] = ( i == 15 ) ? 0u : 0x3f800000u ;
+	p[19] = 136u ;
+	p += 20 ;
+	u0 = ( 4.0f + 0.5f ) / DM0C_NETPLAY_W ;
+	u1 = ( 4.0f + DM0C_NP_RING_W - 0.5f ) / DM0C_NETPLAY_W ;
+	vt = ( 4.0f + 0.5f ) / DM0C_NETPLAY_H ;
+	vb = ( 4.0f + DM0C_NP_RING_H - 0.5f ) / DM0C_NETPLAY_H ;
+	p = dm0c_put_quad( p, 0x56u, -1.90f, 1.90f, -0.45f, 0.45f, 0.0f,
+	                   0x7fu, 0xffff6400u, 0xffff6400u, 0xffff9600u, 0xffff9600u,
+	                   u0, u1, vt, vb ) ;
+	*p = 0u ;
+
+	/* center banner description model (replaces obj_dm0c->obj[29]) */
+	p = dm0c_netplay_title_obj ;
+	p[0] = 1u ;
+	p[1] = 3u ;
+	p[2] = 0x3eb7af80u ;
+	p[3] = 0xb5000000u ;
+	p[4] = 0xc1500000u ;
+	p[5] = 0x40a1be98u ;
+	p += 6 ;
+	p[0] = 0x8200002cu ;
+	p[1] = 0x83000000u ;
+	p[2] = 0x9401a46du ;
+	p[3] = DM0C_NETPLAY_TCW ;
+	p[4] = 0x3eb7af80u ;
+	p[5] = 0xb5000000u ;
+	p[6] = 0xc1500000u ;
+	p[7] = 0x40a1be98u ;
+	p[8] = 0u ;
+	p[9] = 0xffffffffu ;
+	p[10] = 0x3f400000u ;
+	for( i = 11 ; i < 19 ; i ++ ) p[i] = ( i == 15 ) ? 0u : 0x3f800000u ;
+	p[19] = 272u ;
+	p += 20 ;
+	u0 = ( 4.0f + 0.5f ) / DM0C_NETPLAY_W ;
+	u1 = ( 4.0f + DM0C_NP_DESC_W - 0.5f ) / DM0C_NETPLAY_W ;
+	vt = ( 36.0f + 0.5f ) / DM0C_NETPLAY_H ;
+	vb = ( 36.0f + DM0C_NP_DESC_H - 0.5f ) / DM0C_NETPLAY_H ;
+	p = dm0c_put_quad( p, 0x16u, -4.57f, 6.23f, 0.17f, 1.13f, -13.00f,
+	                   0u, 0x80000000u, 0x3f800000u, 0x80000000u, 0x3f800000u,
+	                   u0, u1, vt, vb ) ;
+	vt = ( 64.0f + 0.5f ) / DM0C_NETPLAY_H ;
+	vb = ( 64.0f + DM0C_NP_DESC_H - 0.5f ) / DM0C_NETPLAY_H ;
+	p = dm0c_put_quad( p, 0x96u, -4.57f, 6.23f, -1.13f, -0.17f, -13.00f,
+	                   0u, 0x80000000u, 0x3f800000u, 0x80000000u, 0x3f800000u,
+	                   u0, u1, vt, vb ) ;
+	*p = 0u ;
+
+	nlSetCommonTextureOffset( DM0C_NETPLAY_TEX ) ;
+	nlSpriteLoadTextureOnce( dm0c_netplay_thd, 0, 0 ) ;
+	nlSetCommonTextureOffset( 0 ) ;
+}
+#endif
+
 /****************************************************************/
 /*			A piece of the menu: its kind, number and colour	*/
 /****************************************************************/
@@ -107,6 +264,10 @@ void dm0c_line_move( PLAYER_WORK *w )
 		}
 		w->routine_0 ++ ;
 		w->disp_flag = 1 ;
+#ifdef HOST_PORT
+		if( w->type == HOME_SCORE ) w->obj = ( int * )dm0c_netplay_line_obj ;
+		else
+#endif
 		w->obj = obj_dm0c->obj[w->type + 8] ;
 		w->pos = menu_pos_tbl[w->type] ;
 		w->scale = menu_scale_tbl[w->type] ;
@@ -174,6 +335,10 @@ void dm0c_title_move( PLAYER_WORK *w )
 			w->routine_0 ++ ;
 			w->disp_flag = 1 ;
 		}
+#ifdef HOST_PORT
+		if( Sys->home_mode == HOME_SCORE ) w->obj = ( int * )dm0c_netplay_title_obj ;
+		else
+#endif
 		w->obj = obj_dm0c->obj[menu_title_tbl[Sys->home_mode]] ;
 		w->pos = dm0c_zero ;
 	} else if( !w->routine_0 ){
@@ -311,6 +476,9 @@ void home_menu_set( void )
 {
 	int i ;
 
+#ifdef HOST_PORT
+	dm0c_netplay_init() ;
+#endif
 	for( i = 0 ; i < 9 ; i ++ ) dm0c_menu_set( 0, i, 0 ) ;
 	dm0c_menu_set( 3, 0, 0 ) ;
 	dm0c_menu_set( 4, 0, 0 ) ;

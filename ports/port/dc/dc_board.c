@@ -141,3 +141,7 @@ void nlSetIntrStack(void* stack) {
 /* the way out of the game, back to the console's menu */
 void nlExitSystem(void) {
 }
+
+void host_netplay_open(void) {
+    host_front_open_netplay();
+}

@@ -168,6 +168,8 @@ int switch_game(void);              /* to the other one, when its data was found
 const char* game_title(void);
 void pace_set_rate_scale(double scale);
 int host_is_headless(void);
+void host_netplay_open(void);
+void host_front_open_netplay(void);
 /* memory the caller can do without: NULL when there is none. On the 3DS any other allocation that fails stops
    the program with host_out_of_memory. */
 void* host_try_malloc(size_t bytes);

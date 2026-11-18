@@ -17,6 +17,7 @@
 
 #include "naomi_host.h"
 #if defined(_WIN32) && !defined(__3DS__)
+#include "net_ui.h"
 #include "patch_dll.h"
 #endif
 
@@ -574,4 +575,10 @@ int switch_game(void) {
     mode = other;
     host_log("%s mode, from %s", modes[mode].name, path[mode]);
     return start_game();
+}
+
+void host_front_open_netplay(void) {
+#if defined(_WIN32) && !defined(__3DS__)
+    net_ui_open();
+#endif
 }

@@ -955,6 +955,15 @@ void net_ui_shutdown(void) {
     memset(&ui, 0, sizeof ui);
 }
 
+void net_ui_open(void) {
+    if (!ui.inited) return;
+    ui.open = 1;
+    ui.editing_field = 0;
+    if (ui.tab == TAB_REPLAYS && !ui.rep_online_tab) {
+        scan_local_replays();
+    }
+}
+
 int net_ui_is_open(void) {
     return ui.inited && ui.open;
 }

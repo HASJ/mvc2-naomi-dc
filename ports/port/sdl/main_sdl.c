@@ -188,7 +188,7 @@ static void read_frame(void) {
 }
 
 /* MVC2_SHOT=n,m,...: frames saved as shot_n.bmp */
-static void screenshot(void) {
+static void screenshot_buf(const uint32_t* custom_buf) {
     const char* list = getenv("MVC2_SHOT");
     char want[16], name[32];
     if (list == NULL) {
@@ -206,6 +206,10 @@ static void screenshot(void) {
         list += n + 1;
     }
     snprintf(name, sizeof name, "shot_%u.bmp", presented);
+    if (custom_buf != NULL) {
+        save_bmp(name, custom_buf, RD_WIDTH, RD_HEIGHT);
+        return;
+    }
 #ifdef MVC2_SDL3
     /* MVC2_SHOTVIEW=1: the picture as the window shows it */
     if (gpu && getenv("MVC2_SHOTVIEW") != NULL) {
@@ -222,6 +226,10 @@ static void screenshot(void) {
 #endif
     read_frame();
     save_bmp(name, frame, RD_WIDTH, RD_HEIGHT);
+}
+
+static void screenshot(void) {
+    screenshot_buf(NULL);
 }
 
 /* both boards: a 27 MHz pixel clock, 858 by 525 */
@@ -715,6 +723,8 @@ static void present_menu(void) {
     read_frame();
     memcpy(shown, frame, sizeof shown);
     menu_draw(shown, RD_WIDTH, RD_HEIGHT);
+    presented++;
+    screenshot_buf(shown);
     SDL_UpdateTexture(screen, NULL, shown, RD_WIDTH * 4);
     show(screen);
 }
@@ -724,6 +734,8 @@ static void present_net_ui(void) {
     read_frame();
     memcpy(shown, frame, sizeof shown);
     net_ui_draw_overlay(shown, RD_WIDTH, RD_HEIGHT);
+    presented++;
+    screenshot_buf(shown);
     SDL_UpdateTexture(screen, NULL, shown, RD_WIDTH * 4);
     show(screen);
 }
