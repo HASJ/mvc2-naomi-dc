@@ -499,7 +499,7 @@ static int guard_ng_ck( PLAYER_WORK *dm_w )
 	if( dm_w->routine_1 == PL_DAMAGE ) return 1 ;
 	if( !dm_w->routine_1 && dm_w->act_st == N_SPECIAL ) return 1 ;
 	if( dm_w->pl_stance == STANCE_DOWN ) return 1 ;
-	if( dm_w->act_st == N_WALL_JUMP ) return 1 ;
+	if( dm_w->act_st == N_WALL_JUMP || dm_w->act_st == N_AIR_DASH ) return 1 ;
 	if( dm_w->routine_1 == PL_CAUGHT ) return 1 ;
 	if( !pl_guard_ok( dm_w ) ) return 1 ;
 	if( dm_w->cg_atck_flag & CG_ATCK_ALL ) return 1 ;

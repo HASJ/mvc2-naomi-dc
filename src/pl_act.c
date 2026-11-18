@@ -127,6 +127,7 @@ static void jump_ret_set( PLAYER_WORK *pl_w )
 	else pl_w->char_no.b.no = 10 ;
 	pl_w->jump_dir = -1 ;
 	pl_char_set( pl_w, Char_Jump, pl_w->char_no.b.no ) ;
+	if( pl_w->old_act_st == N_AIR_DASH ) pl_guard_req_ck( pl_w ) ;
 }
 
 /****************************************************************/
@@ -786,6 +787,7 @@ Uint8 pl_guard_req_now_ck( PLAYER_WORK *pl_w )
 Uint8 pl_guard_ok( PLAYER_WORK *pl_w )
 {
 	if( pl_w->armor_flag & ARMOR_HEAVY || pl_w->guard_ng_timer || pl_w->team_no ) return 0 ;
+	if( pl_w->act_st == N_AIR_DASH ) return 0 ;
 	if( pl_w->act_st == N_AIR_GUARD ) return 1 ;
 	return jump_atck_ck( pl_w ) ;
 }
@@ -1409,6 +1411,8 @@ static void act_air_dash( PLAYER_WORK *pl_w )
 	pl_w->pl_stance = STANCE_AIR ;
 	pl_w->atck_ng_timer = 2 ;
 	pl_w->jump_dir = 0 ;
+	pl_w->jump_com_cnt = 0 ;
+	pl_w->jump_atk_cnt = JATK_ONE ;
 }
 
 /*==============================================================*/
