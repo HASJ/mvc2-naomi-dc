@@ -440,6 +440,7 @@ static int option_arity(const char* a) {
     } opts[] = {
         { "--p2p", 3 },
         { "--spectate", 2 },
+        { "--host-p2p", 1 },
         { "--config", 1 }, { "--join", 1 }, { "--connect", 1 }, { "--host", 1 },
         { "--relay", 1 }, { "--relay-token", 1 }, { "--delay", 1 }, { "--server", 1 },
         { "--replay", 1 }, { "--replay-verify", 1 }, { "--takeover-test", 1 }, { "--record", 1 },
@@ -491,6 +492,11 @@ int pick_game(int argc, char** argv) {
         }
         missing[i] = check(i, path[i]);
         found[i] = missing[i] == NULL;
+    }
+    if (flag < 0 && built[DC] &&
+        (cli_get_opt("join") != NULL || cli_get_opt("p2p") != NULL ||
+         cli_get_opt("spectate") != NULL || cli_get_opt("host-p2p") != NULL)) {
+        flag = DC;
     }
     if (flag >= 0 && !built[flag]) {
         front_tell("Marvel vs. Capcom 2", "This build has no such mode.");

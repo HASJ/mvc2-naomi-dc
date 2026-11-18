@@ -16,6 +16,7 @@
 #include "net_ui.h"
 #include "http_client.h"
 #include "ggpo_glue.h"
+#include "net_transport.h"
 #include "patch_dll.h"
 #include "replay.h"
 #include "menu_sdl.h"
@@ -121,7 +122,7 @@ static struct {
     int open;
     int tab;
     int row;
-    int editing_field; /* 0=none, 1=display_name, 2=server_url, 3=pin_entry, 4=join_code, 5=player_filter, 6=char_picker */
+    int editing_field; /* 0=none, 1=display_name, 2=server_url, 3=pin_entry, 4=join_code, 5=player_filter, 6=char_picker, 7=p2p */
     int nav_axis[2];
 
     /* Persistent profile */
@@ -164,6 +165,15 @@ static struct {
     int lobby_spectate;
     int lobby_peer_count;
     char lobby_peers_summary[4][48];
+
+    /* Serverless P2P Direct Link */
+    int p2p_hosting;
+    uint16_t p2p_host_port;
+    uint32_t p2p_seed;
+    int p2p_delay;
+    char p2p_host_addr[64];
+    char p2p_join_buf[256];
+    char p2p_invite_uri[384];
 
     /* Leaderboard */
     int lb_around_me;
@@ -930,6 +940,7 @@ static void handle_http_response(const HTTP_EVENT* ev) {
 int net_ui_init(void) {
     const char* env_srv = getenv("MVC2_SERVER_URL");
     const char* cli_srv = cli_get_opt("server");
+    char ip_buf[64] = "127.0.0.1";
     if (ui.inited) return 1;
     memset(&ui, 0, sizeof ui);
     snprintf(ui.server_url, sizeof ui.server_url, "%s",
@@ -938,6 +949,10 @@ int net_ui_init(void) {
     ui.rating = 1500.0;
     ui.rd = 350.0;
     ui.create_ft = 3;
+    ui.p2p_host_port = 27111;
+    ui.p2p_delay = 1;
+    net_transport_detect_local_ip(ip_buf, sizeof ip_buf);
+    snprintf(ui.p2p_host_addr, sizeof ui.p2p_host_addr, "%s:%u", ip_buf, (unsigned)ui.p2p_host_port);
     ui.filter_team_a[0] = ui.filter_team_a[1] = ui.filter_team_a[2] = -1;
     ui.filter_team_b[0] = ui.filter_team_b[1] = ui.filter_team_b[2] = -1;
     ui.filter_assist = -1;
@@ -971,10 +986,67 @@ int net_ui_is_open(void) {
 int net_ui_has_hud(void) {
     if (!ui.inited) return 0;
     if (ui.toast[0] && ui_now_ms() < ui.toast_until_ms) return 1;
+    if (ui.p2p_hosting && !ggpo_glue_is_active()) return 1;
     if (ui.in_queue || ui.match_found_modal) return 1;
     if (ggpo_glue_is_active() && ui.show_net_hud) return 1;
     if (replay_session_is_active() && ui.show_replay_hud) return 1;
     return 0;
+}
+
+int net_ui_is_p2p_hosting(void) {
+    return ui.inited && ui.p2p_hosting && !ggpo_glue_is_active();
+}
+
+int net_ui_start_serverless_p2p_host(uint16_t port, uint32_t seed, int delay) {
+    char host_ip[64] = "127.0.0.1";
+    uint16_t req_port = port;
+    uint16_t bound_port;
+    const char* colon;
+
+    if (!ui.inited && !net_ui_init()) return 0;
+
+    snprintf(host_ip, sizeof host_ip, "%s", ui.p2p_host_addr[0] ? ui.p2p_host_addr : "127.0.0.1:27111");
+    colon = strrchr(host_ip, ':');
+    if (colon != NULL) {
+        size_t hlen = (size_t)(colon - host_ip);
+        if (req_port == 0 && colon[1] != 0) {
+            int p = atoi(colon + 1);
+            if (p > 0 && p <= 65535) req_port = (uint16_t)p;
+        }
+        host_ip[hlen] = 0;
+    }
+    if (host_ip[0] == 0) {
+        net_transport_detect_local_ip(host_ip, sizeof host_ip);
+    }
+    if (req_port == 0) req_port = 27111u;
+
+    if (seed == 0u) {
+        seed = (uint32_t)ui_now_ms() ^ ((uint32_t)GetCurrentProcessId() << 16) ^ 0xA53C9E17u;
+        if (seed == 0u) seed = 0x4D564332u;
+    }
+    if (delay < 1) delay = 1;
+    if (delay > 8) delay = 8;
+
+    bound_port = net_transport_listen_p2p(req_port, seed);
+    if (bound_port == 0u) {
+        show_toast("FAILED TO BIND P2P UDP PORT");
+        return 0;
+    }
+
+    ui.p2p_host_port = bound_port;
+    ui.p2p_seed = seed;
+    ui.p2p_delay = delay;
+    ui.p2p_hosting = 1;
+    snprintf(ui.p2p_host_addr, sizeof ui.p2p_host_addr, "%s:%u", host_ip, (unsigned)bound_port);
+    snprintf(ui.p2p_invite_uri, sizeof ui.p2p_invite_uri,
+             "umvc2://p2p/%s:%u?seed=0x%08X&patch=%s&delay=%d",
+             host_ip, (unsigned)bound_port, (unsigned)seed, patch_dll_active_id(), delay);
+    if (!host_is_headless()) {
+        (void)SDL_SetClipboardText(ui.p2p_invite_uri);
+    }
+    host_log("SERVERLESS_P2P_HOST uri=%s", ui.p2p_invite_uri);
+    show_toast("P2P LINK COPIED! WAITING FOR PEER (NO LOGS)");
+    return 1;
 }
 
 void net_ui_toggle_replay_hud(void) {
@@ -989,22 +1061,146 @@ int net_ui_replay_hud_visible(void) {
     return ui.show_replay_hud;
 }
 
+static const char* uri_scheme_after(const char* uri, const char* path_prefix) {
+    static const char* const schemes[2] = { "umvsc2://", "umvc2://" };
+    size_t i;
+    if (!uri) return NULL;
+    for (i = 0; i < 2; i++) {
+        size_t slen = strlen(schemes[i]);
+        size_t plen = strlen(path_prefix);
+        const char* p = uri;
+        while (*p != 0) {
+            if (_strnicmp(p, schemes[i], slen) == 0 && _strnicmp(p + slen, path_prefix, plen) == 0) {
+                return p + slen + plen;
+            }
+            p++;
+        }
+    }
+    return NULL;
+}
+
+static int uri_query_param(const char* q, const char* key, char* out, size_t cap) {
+    size_t klen = strlen(key);
+    const char* p = q;
+    if (!q || !out || cap == 0) return 0;
+    if (*p == '?') p++;
+    while (*p != 0) {
+        const char* amp = strchr(p, '&');
+        size_t seg_len = amp ? (size_t)(amp - p) : strlen(p);
+        if (seg_len > klen && p[klen] == '=' && _strnicmp(p, key, klen) == 0) {
+            size_t vlen = seg_len - klen - 1;
+            if (vlen >= cap) vlen = cap - 1;
+            memcpy(out, p + klen + 1, vlen);
+            out[vlen] = 0;
+            return 1;
+        }
+        if (!amp) break;
+        p = amp + 1;
+    }
+    return 0;
+}
+
+typedef struct P2P_URI_ARGS {
+    char host_port[128];
+    uint32_t seed;
+    int delay;
+    int side;
+    uint16_t guest_port;
+    char patch[32];
+} P2P_URI_ARGS;
+
+static int parse_p2p_uri(const char* after_p2p, P2P_URI_ARGS* out) {
+    const char* q;
+    size_t n;
+    uint32_t ip_be = 0;
+    uint16_t port_be = 0;
+    char val[64];
+
+    if (!after_p2p || !out) return 0;
+    memset(out, 0, sizeof *out);
+    q = strchr(after_p2p, '?');
+    n = q ? (size_t)(q - after_p2p) : strlen(after_p2p);
+    while (n > 0 && after_p2p[n - 1] == '/') n--;
+    if (n == 0 || n >= sizeof out->host_port) return 0;
+    memcpy(out->host_port, after_p2p, n);
+    out->host_port[n] = 0;
+    if (!net_transport_parse_endpoint(out->host_port, &ip_be, &port_be)) return 0;
+
+    out->seed = 0x4D564332u;
+    out->delay = 1;
+    out->side = 2;
+    {
+        uint16_t hport = (uint16_t)(((port_be & 0xFFu) << 8) | ((port_be >> 8) & 0xFFu));
+        out->guest_port = (hport == 27112u) ? 27113u : 27112u;
+    }
+    snprintf(out->patch, sizeof out->patch, "%s", patch_dll_active_id());
+
+    if (q) {
+        if (uri_query_param(q, "seed", val, sizeof val) && val[0]) {
+            uint32_t s = (uint32_t)strtoul(val, NULL, 0);
+            if (s != 0u) out->seed = s;
+        }
+        if (uri_query_param(q, "delay", val, sizeof val) && val[0]) {
+            int d = atoi(val);
+            if (d >= 1 && d <= 8) out->delay = d;
+        }
+        if (uri_query_param(q, "side", val, sizeof val) && val[0]) {
+            int s = atoi(val);
+            if (s == 1 || s == 2) out->side = s;
+        }
+        if (uri_query_param(q, "port", val, sizeof val) && val[0]) {
+            int p = atoi(val);
+            if (p > 0 && p <= 65535) out->guest_port = (uint16_t)p;
+        }
+        if (uri_query_param(q, "patch", val, sizeof val) && val[0]) {
+            snprintf(out->patch, sizeof out->patch, "%s", val);
+        }
+    }
+    return 1;
+}
+
 void net_ui_handle_join_uri(const char* uri) {
     char code[16] = "", key[128] = "", path[128], body[256];
     const char* p;
     const char* q;
     if (!uri || !ui.inited) return;
-    p = strstr(uri, "umvsc2://join/");
+
+    p = uri_scheme_after(uri, "p2p/");
+    if (p) {
+        P2P_URI_ARGS args;
+        if (!parse_p2p_uri(p, &args)) {
+            show_toast("INVALID P2P LINK (USE HOST:PORT)");
+            return;
+        }
+        if (args.patch[0] && _stricmp(args.patch, patch_dll_active_id()) != 0) {
+            if (!patch_dll_activate(args.patch)) {
+                show_toast("MISSING PATCH FOR P2P LINK");
+                return;
+            }
+        }
+        if (ui.p2p_hosting) {
+            net_transport_close();
+            ui.p2p_hosting = 0;
+        }
+        ui.open = 0;
+        ui.show_net_hud = 1;
+        host_log("SERVERLESS_P2P_JOIN host=%s side=%d seed=0x%08X delay=%d patch=%s",
+                 args.host_port, args.side, (unsigned)args.seed, args.delay, args.patch);
+        ggpo_glue_start_p2p(args.side, args.guest_port, args.host_port, NULL,
+                            args.seed, 0, args.delay, args.seed, args.patch, NULL);
+        return;
+    }
+
+    p = uri_scheme_after(uri, "join/");
     if (!p) return;
-    p += 14;
     q = strchr(p, '?');
     if (q) {
         size_t n = (size_t)(q - p);
+        while (n > 0 && p[n - 1] == '/') n--;
         if (n >= sizeof code) n = sizeof code - 1;
         memcpy(code, p, n);
         code[n] = 0;
-        const char* kp = strstr(q, "k=");
-        if (kp) snprintf(key, sizeof key, "%s", kp + 2);
+        (void)uri_query_param(q, "k", key, sizeof key);
     } else {
         snprintf(code, sizeof code, "%s", p);
     }
@@ -1026,6 +1222,17 @@ void net_ui_handle_join_uri(const char* uri) {
 void net_ui_tick(void) {
     HTTP_EVENT ev;
     if (!ui.inited) return;
+    if (ui.p2p_hosting && !ggpo_glue_is_active()) {
+        char peer_addr[64];
+        if (net_transport_poll_p2p_peer(peer_addr, sizeof peer_addr)) {
+            ui.p2p_hosting = 0;
+            ui.open = 0;
+            ui.show_net_hud = 1;
+            host_log("SERVERLESS_P2P_CONNECTED peer=%s seed=0x%08X", peer_addr, (unsigned)ui.p2p_seed);
+            ggpo_glue_start_p2p(1, ui.p2p_host_port, peer_addr, NULL, ui.p2p_seed,
+                                0, ui.p2p_delay, ui.p2p_seed, patch_dll_active_id(), NULL);
+        }
+    }
     while (http_client_poll(&ev)) {
         if (ev.type == HTTP_EV_RESPONSE) {
             handle_http_response(&ev);
@@ -1054,6 +1261,15 @@ static void handle_text_char(char ch) {
     else if (ui.editing_field == 2) { dst = ui.server_url; cap = sizeof ui.server_url; }
     else if (ui.editing_field == 4) { dst = ui.join_code_buf; cap = sizeof ui.join_code_buf; }
     else if (ui.editing_field == 5) { dst = ui.filter_player; cap = sizeof ui.filter_player; }
+    else if (ui.editing_field == 7) {
+        if (ui.tab == TAB_LOBBIES && ui.row == 7) {
+            dst = ui.p2p_host_addr;
+            cap = sizeof ui.p2p_host_addr;
+        } else {
+            dst = ui.p2p_join_buf;
+            cap = sizeof ui.p2p_join_buf;
+        }
+    }
     if (!dst) return;
     {
         size_t n = strlen(dst);
@@ -1066,8 +1282,22 @@ static void handle_text_char(char ch) {
     }
 }
 
+static void join_p2p_spec(const char* raw) {
+    char spec[384];
+    const char* s = raw;
+    if (!raw) return;
+    while (*s == ' ' || *s == '\t' || *s == '\r' || *s == '\n') s++;
+    if (!s[0]) return;
+    if (uri_scheme_after(s, "p2p/") != NULL || uri_scheme_after(s, "join/") != NULL) {
+        snprintf(spec, sizeof spec, "%s", s);
+    } else {
+        snprintf(spec, sizeof spec, "umvc2://p2p/%s", s);
+    }
+    net_ui_handle_join_uri(spec);
+}
+
 static void tab_action(int up, int down, int left, int right, int enter, int back, int alt_x) {
-    const int max_rows[NUM_TABS] = { 6, 3, 7, 4, 8 };
+    const int max_rows[NUM_TABS] = { 6, 3, 9, 4, 8 };
 
     if (ui.editing_field == 6) {
         if (left) ui.picker_cursor = (ui.picker_cursor + 55) % 56;
@@ -1101,9 +1331,12 @@ static void tab_action(int up, int down, int left, int right, int enter, int bac
 
     if (ui.editing_field != 0) {
         if (enter || back) {
+            int was = ui.editing_field;
             ui.editing_field = 0;
-            http_client_set_base_url(ui.server_url);
-            save_profile_cfg();
+            if (was == 1 || was == 2) {
+                http_client_set_base_url(ui.server_url);
+                save_profile_cfg();
+            }
         }
         return;
     }
@@ -1197,6 +1430,43 @@ static void tab_action(int up, int down, int left, int right, int enter, int bac
             }
         } else if (ui.row == 6 && enter) {
             start_training_standby();
+        } else if (ui.row == 7) {
+            if (ui.p2p_hosting) {
+                if (enter) {
+                    (void)SDL_SetClipboardText(ui.p2p_invite_uri);
+                    show_toast("P2P LINK COPIED!");
+                } else if (alt_x) {
+                    net_transport_close();
+                    ui.p2p_hosting = 0;
+                    show_toast("STOPPED P2P HOSTING");
+                }
+            } else {
+                if (left && ui.p2p_delay > 1) ui.p2p_delay--;
+                else if (right && ui.p2p_delay < 4) ui.p2p_delay++;
+                else if (enter) net_ui_start_serverless_p2p_host(0, 0, ui.p2p_delay);
+                else if (alt_x) ui.editing_field = 7;
+            }
+        } else if (ui.row == 8) {
+            if (alt_x) {
+                ui.editing_field = 7;
+            } else if (enter) {
+                if (ui.p2p_join_buf[0]) {
+                    join_p2p_spec(ui.p2p_join_buf);
+                } else {
+                    char* clip = SDL_GetClipboardText();
+                    if (clip != NULL) {
+                        if (clip[0]) {
+                            snprintf(ui.p2p_join_buf, sizeof ui.p2p_join_buf, "%s", clip);
+                            join_p2p_spec(clip);
+                        } else {
+                            show_toast("CLIPBOARD EMPTY (X TO TYPE LINK/IP)");
+                        }
+                        SDL_free(clip);
+                    } else {
+                        ui.editing_field = 7;
+                    }
+                }
+            }
         }
     } else if (ui.tab == TAB_LEADERBOARD) {
         if (ui.row == 1 && (left || right || enter)) {
@@ -1323,14 +1593,23 @@ int net_ui_event(const SDL_Event* e) {
             if (k == SDLK_6) { act_pin_pad(PIN_A2); return 1; }
             if (k == SDLK_BACKSPACE && ui.pin_len > 0) { ui.pin_len--; return 1; }
         }
-        if (ui.editing_field == 1 || ui.editing_field == 2 || ui.editing_field == 4 || ui.editing_field == 5) {
+        if (ui.editing_field == 1 || ui.editing_field == 2 || ui.editing_field == 4 || ui.editing_field == 5 || ui.editing_field == 7) {
+            int shift = (e->key.mod & SDL_KMOD_SHIFT) != 0;
             if (k == SDLK_BACKSPACE) { handle_text_char('\b'); return 1; }
-            if (k >= SDLK_A && k <= SDLK_Z) { handle_text_char((char)('A' + (k - SDLK_A))); return 1; }
-            if (k >= SDLK_0 && k <= SDLK_9) { handle_text_char((char)('0' + (k - SDLK_0))); return 1; }
-            if (k == SDLK_MINUS) { handle_text_char('-'); return 1; }
+            if (k >= SDLK_A && k <= SDLK_Z) {
+                char base = (ui.editing_field == 7 && !shift) ? 'a' : 'A';
+                handle_text_char((char)(base + (k - SDLK_A)));
+                return 1;
+            }
+            if (k >= SDLK_0 && k <= SDLK_9) {
+                handle_text_char((ui.editing_field == 7 && shift && k == SDLK_7) ? '&' : (char)('0' + (k - SDLK_0)));
+                return 1;
+            }
+            if (k == SDLK_MINUS) { handle_text_char(shift ? '_' : '-'); return 1; }
             if (k == SDLK_PERIOD) { handle_text_char('.'); return 1; }
-            if (k == SDLK_SLASH) { handle_text_char('/'); return 1; }
+            if (k == SDLK_SLASH) { handle_text_char(shift ? '?' : '/'); return 1; }
             if (k == SDLK_SEMICOLON) { handle_text_char(':'); return 1; }
+            if (k == SDLK_EQUALS) { handle_text_char('='); return 1; }
         }
         tab_action(k == SDLK_UP, k == SDLK_DOWN, k == SDLK_LEFT, k == SDLK_RIGHT,
                    (k == SDLK_RETURN || k == SDLK_KP_ENTER) && !e->key.repeat,
@@ -1444,11 +1723,26 @@ void net_ui_draw_overlay(uint32_t* frame, int w, int h) {
                  ui.lobby_ready ? "READY" : "NOT READY", ui.active_p1[0] ? ui.active_p1 : "-", ui.active_p2[0] ? ui.active_p2 : "-");
         draw_str(frame, w, h, 28, 166, line, ui.row == 5 ? C_YELLOW : C_WHITE);
         draw_str(frame, w, h, 28, 184, "[PRACTICE IN TRAINING WHILE WAITING]", ui.row == 6 ? C_YELLOW : C_WHITE);
-        for (i = 0; i < ui.pub_lobby_count && i < 6; i++) {
+        if (ui.p2p_hosting) {
+            snprintf(line, sizeof line, "[P2P HOSTING %s - ENT:COPY LINK | X:STOP]", ui.p2p_host_addr);
+            draw_str(frame, w, h, 28, 202, line, ui.row == 7 ? C_YELLOW : C_GREEN);
+        } else {
+            snprintf(line, sizeof line, "[HOST SERVERLESS P2P & COPY UMVC2:// LINK] DLY:%dF %s%s",
+                     ui.p2p_delay, ui.p2p_host_addr, (ui.editing_field == 7 && ui.row == 7) ? "_" : "");
+            draw_str(frame, w, h, 28, 202, line, ui.row == 7 ? C_YELLOW : C_GREEN);
+        }
+        {
+            size_t jlen = strlen(ui.p2p_join_buf);
+            const char* jdisp = jlen > 42 ? ui.p2p_join_buf + (jlen - 42) : ui.p2p_join_buf;
+            snprintf(line, sizeof line, "[JOIN P2P LINK/IP]: %s%s (ENT:GO/PASTE X:TYPE)",
+                     jdisp[0] ? jdisp : "<CLIPBOARD>", (ui.editing_field == 7 && ui.row == 8) ? "_" : "");
+            draw_str(frame, w, h, 28, 220, line, ui.row == 8 ? C_YELLOW : C_CYAN);
+        }
+        for (i = 0; i < ui.pub_lobby_count && i < 5; i++) {
             snprintf(line, sizeof line, "%s  %-18s  %d/%d  FT%d", ui.pub_lobbies[i].code,
                      ui.pub_lobbies[i].name, ui.pub_lobbies[i].player_count, ui.pub_lobbies[i].max_players,
                      ui.pub_lobbies[i].ft_target);
-            draw_str(frame, w, h, 36, 214 + i * 16, line, C_GREY);
+            draw_str(frame, w, h, 36, 244 + i * 16, line, C_GREY);
         }
     } else if (ui.tab == TAB_LEADERBOARD) {
         draw_str(frame, w, h, 28, 72, "GLICKO-2 RANKED LEADERBOARD (ENTER/A: VIEW REPLAYS)", C_CYAN);
@@ -1525,6 +1819,13 @@ void net_ui_draw_hud(uint32_t* argb, int w, int h) {
                  st.using_relay ? " | RELAY" : "");
         draw_border_box(argb, w, h, w / 2 - 140, 4, 280, 16, 0xC0080C18u, C_BORDER);
         draw_str(argb, w, h, w / 2 - 128, 8, line, C_WHITE);
+    }
+
+    /* Serverless P2P Standby Badge (Top-Right) */
+    if (ui.p2p_hosting && !ggpo_glue_is_active() && !ui.open) {
+        snprintf(line, sizeof line, "DIRECT P2P HOST :%u | WAITING", (unsigned)ui.p2p_host_port);
+        draw_border_box(argb, w, h, w - 216, 6, 210, 18, 0xD012203Cu, C_GREEN);
+        draw_str(argb, w, h, w - 208, 11, line, C_YELLOW);
     }
 
     /* Ranked Queue Training Standby Badge (Top-Right) */
@@ -1605,6 +1906,25 @@ int net_ui_run_smoke_test(void) {
     net_ui_handle_join_uri("umvsc2://join/SMK999?k=testkey");
     net_ui_tick();
     http_client_ws_close();
+
+    {
+        P2P_URI_ARGS p2p_args;
+        if (!parse_p2p_uri("127.0.0.1:27111?seed=0x13572468&patch=umvsc2-test&delay=2&port=27115", &p2p_args) ||
+            strcmp(p2p_args.host_port, "127.0.0.1:27111") != 0 ||
+            p2p_args.seed != 0x13572468u || p2p_args.delay != 2 || p2p_args.guest_port != 27115u ||
+            uri_scheme_after("umvc2://p2p/127.0.0.1:27111/", "p2p/") == NULL ||
+            !net_ui_start_serverless_p2p_host(0, 0x13572468u, 2) ||
+            !net_ui_is_p2p_hosting()) {
+            host_log("UI_SMOKE_TEST FAIL: serverless p2p check failed");
+            net_transport_close();
+            ui.p2p_hosting = 0;
+            net_ui_shutdown();
+            return 1;
+        }
+        net_ui_draw_hud(scratch_buf, 640, 480);
+        net_transport_close();
+        ui.p2p_hosting = 0;
+    }
 
     /* Sanity check MVC2_FIGHTERS table covers all 56 unique IDs */
     for (t = 0; t < 56; t++) {

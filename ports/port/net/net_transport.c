@@ -45,6 +45,7 @@ typedef struct {
 
 static struct {
     int opened;
+    int listening_p2p;
     SOCKET sock;
     uint16_t local_port;
     uint32_t peer_ip_be;
@@ -314,6 +315,16 @@ static void drain_socket_rx(void) {
 
         /* Handle NAT hole-punch probes */
         if (pay_len == 11 && memcmp(pay, "PUNCH!", 6) == 0) {
+            if (nt.listening_p2p && !nt.has_peer) {
+                uint32_t tok = (uint32_t)pay[6] | ((uint32_t)pay[7] << 8) |
+                               ((uint32_t)pay[8] << 16) | ((uint32_t)pay[9] << 24);
+                if (nt.relay_token != 0 && tok != nt.relay_token) {
+                    continue;
+                }
+                nt.peer_ip_be = src_ip;
+                nt.peer_port_be = src_port;
+                nt.has_peer = 1;
+            }
             if (!nt.has_relay || src_ip != nt.relay_ip_be || src_port != nt.relay_port_be) {
                 uint8_t back[11];
                 nt.direct_ok = 1;
@@ -349,6 +360,12 @@ static void drain_socket_rx(void) {
 
         /* Enqueue GGPO UdpMsg packet */
         if (pay_len > MAX_PKT_BYTES) continue;
+        if (nt.listening_p2p && !nt.has_peer && pay_len >= 12) {
+            nt.peer_ip_be = src_ip;
+            nt.peer_port_be = src_port;
+            nt.has_peer = 1;
+            nt.direct_ok = 1;
+        }
         next_tail = (nt.rx_tail + 1) % GGPO_RX_CAP;
         if (next_tail != nt.rx_head) {
             nt.ggpo_rx[nt.rx_tail].src_ip_be = src_ip;
@@ -360,11 +377,151 @@ static void drain_socket_rx(void) {
     }
 }
 
+static SOCKET create_nonblocking_udp_socket(void) {
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    u_long nonblock = 1;
+    if (s == INVALID_SOCKET) {
+        return INVALID_SOCKET;
+    }
+    ioctlsocket(s, FIONBIO, &nonblock);
+    return s;
+}
+
+static int bind_udp_port(SOCKET s, uint16_t port, uint16_t* out_bound_port) {
+    struct sockaddr_in sin;
+    int slen;
+    memset(&sin, 0, sizeof sin);
+    sin.sin_family = AF_INET;
+    sin.sin_addr.s_addr = htonl(INADDR_ANY);
+    sin.sin_port = htons(port);
+    if (bind(s, (const struct sockaddr*)&sin, sizeof sin) == SOCKET_ERROR) {
+        return 0;
+    }
+    slen = sizeof sin;
+    if (out_bound_port != NULL) {
+        if (getsockname(s, (struct sockaddr*)&sin, &slen) == 0) {
+            *out_bound_port = ntohs(sin.sin_port);
+        } else {
+            *out_bound_port = port;
+        }
+    }
+    return 1;
+}
+
+int net_transport_detect_local_ip(char* out_ip, size_t cap) {
+    WSADATA wsa;
+    SOCKET s;
+    struct sockaddr_in dst, local;
+    int llen = sizeof local;
+    int ok = 0;
+
+    if (!out_ip || cap == 0) return 0;
+    snprintf(out_ip, cap, "127.0.0.1");
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        return 0;
+    }
+    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s != INVALID_SOCKET) {
+        memset(&dst, 0, sizeof dst);
+        dst.sin_family = AF_INET;
+        dst.sin_addr.s_addr = inet_addr("8.8.8.8");
+        dst.sin_port = htons(53);
+        if (connect(s, (const struct sockaddr*)&dst, sizeof dst) == 0 &&
+            getsockname(s, (struct sockaddr*)&local, &llen) == 0 &&
+            local.sin_addr.s_addr != 0 &&
+            local.sin_addr.s_addr != htonl(INADDR_LOOPBACK)) {
+            snprintf(out_ip, cap, "%s", inet_ntoa(local.sin_addr));
+            ok = 1;
+        }
+        closesocket(s);
+    }
+    WSACleanup();
+    return ok;
+}
+
+uint16_t net_transport_listen_p2p(uint16_t preferred_port, uint32_t token) {
+    WSADATA wsa;
+    uint16_t base = preferred_port ? preferred_port : 27111u;
+    uint16_t bound = 0;
+    int offset;
+
+    net_transport_close();
+    memset(&nt, 0, sizeof nt);
+    nt.sock = INVALID_SOCKET;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        return 0;
+    }
+
+    nt.sock = create_nonblocking_udp_socket();
+    if (nt.sock == INVALID_SOCKET) {
+        WSACleanup();
+        return 0;
+    }
+    for (offset = 0; offset < 16; offset++) {
+        uint16_t cand = (uint16_t)(base + offset);
+        if (cand != 0 && bind_udp_port(nt.sock, cand, &bound)) {
+            break;
+        }
+    }
+    if (bound == 0 && !bind_udp_port(nt.sock, 0, &bound)) {
+        closesocket(nt.sock);
+        nt.sock = INVALID_SOCKET;
+        WSACleanup();
+        return 0;
+    }
+
+    nt.local_port = bound;
+    nt.relay_token = token;
+    nt.side = 1;
+    nt.punch_start_ms = mono_ms();
+    nt.listening_p2p = 1;
+    nt.opened = 1;
+    host_log("net_transport: listening serverless p2p on udp:%u token=%08X", nt.local_port, nt.relay_token);
+    return nt.local_port;
+}
+
+int net_transport_poll_p2p_peer(char* out_peer_addr, size_t cap) {
+    struct in_addr ina;
+    if (!nt.opened || !nt.listening_p2p) return 0;
+    drain_socket_rx();
+    if (!nt.has_peer) return 0;
+    if (out_peer_addr && cap > 0) {
+        ina.s_addr = nt.peer_ip_be;
+        snprintf(out_peer_addr, cap, "%s:%u", inet_ntoa(ina), (unsigned)ntohs(nt.peer_port_be));
+    }
+    return 1;
+}
+
+uint16_t net_transport_local_port(void) {
+    return nt.opened ? nt.local_port : 0;
+}
+
 int net_transport_open(const NET_TRANSPORT_CFG* cfg) {
     WSADATA wsa;
-    struct sockaddr_in sin;
-    u_long nonblock = 1;
-    int optval = 1;
+
+    if (nt.opened && nt.listening_p2p && nt.sock != INVALID_SOCKET &&
+        (cfg == NULL || cfg->local_port == 0 || cfg->local_port == nt.local_port)) {
+        nt.listening_p2p = 0;
+        nt.side = (cfg && (cfg->side == 1 || cfg->side == 2)) ? cfg->side : 1;
+        nt.relay_token = cfg ? cfg->relay_token : nt.relay_token;
+        nt.force_relay = 0;
+        nt.use_relay = 0;
+        nt.has_relay = 0;
+        nt.cs_head = 0;
+        nt.cs_tail = 0;
+        memset(nt.txq, 0, sizeof nt.txq);
+        if (cfg && cfg->peer_addr && net_transport_parse_endpoint(cfg->peer_addr, &nt.peer_ip_be, &nt.peer_port_be)) {
+            nt.has_peer = 1;
+        }
+        parse_netsim_env();
+        nt.prng = (uint32_t)GetCurrentProcessId() ^ ((uint32_t)nt.side * 2654435761u) ^ 0xA511E9B3u;
+        nt.punch_start_ms = mono_ms();
+        nt.last_punch_ms = 0;
+        host_log("net_transport: upgraded p2p listener udp:%u -> peer=%s netsim=(delay=%d jitter=%d loss=%d%%)",
+                 nt.local_port, (cfg && cfg->peer_addr) ? cfg->peer_addr : "none",
+                 nt.delay_ms, nt.jitter_ms, nt.loss_pct);
+        return 1;
+    }
 
     net_transport_close();
     memset(&nt, 0, sizeof nt);
@@ -389,27 +546,17 @@ int net_transport_open(const NET_TRANSPORT_CFG* cfg) {
         nt.has_peer = 1;
     }
 
-    nt.sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    nt.sock = create_nonblocking_udp_socket();
     if (nt.sock == INVALID_SOCKET) {
+        WSACleanup();
         return 0;
     }
-    setsockopt(nt.sock, SOL_SOCKET, SO_REUSEADDR, (const char*)&optval, sizeof optval);
-    ioctlsocket(nt.sock, FIONBIO, &nonblock);
-
-    memset(&sin, 0, sizeof sin);
-    sin.sin_family = AF_INET;
-    sin.sin_addr.s_addr = htonl(INADDR_ANY);
-    sin.sin_port = htons(nt.local_port);
-    if (bind(nt.sock, (const struct sockaddr*)&sin, sizeof sin) == SOCKET_ERROR) {
+    if (!bind_udp_port(nt.sock, nt.local_port, &nt.local_port) &&
+        (nt.local_port == 0 || !bind_udp_port(nt.sock, 0, &nt.local_port))) {
         closesocket(nt.sock);
         nt.sock = INVALID_SOCKET;
+        WSACleanup();
         return 0;
-    }
-    if (nt.local_port == 0) {
-        int slen = sizeof sin;
-        if (getsockname(nt.sock, (struct sockaddr*)&sin, &slen) == 0) {
-            nt.local_port = ntohs(sin.sin_port);
-        }
     }
 
     parse_netsim_env();

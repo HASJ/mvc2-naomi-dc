@@ -15,18 +15,18 @@
         },
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "07cba8e5157a3127d22965463fc9827c2a3a9fdeb1b3a71523759fa2b004841a"
+          "sha256": "2264fac4ed6028e6b1c8aefaeceed7d10dcb16964ecf2f9f5a102eb2ab95ac9c"
         }
       ],
-      "verified_at": "2026-11-18T12:18:56Z"
+      "verified_at": "2026-11-18T13:41:50Z"
     },
     {
       "id": "runtime-data-lookup",
-      "text": "ports/port/sdl/start.c locates game data via SDL_GetBasePath(): roms/mvsc2 or disc (or arcade=/dc=/MVC2_ROM/MVC2_DC_DISC). Supports --config=<dir|file> (forwarding multi-arg CLI options like --p2p 3 and --spectate 2 without misreading positional paths), host_config_path() for per-instance logs/saves/replays/netplay_profile.cfg/mvc2_ipc.port, host_front_open_netplay(), and unlock = all in mvc2.cfg.",
+      "text": "ports/port/sdl/start.c locates game data via SDL_GetBasePath(): roms/mvsc2 or disc (or arcade=/dc=/MVC2_ROM/MVC2_DC_DISC). Supports --config=<dir|file> (forwarding multi-arg CLI options like --p2p 3, --spectate 2, and --host-p2p 1, and defaulting to DC mode when netplay flags are passed), host_config_path() for per-instance logs/saves/replays/netplay_profile.cfg/mvc2_ipc.port, host_front_open_netplay(), and unlock = all in mvc2.cfg.",
       "sources": [
         {
           "path": "ports/port/sdl/start.c",
-          "sha256": "46c44cc542e7a58a37ce2a66b44dee390c4068e0b2ebd91332a300c4e2af3290"
+          "sha256": "cb241500beaace35a184e4c454803f447a4eb9a413710f04d8c7e7356d363151"
         },
         {
           "path": "ports/port/dist/PLAYING.md",
@@ -37,7 +37,7 @@
           "sha256": "ec24e9ef2923e54e5ce623392167513ed6e484cf08b0284f0ee1d698c805fb53"
         }
       ],
-      "verified_at": "2026-11-18T12:18:56Z"
+      "verified_at": "2026-11-18T13:41:50Z"
     },
     {
       "id": "dc-disc-validation",
@@ -52,14 +52,14 @@
     },
     {
       "id": "headless-test-env",
-      "text": "MVC2_FRAMES=<N> or test flags (--savestate-check, --patch-check, --replay-verify, --takeover-test, --ui-smoke-test, --synctest) activate test_run mode in main_sdl.c: SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN=0 + SW_SHOWMINNOACTIVE avoids focus stealing, no audio device is opened, software renderer rules apply unless configured gpu, frames_left counts down even while F1/F4 overlays are open, and MVC2_SHOT captures overlays too.",
+      "text": "MVC2_FRAMES=<N> or test flags (--savestate-check, --patch-check, --replay-verify, --takeover-test, --ui-smoke-test, --synctest) activate test_run mode in main_sdl.c: SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN=0 + SW_SHOWMINNOACTIVE avoids focus stealing, no audio device is opened, software renderer rules apply unless configured gpu, frames_left pauses during --host-p2p wait (capped 20s) and while unsynchronized in netplay, and MVC2_SHOT captures overlays too.",
       "sources": [
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "07cba8e5157a3127d22965463fc9827c2a3a9fdeb1b3a71523759fa2b004841a"
+          "sha256": "2264fac4ed6028e6b1c8aefaeceed7d10dcb16964ecf2f9f5a102eb2ab95ac9c"
         }
       ],
-      "verified_at": "2026-11-18T12:18:56Z"
+      "verified_at": "2026-11-18T13:41:50Z"
     },
     {
       "id": "trap-implicit-decl-stub",
@@ -123,7 +123,7 @@
     },
     {
       "id": "netplay-savestate-rollback",
-      "text": "Rollback determinism uses page-COW savestates via MEM_WRITE_WATCH (ports/port/sys/savestate.c), x86 coroutines masking SSE sticky bits stmxcsr & 0xFFC0 with static primary stack (coro_x86.c), rd_discard audio/render suppression (host_present in host_coro), static vendored pond3r/ggpo (ggpo_glue.c), non-blocking UDP + PUNCH!/PBACK! + Go R2 relay + MVC2_NETSIM (net_transport.c), and umvsc2:// loopback IPC (uri_ipc.c).",
+      "text": "Rollback determinism uses page-COW savestates via MEM_WRITE_WATCH (savestate.c), x86 coroutines masking SSE sticky bits with static primary stack (coro_x86.c), rd_discard suppression, board_preserve_restart() keeping mvc2.log + ram_write_watch across host_restart() (restart.c, naomi_board.c), snd_enabled() enabled for host-p2p and host_is_netplay_canonical() (snd_nl.c), pond3r/ggpo + 60f hash detail logging (ggpo_glue.c), UDP P2P listener upgrade & PUNCH!/PBACK!/R2 relay (net_transport.c), and umvsc2:// + umvc2:// protocol IPC (uri_ipc.c).",
       "sources": [
         {
           "path": "ports/port/sys/savestate.c",
@@ -135,22 +135,34 @@
         },
         {
           "path": "ports/port/net/ggpo_glue.c",
-          "sha256": "46db444cf7673a796602f287767a258cc9c1ce1e09b75cdbf3d91b9c7e72a7dc"
+          "sha256": "2a6af0dfe9f11a28de75de732f84e69ce76870c1986b4e2d5195ab01a8a63316"
         },
         {
           "path": "ports/port/net/net_transport.c",
-          "sha256": "a335b3fcc0ff53e3ad2ae9c7ec6955ad93924fc8422c97e40b1bdf7d9f465125"
+          "sha256": "bd6f6766593502fda413fb97552c40441582733d103a689def3f185f3a920d3f"
         },
         {
           "path": "ports/port/net/uri_ipc.c",
-          "sha256": "a8e69df2afa15cd9cb6760edd9f9ca066cff36c2fe8f49d4e321922fe3430311"
+          "sha256": "cf689a8550fac64d50fb1765756156fcab5bc76c810912d9a552a18a0a027946"
+        },
+        {
+          "path": "ports/port/sys/restart.c",
+          "sha256": "509fc6b9829751a2e1886b747f36e2d0623e32d1bf2692a1f4796b9382bd4710"
+        },
+        {
+          "path": "ports/port/naomi/naomi_board.c",
+          "sha256": "bcfa264b39121259df97d0f417042498da1bff2ff579c566de87a0eeee89f5e8"
+        },
+        {
+          "path": "ports/port/snd/snd_nl.c",
+          "sha256": "47029eaf3d1885795f7c705aeacacfdadd0c5c59e2e74beec5afddf2e4516a77"
         }
       ],
-      "verified_at": "2026-11-18T11:04:29Z"
+      "verified_at": "2026-11-18T13:41:50Z"
     },
     {
       "id": "netplay-patches-replays-ui",
-      "text": "Retrocompatible patches bundle dc_game.dll + manifest.json + Ed25519 manifest.sig (sign_patch_manifest.py) verified by ed25519_verify.c + patch_dll.c BEFORE LoadLibraryA. Binary .mvc2r v1 replays (216B LE header, RLE+XOR input payload, 60f checksums, 20f COW keyframes for <12ms Takeover seek in replay.c) pair with F4 Netplay/F8 Replay HUDs (http_client.c, net_ui.c) and the Dreamcast main menu Netplay item replacing Score Attack (HOME_SCORE=7 in home_menu.c, dm0c_menu.c, dm0c_netplay_art.h, host_netplay_open in dc_board.c).",
+      "text": "Retrocompatible patches bundle dc_game.dll + manifest.json + Ed25519 manifest.sig (sign_patch_manifest.py) verified by ed25519_verify.c + patch_dll.c BEFORE LoadLibraryA. Binary .mvc2r v1 replays (replay.c; rd_begin_frame() after host_restart() in boot_dc_match_canonical) pair with F4 Netplay/F8 Replay HUDs (http_client.c, net_ui.c) including serverless umvc2://p2p/<ip>:<port>?seed=...&patch=...&delay=... links (zero logs/server), and DC main menu Netplay item (HOME_SCORE=7 in home_menu.c, dm0c_menu.c, dc_board.c).",
       "sources": [
         {
           "path": "ports/port/sys/patch_dll.c",
@@ -162,11 +174,11 @@
         },
         {
           "path": "ports/port/net/replay.c",
-          "sha256": "3a9d5f9b583a1bf7fd702a6653717ca94b1e372e5d8acf2bcfe2f1a5a48c5b70"
+          "sha256": "45f9d887e2f44477fb4750077ac4bd9bbee8b5dfeeffd25280430fb47d21f6de"
         },
         {
           "path": "ports/port/net/net_ui.c",
-          "sha256": "ab5ee02c17e1437a79652ef2bf91ed5783f1963ea24fa6c369d0d52da171a914"
+          "sha256": "5cbe2264608931b3f47777e25d91c9e86908260328582b858702258f81348ec3"
         },
         {
           "path": "tools/sign_patch_manifest.py",
@@ -185,7 +197,7 @@
           "sha256": "91d22f473e607b7ff4ad083fed973a7456bde4cadf39b562f51d7d76c0aeb37a"
         }
       ],
-      "verified_at": "2026-11-18T12:18:56Z"
+      "verified_at": "2026-11-18T13:41:50Z"
     }
   ]
 }

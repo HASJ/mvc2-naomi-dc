@@ -25,6 +25,9 @@ void net_ui_handle_join_uri(const char* uri);
 void net_ui_toggle_replay_hud(void);
 int  net_ui_replay_hud_visible(void);
 
+int  net_ui_start_serverless_p2p_host(uint16_t port, uint32_t seed, int delay);
+int  net_ui_is_p2p_hosting(void);
+
 int  net_ui_run_smoke_test(void);
 
 #endif

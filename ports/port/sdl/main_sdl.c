@@ -954,6 +954,19 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    if (!ggpo_glue_is_active() && cli_get_opt("host-p2p") != NULL) {
+        const char* hp = cli_get_opt("host-p2p");
+        const char* seed_opt = cli_get_opt("match-seed");
+        const char* delay_opt = cli_get_opt("delay");
+        uint16_t port = hp[0] ? (uint16_t)atoi(hp) : 27111u;
+        uint32_t seed = seed_opt ? (uint32_t)strtoul(seed_opt, NULL, 0) : 0u;
+        int delay = delay_opt ? atoi(delay_opt) : 1;
+        if (!net_ui_start_serverless_p2p_host(port, seed, delay)) {
+            uri_ipc_listen_stop();
+            shutdown_front();
+            return 1;
+        }
+    }
     if (!ggpo_glue_is_active() && cli_get_opt("record") != NULL && test_run) {
         const char* seed_opt = cli_get_opt("seed");
         uint32_t seed = seed_opt ? (uint32_t)strtoul(seed_opt, NULL, 0) : 0x12345678u;
@@ -1046,8 +1059,22 @@ int main(int argc, char** argv) {
             }
             game_ticks += SDL_GetPerformanceCounter() - start - (present_ticks - presenting);
         }
-        if (frames_left > 0 && (!ggpo_glue_is_active() || ggpo_glue_is_synchronized()) && --frames_left == 0) {
-            quit = 1;
+        {
+            static uint32_t p2p_wait_start = 0;
+            if (frames_left > 0 && net_ui_is_p2p_hosting()) {
+                if (p2p_wait_start == 0) {
+                    p2p_wait_start = (uint32_t)SDL_GetTicks();
+                } else if ((uint32_t)SDL_GetTicks() - p2p_wait_start > 20000u) {
+                    host_log("serverless p2p host wait timed out after 20s");
+                    quit = 1;
+                    exit_rc = 1;
+                }
+            } else {
+                p2p_wait_start = 0;
+                if (frames_left > 0 && (!ggpo_glue_is_active() || ggpo_glue_is_synchronized()) && --frames_left == 0) {
+                    quit = 1;
+                }
+            }
         }
     }
     if (ggpo_glue_is_active()) {

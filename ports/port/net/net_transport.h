@@ -40,4 +40,10 @@ void net_transport_stats(uint32_t* out_sent, uint32_t* out_recv, uint32_t* out_r
 /* Parse "host:port" or dotted "ip:port" -> host byte order IP + port or network byte order helpers */
 int  net_transport_parse_endpoint(const char* spec, uint32_t* out_ip_be, uint16_t* out_port_be);
 
+/* Serverless direct P2P listener & outbound IP detection */
+int      net_transport_detect_local_ip(char* out_ip, size_t cap);
+uint16_t net_transport_listen_p2p(uint16_t preferred_port, uint32_t token);
+int      net_transport_poll_p2p_peer(char* out_peer_addr, size_t cap);
+uint16_t net_transport_local_port(void);
+
 #endif

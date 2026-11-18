@@ -147,26 +147,32 @@ int uri_ipc_try_forward_cli(int argc, char** argv) {
 }
 
 void uri_ipc_register_protocol(void) {
+    static const char* const schemes[2] = { "umvsc2", "umvc2" };
     char exe[1024];
+    char cls_key[128];
     char cmd[1200];
-    HKEY hk = NULL, hk_cmd = NULL;
+    size_t i;
     DWORD n = GetModuleFileNameA(NULL, exe, sizeof exe - 1);
     if (n == 0 || n >= sizeof exe) return;
     exe[n] = 0;
 
-    if (RegCreateKeyExA(HKEY_CURRENT_USER, "Software\\Classes\\umvsc2", 0, NULL,
-                        0, KEY_WRITE, NULL, &hk, NULL) == ERROR_SUCCESS) {
-        const char* desc = "URL:UMvSC2 Netplay Join Link";
-        const char* empty = "";
-        RegSetValueExA(hk, NULL, 0, REG_SZ, (const BYTE*)desc, (DWORD)strlen(desc) + 1);
-        RegSetValueExA(hk, "URL Protocol", 0, REG_SZ, (const BYTE*)empty, 1);
-        if (RegCreateKeyExA(hk, "shell\\open\\command", 0, NULL,
-                            0, KEY_WRITE, NULL, &hk_cmd, NULL) == ERROR_SUCCESS) {
-            snprintf(cmd, sizeof cmd, "\"%s\" --join \"%%1\"", exe);
-            RegSetValueExA(hk_cmd, NULL, 0, REG_SZ, (const BYTE*)cmd, (DWORD)strlen(cmd) + 1);
-            RegCloseKey(hk_cmd);
+    for (i = 0; i < 2; i++) {
+        HKEY hk = NULL, hk_cmd = NULL;
+        snprintf(cls_key, sizeof cls_key, "Software\\Classes\\%s", schemes[i]);
+        if (RegCreateKeyExA(HKEY_CURRENT_USER, cls_key, 0, NULL,
+                            0, KEY_WRITE, NULL, &hk, NULL) == ERROR_SUCCESS) {
+            const char* desc = "URL:UMvSC2 Netplay Join Link";
+            const char* empty = "";
+            RegSetValueExA(hk, NULL, 0, REG_SZ, (const BYTE*)desc, (DWORD)strlen(desc) + 1);
+            RegSetValueExA(hk, "URL Protocol", 0, REG_SZ, (const BYTE*)empty, 1);
+            if (RegCreateKeyExA(hk, "shell\\open\\command", 0, NULL,
+                                0, KEY_WRITE, NULL, &hk_cmd, NULL) == ERROR_SUCCESS) {
+                snprintf(cmd, sizeof cmd, "\"%s\" --join \"%%1\"", exe);
+                RegSetValueExA(hk_cmd, NULL, 0, REG_SZ, (const BYTE*)cmd, (DWORD)strlen(cmd) + 1);
+                RegCloseKey(hk_cmd);
+            }
+            RegCloseKey(hk);
         }
-        RegCloseKey(hk);
     }
 }
 

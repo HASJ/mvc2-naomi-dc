@@ -205,7 +205,7 @@ def main() -> int:
 
             st, lg = http_json("POST", f"{base_url}/api/v1/auth/login", body={"player_id": p1_id, "pin_inputs": [0, 2, 4, 1, 5, 7]})
             assert st == 200 and lg["display_name"] == "E2E_AlphaRenamed"
-            print(f"[E2E 1/5] Auth & Mutable Display Name OK: {p1_id} -> {lg['display_name']}")
+            print(f"[E2E 1/6] Auth & Mutable Display Name OK: {p1_id} -> {lg['display_name']}")
 
             # 2. Private Lobby + /j/<code> OpenGraph + invite_key join + uri_ipc single-instance forwarding
             st, lob = http_json(
@@ -251,7 +251,7 @@ def main() -> int:
                     host_proc.wait()
             ipc_log = (cfg_ipc / "mvc2.log").read_text(encoding="utf-8")
             assert f"URI_IPC RECEIVED uri={uri}" in ipc_log, ipc_log
-            print(f"[E2E 2/5] Private Lobby /j/{code} + uri_ipc forwarding OK")
+            print(f"[E2E 2/6] Private Lobby /j/{code} + uri_ipc forwarding OK")
 
             # 3. Two-instance P2P Rollback Match forced through Go R2 UDP Relay + MVC2_NETSIM
             rep1 = tmp / "e2e_p1.mvc2r"
@@ -292,7 +292,7 @@ def main() -> int:
             sha1 = hashlib.sha256(rep1.read_bytes()).hexdigest()
             sha2 = hashlib.sha256(rep2.read_bytes()).hexdigest()
             assert sha1 == sha2, f"Replay mismatch: {sha1} != {sha2}"
-            print(f"[E2E 3/5] 2-Instance Forced Go R2 Relay + MVC2_NETSIM PASS: relayed={m1.group(1)}/{m2.group(1)} sha256={sha1[:16]}...")
+            print(f"[E2E 3/6] 2-Instance Forced Go R2 Relay + MVC2_NETSIM PASS: relayed={m1.group(1)}/{m2.group(1)} sha256={sha1[:16]}...")
 
             # 4. Glicko-2 Ladder Report, Replay DB Search, Patch Fetch, Replay Verify/Takeover & UI Smoke
             for side, tok, opp in ((1, p1_tok, p2_id), (2, p2_tok, p1_id)):
@@ -359,15 +359,66 @@ def main() -> int:
             st, _ = http_json("POST", f"{base_url}/api/v1/auth/login", body={"player_id": p2_id, "pin_inputs": [9, 8, 7, 6, 5, 4]})
             assert st == 429
 
-            print(f"[E2E 4/5] Glicko-2 Leaderboard, Replay DB Search, Patch Fetch & Takeover (seek={tm.group(1)}ms) OK")
-            print("[E2E 5/5] ALL E2E NETPLAY CHECKS PASSED!")
-            return 0
+            print(f"[E2E 4/6] Glicko-2 Leaderboard, Replay DB Search, Patch Fetch & Takeover (seek={tm.group(1)}ms) OK")
         finally:
             srv_proc.terminate()
             try:
                 srv_proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 srv_proc.kill()
+
+        # 5. Serverless clickable umvc2://p2p/... link handshake & direct P2P rollback match (no coordinator running)
+        sl_p1_udp = free_udp_port()
+        sl_p2_udp = free_udp_port()
+        cfg_sl_p1 = tmp / "cfg_sl_p1"
+        cfg_sl_p2 = tmp / "cfg_sl_p2"
+        sl_env = {"MVC2_FRAMES": "240"}
+        sl_p1 = spawn_mvc2dc(
+            mvc2dc, dist_dir, cfg_sl_p1,
+            ["--host-p2p", str(sl_p1_udp), "--match-seed", "0x13572468", "--delay", "1", "--scripted-inputs"],
+            env_extra=sl_env,
+        )
+        sl_p2 = None
+        try:
+            host_uri = None
+            deadline = time.time() + 15
+            log1_path = cfg_sl_p1 / "mvc2.log"
+            while time.time() < deadline:
+                if log1_path.exists():
+                    txt = log1_path.read_text(encoding="utf-8", errors="replace")
+                    m = re.search(r"SERVERLESS_P2P_HOST uri=(umvc2://p2p/\S+)", txt)
+                    if m:
+                        host_uri = m.group(1)
+                        break
+                assert sl_p1.poll() is None, f"Serverless P2P host exited early: {sl_p1.returncode}"
+                time.sleep(0.05)
+            assert host_uri is not None, f"Timed out waiting for SERVERLESS_P2P_HOST in {log1_path}"
+
+            join_uri = re.sub(r"^umvc2://p2p/[^:]+:", "umvc2://p2p/127.0.0.1:", host_uri) + f"&port={sl_p2_udp}"
+            sl_p2 = spawn_mvc2dc(
+                mvc2dc, dist_dir, cfg_sl_p2,
+                ["--join", join_uri, "--scripted-inputs"],
+                env_extra=sl_env,
+            )
+            sl_p1.wait(timeout=60)
+            sl_p2.wait(timeout=60)
+        finally:
+            for pr in (sl_p1, sl_p2):
+                if pr is not None and pr.poll() is None:
+                    pr.kill()
+                    pr.wait()
+
+        assert sl_p1.returncode == 0 and sl_p2.returncode == 0, (sl_p1.returncode, sl_p2.returncode)
+        sl_log1 = (cfg_sl_p1 / "mvc2.log").read_text(encoding="utf-8")
+        sl_log2 = (cfg_sl_p2 / "mvc2.log").read_text(encoding="utf-8")
+        assert "SERVERLESS_P2P_CONNECTED peer=" in sl_log1, sl_log1
+        assert "SERVERLESS_P2P_JOIN host=127.0.0.1:" in sl_log2, sl_log2
+        assert re.search(r"NETPLAY_P2P PASS .*relayed=0 .*desyncs=0", sl_log1), sl_log1
+        assert re.search(r"NETPLAY_P2P PASS .*relayed=0 .*desyncs=0", sl_log2), sl_log2
+        assert not list(cfg_sl_p1.rglob("*.mvc2r")) and not list(cfg_sl_p2.rglob("*.mvc2r"))
+        print(f"[E2E 5/6] Serverless umvc2://p2p/ Handshake & Direct P2P PASS (0 relays, 0 logs): {host_uri}")
+        print("[E2E 6/6] ALL E2E NETPLAY CHECKS PASSED!")
+        return 0
 
 
 if __name__ == "__main__":
