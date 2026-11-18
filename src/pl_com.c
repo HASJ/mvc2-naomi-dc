@@ -438,6 +438,12 @@ Uint8 pl_v_combi_ck( PLAYER_WORK *pl_w )
 /*==============================================================*/
 static Uint16 assist_dir_latched[2][2] ;
 
+/* The assist button stays pending for this many frames waiting for the call to be allowed */
+#define ASSIST_PEND_FRAMES	16
+/* An extra assist reads up/down only on the frame the button is pressed, plus this many frames
+   after it so a slightly late direction still counts as pressed together with the button. */
+#define ASSIST_DIR_GRACE	2
+
 static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 {
 	Uint8 idx = no ;
@@ -445,6 +451,7 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 	Sint8 *cnt ;
 	Uint16 sw ;
 	Uint16 latched_dir = 0 ;
+	Uint16 live_dir = 0 ;
 
 	if( no == 1 ){
 		cnt = &pl_w->change_timer[0] ;
@@ -500,7 +507,7 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 			if( ( pl_w->pl_now_lvbt & sw ) && !( pl_w->pl_sw_new & ( KEY_FORWARD | KEY_BACK ) ) ) *cnt = 16 ;
 		} else {
 			if( pl_w->pl_now_lvbt & sw ){
-				*cnt = 16 ;
+				*cnt = ASSIST_PEND_FRAMES ;
 				assist_dir_latched[pl_w->pl_no][slot] = pl_w->pl_sw_new & ( KEY_UP | KEY_DOWN ) ;
 			}
 		}
@@ -509,7 +516,11 @@ static int partner_ck( PLAYER_WORK *pl_w, Uint8 no )
 	else {
 		if( -- *cnt ){
 			if( pl_w->pl_new_lvbt & sw ) return 0 ;
-			if( no >= 3 ) latched_dir = assist_dir_latched[pl_w->pl_no][slot] ;
+			if( no >= 3 ){
+				latched_dir = assist_dir_latched[pl_w->pl_no][slot] ;
+				/* up/down held now only counts right after the press, not while the call is still pending */
+				if( ASSIST_PEND_FRAMES - *cnt <= ASSIST_DIR_GRACE ) live_dir = pl_w->pl_sw_new & ( KEY_UP | KEY_DOWN ) ;
+			}
 			goto cpu ;
 		}
 		if( no >= 3 ) assist_dir_latched[pl_w->pl_no][slot] = 0 ;
@@ -567,8 +578,7 @@ cpu :
 		Sint8 extra = -1 ;
 		if( pl_w->act_st == N_SPECIAL ) cost += 36 ;
 		if( !pl_w->cpu_flag ){
-			Uint16 dir = pl_w->pl_sw_new & ( KEY_UP | KEY_DOWN ) ;
-			if( !dir ) dir = latched_dir ;
+			Uint16 dir = latched_dir ? latched_dir : live_dir ;
 			assist_dir_latched[pl_w->pl_no][slot] = 0 ;
 			if( dir == KEY_UP || dir == KEY_DOWN ){
 				PLAYER_WORK *nw = vs_sys_w->team_w[pl_w->pl_no][idx] ;
