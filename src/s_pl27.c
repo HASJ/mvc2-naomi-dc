@@ -1458,6 +1458,22 @@ static void jtatsumaki_hit( PLAYER_WORK *pl_w )
 	}
 }
 
+/*==============================================================*/
+/*			On the floor: straight back to standing, with no	*/
+/*			landing recovery									*/
+/*==============================================================*/
+static void jtatsumaki_landed( PLAYER_WORK *pl_w )
+{
+	pl_w->pos.y = pl_w->ground_y ;
+	pl_w->spd.x = pl_w->spd.y = 0.0f ;
+	pl_w->acc.x = pl_w->acc.y = 0.0f ;
+	pl_w->sjump_flag = 0 ;
+	pl_w->air_guard_cnt = 0 ;
+	pl_w->pl_stance = STANCE_STAND ;
+	pl_land_ef_set( pl_w ) ;
+	pl_stand_ret( pl_w ) ;
+}
+
 static void jtatsumaki_init( PLAYER_WORK *pl_w );
 static void jtatsumaki_spin( PLAYER_WORK *pl_w );
 static void jtatsumaki_fall( PLAYER_WORK *pl_w );
@@ -1509,11 +1525,7 @@ static void jtatsumaki_spin( PLAYER_WORK *pl_w )
 	pl_w->pos.y += pl_w->spd.y ;
 	pl_w->spd.y += pl_w->acc.y ;
 	if( pl_w->pos.y <= pl_w->ground_y ){
-		pl_w->routine_2 = 3 ;
-		pl_w->pos.y = pl_w->ground_y ;
-		pl_w->pl_stance = STANCE_STAND ;
-		pl_land_ef_set( pl_w ) ;
-		pl_char_set( pl_w, Char_Jump, 3 ) ;
+		jtatsumaki_landed( pl_w ) ;
 		return ;
 	}
 	if( pl_w->cg_type < 0 ){
@@ -1535,13 +1547,8 @@ static void jtatsumaki_fall( PLAYER_WORK *pl_w )
 	pl_w->spd.x += pl_w->acc.x ;
 	pl_w->pos.y += pl_w->spd.y ;
 	pl_w->spd.y += pl_w->acc.y ;
-	if( pl_w->pos.y <= pl_w->ground_y ){
-		pl_w->routine_2 ++ ;
-		pl_w->pos.y = pl_w->ground_y ;
-		pl_w->pl_stance = STANCE_STAND ;
-		pl_land_ef_set( pl_w ) ;
-		pl_char_set( pl_w, Char_Jump, 3 ) ;
-	} else if( pl_char_move( pl_w ) < 0 ) pl_jump_ret( pl_w ) ;
+	if( pl_w->pos.y <= pl_w->ground_y ) jtatsumaki_landed( pl_w ) ;
+	else if( pl_char_move( pl_w ) < 0 ) pl_jump_ret( pl_w ) ;
 }
 
 /*--------------------------------------------------------------*/
