@@ -18,6 +18,7 @@
 /* ---- start-up, the heap, the boot ROM ---- */
 
 void syHwInit(void) {
+    HOST_CRUMB("syHwInit");
 }
 
 void syHwInit2(void) {
@@ -111,27 +112,6 @@ Sint32 syRtcGetDate(SYS_RTC_DATE* date) {
     date->second = (Uint8)tm->tm_sec;
     date->dayofweek = (Uint8)tm->tm_wday;
     return 1;
-}
-
-/* the general timer, which counts the time played: set to 4, it counts 48828 a second; here it
-   follows the frames, so that a run is the same every time */
-static unsigned tmr_base;
-
-void syTmrGenSetClock(Sint32 clock) {
-    (void)clock;
-}
-
-void syTmrGenStart(void) {
-    tmr_base = host_frame();
-}
-
-void syTmrGenSetCount(Uint32 count) {
-    (void)count;
-    tmr_base = host_frame();
-}
-
-Uint32 syTmrGenGetCount(void) {
-    return (Uint32)((host_frame() - tmr_base) * 48828u / 60u);
 }
 
 /* ---- the controllers ---- */
@@ -262,7 +242,6 @@ Sint32 ntInfIsNetworkInfo(void) {
 
 typedef struct {
     Sint32 sound_mode;
-    unsigned tmr_base;
     PDS_PERIPHERAL pads[4];
 } DC_SHINOBI_STATE;
 
@@ -275,7 +254,6 @@ void dc_shinobi_state_save(void* out) {
     int i;
     memset(&s, 0, sizeof s);
     s.sound_mode = sound_mode;
-    s.tmr_base = tmr_base;
     memcpy(s.pads, pads, sizeof pads);
     for (i = 0; i < 4; i++) {
         s.pads[i].info = NULL;
@@ -288,7 +266,6 @@ void dc_shinobi_state_load(const void* in) {
     int i;
     memcpy(&s, in, sizeof s);
     sound_mode = s.sound_mode;
-    tmr_base = s.tmr_base;
     memcpy(pads, s.pads, sizeof pads);
     for (i = 0; i < 4; i++) {
         pads[i].info = i < 2 ? &pad_info : &none_info;

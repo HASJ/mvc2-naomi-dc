@@ -1,6 +1,7 @@
 /* Sprite textures, palettes and drawing: the system's sprite textures, the palette sent to the
    hardware each frame, and the routines that put the works' 2D sprites on the screen. */
 #include "player.h"
+#include "load.h"
 
 /* one cell of a sprite: where it goes, its palette and flips, and its number */
 typedef struct SPR_PART {
@@ -24,10 +25,10 @@ typedef struct SPR_TILE {
 	Uint8	x, y;		/* 002: its place in the cell, in tiles */
 } SPR_TILE;
 
-#define SYS_TEX		( ( void * )0x0CE60000 )	/* the system texture */
-#define SYS_TEX_LIST	( ( NLthd * )0x0CE60C00 )	/* its list */
-#define FONT_TEX	( ( void * )0x0CC00000 )
-#define SPR_BUFF	( ( Uint8 * )0x0CE60000 )	/* where the cells are unpacked */
+#define SYS_TEX		( ( void * )RAM_ADRS( 0x0CE60000 ) )	/* the system texture */
+#define SYS_TEX_LIST	( ( NLthd * )RAM_ADRS( 0x0CE60C00 ) )	/* its list */
+#define FONT_TEX	( ( void * )RAM_ADRS( 0x0CC00000 ) )
+#define SPR_BUFF	( ( Uint8 * )RAM_ADRS( 0x0CE60000 ) )	/* where the cells are unpacked */
 
 static Sint32 spr_frame_cnt;	/* a frame count */
 static Sint32 spr_list_type;	/* the sprites' list type */

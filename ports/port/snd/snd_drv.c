@@ -54,6 +54,7 @@
 #define HANDLER_CYCLES 1024         /* aica.c's HANDLER_MAX */
 
 static int mode;
+static int quiet;
 
 static uint32_t rd32(uint32_t a) {
     uint32_t v;
@@ -2841,6 +2842,10 @@ void snd_drv_set(int m) {
     }
 }
 
+void snd_drv_quiet(int on) {
+    quiet = on;
+}
+
 int snd_drv_fiq(void) {
     if (!mode || !arm7_fiq_due() || !driver_ok()) {
         return 0;
@@ -2894,7 +2899,7 @@ int snd_drv_main(int cycles, int rate) {
         c_pass();
         m3_passes++;
     }
-    if (n == PASS_CAP && work_waiting() && m3_capped++ == 0) {
+    if (n == PASS_CAP && work_waiting() && m3_capped++ == 0 && !quiet) {
         host_log("sound driver: a segment hit its %d passes with work waiting", PASS_CAP);
     }
     if (done < cycles) {
@@ -2902,7 +2907,7 @@ int snd_drv_main(int cycles, int rate) {
         idle_passes(n);
         m3_idle += (unsigned long)n;
     }
-    if ((++m3_calls & 0x7FFF) == 0) {
+    if ((++m3_calls & 0x7FFF) == 0 && !quiet) {
         host_log("sound driver: %lu passes in C, %lu idle, %lu cycles interpreted, %lu segments capped, %lu of %lu watch steps repeats, %lu along a kept round",
                  m3_passes, m3_idle, m3_arm, m3_capped, m3_repeats, m3_watched, m3_kept);
     }

@@ -67,6 +67,7 @@ typedef struct {
 
 static Uint8 card[BLOCKS * BLOCK];
 static int present, keep, netplay_locked;   /* a card is in; it is saved to its file */
+static int later, unsaved;  /* MVC2_VMU_LATER=1: saved only by dc_vmu_flush, as the program ends */
 static char path[1100];
 static int (*complete)(int, int, int, int);
 
@@ -159,6 +160,10 @@ static void save_card(void) {
     if (!keep || netplay_locked) {
         return;
     }
+    if (later) {
+        unsaved = 1;
+        return;
+    }
     snprintf(tmp, sizeof tmp, "%s.new", path);
     f = fopen(tmp, "wb");
     if (f == NULL || fwrite(card, sizeof card, 1, f) != 1) {
@@ -171,6 +176,13 @@ static void save_card(void) {
     fclose(f);
     remove(path);
     rename(tmp, path);
+}
+
+void dc_vmu_flush(void) {
+    if (unsaved) {
+        unsaved = later = 0;
+        save_card();
+    }
 }
 
 /* the directory's entries, from block 253 down */
@@ -285,6 +297,7 @@ int buInit(int capacity, int drives, void* work, void (*func)(void)) {
     complete = NULL;
     present = !netplay_locked && (drives & 1) && (getenv("MVC2_FRAMES") == NULL || getenv("MVC2_VMU") != NULL);
     keep = present;
+    later = getenv("MVC2_VMU_LATER") != NULL && atoi(getenv("MVC2_VMU_LATER")) != 0;
     format();
     if (keep) {
         snprintf(path, sizeof path, "%s",

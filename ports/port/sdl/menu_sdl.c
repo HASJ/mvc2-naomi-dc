@@ -109,10 +109,10 @@ static const char* const labels[ACTIONS] = {
     "DASH", "SUPER JUMP",
 };
 
-enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_DEFAULTS, ROW_DONE, ROWS };
+enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_HUD, ROW_DEFAULTS, ROW_DONE, ROWS };
 
 static int row_line(int a) {
-    return 2 + a + (a >= ROW_RENDERER);
+    return 2 + a;
 }
 
 static const char* const pictures[] = { "exact", "fast", "fast+half" };
@@ -127,7 +127,7 @@ static const struct {
     const char *name, *resolution, *aa;
 } gpu_pictures[] = {
     { "auto", "auto", "1" }, { "auto, aa 2x", "auto", "2" }, { "auto, aa 3x", "auto", "3" }, { "auto, aa 4x", "auto", "4" },
-    { "the arcade's 640 by 480", "1", "1" },
+    { "2688 by 2016", "4.2", "1" }, { "the arcade's 640 by 480", "1", "1" },
 };
 enum { GPU_PICTURES = sizeof gpu_pictures / sizeof gpu_pictures[0] };
 
@@ -143,21 +143,46 @@ static int gpu_picture(void) {
     return -1;
 }
 
-static const char* const sprite_modes[] = { "sharp", "smooth", "pixel", "arcade" };
-enum { SPRITE_MODES = sizeof sprite_modes / sizeof sprite_modes[0] };
+/* texel's choices take its grid too */
+static const char* const sprite_modes[] = { "sharp", "texel", "texel, own grids", "smooth", "pixel", "arcade" };
+enum { SPRITE_MODES = sizeof sprite_modes / sizeof sprite_modes[0], OBJECT_GRID = 2 };
 
-static const char* sprites(void) {
-    return config_get("sprites") != NULL ? config_get("sprites") : "sharp";
+static int sprites(void) {
+    const char* s = config_get("sprites") != NULL ? config_get("sprites") : "sharp";
+    const char* g = config_get("texel_grid");
+    int i;
+    for (i = 0; i < SPRITE_MODES; i++) {
+        if (strcmp(s, sprite_modes[i]) == 0) {
+            return i == 1 && g != NULL && strcmp(g, "object") == 0 ? OBJECT_GRID : i;
+        }
+    }
+    return 0;
 }
 
 static void change_sprites(int way) {
+    int now = (sprites() + way + SPRITE_MODES) % SPRITE_MODES;
+    config_set("sprites", now == OBJECT_GRID ? "texel" : sprite_modes[now]);
+    config_set("texel_grid", now == OBJECT_GRID ? "object" : "shared");
+#ifdef MVC2_SDL3
+    view_settings();
+#endif
+}
+
+static const char* const hud_modes[] = { "arcade", "smooth", "sharp" };
+enum { HUD_MODES = sizeof hud_modes / sizeof hud_modes[0] };
+
+static const char* hud(void) {
+    return config_get("hud") != NULL ? config_get("hud") : "arcade";
+}
+
+static void change_hud(int way) {
     int i, now = 0;
-    for (i = 0; i < SPRITE_MODES; i++) {
-        if (strcmp(sprites(), sprite_modes[i]) == 0) {
+    for (i = 0; i < HUD_MODES; i++) {
+        if (strcmp(hud(), hud_modes[i]) == 0) {
             now = i;
         }
     }
-    config_set("sprites", sprite_modes[(now + way + SPRITE_MODES) % SPRITE_MODES]);
+    config_set("hud", hud_modes[(now + way + HUD_MODES) % HUD_MODES]);
 #ifdef MVC2_SDL3
     view_settings();
 #endif
@@ -204,7 +229,9 @@ static const char* setting(int a, char* buf, size_t size) {
         snprintf(buf, size, "%s%s%s", renderer_gpu() ? "GPU" : "SOFT", renderer_note != NULL ? "  " : "",
                  renderer_note != NULL ? renderer_note : "");
     } else if (a == ROW_SPRITES) {
-        snprintf(buf, size, "%s%s", sprites(), renderer_gpu() ? "" : "  (GPU ONLY)");
+        snprintf(buf, size, "%s%s", sprite_modes[sprites()], renderer_gpu() ? "" : "  (GPU ONLY)");
+    } else if (a == ROW_HUD) {
+        snprintf(buf, size, "%s%s", hud(), renderer_gpu() ? "" : "  (GPU ONLY)");
     } else if (renderer_gpu()) {
         int i = gpu_picture();
         snprintf(buf, size, "%s", i >= 0 ? gpu_pictures[i].name : "as mvc2.cfg sets it");
@@ -267,8 +294,9 @@ void menu_draw(uint32_t* frame, int w, int h) {
             draw_text(0, row_line(a), "DONE", color);
             continue;
         }
-        if (a == ROW_RENDERER || a == ROW_PICTURE || a == ROW_SPRITES) {
-            draw_text(0, row_line(a), a == ROW_RENDERER ? "RENDERER" : a == ROW_PICTURE ? "PICTURE" : "SPRITES", color);
+        if (a == ROW_RENDERER || a == ROW_PICTURE || a == ROW_SPRITES || a == ROW_HUD) {
+            draw_text(0, row_line(a),
+                      a == ROW_RENDERER ? "RENDERER" : a == ROW_PICTURE ? "PICTURE" : a == ROW_SPRITES ? "SPRITES" : "HUD", color);
             snprintf(line, sizeof line, "< %s >", setting(a, one, sizeof one));
             draw_text(13, row_line(a), line, color);
             continue;
@@ -288,7 +316,7 @@ void menu_draw(uint32_t* frame, int w, int h) {
     }
     draw_text(0, row_line(ROWS), "UP/DOWN CHOOSE   LEFT/RIGHT PLAYER OR SETTING", GREY);
     draw_text(0, row_line(ROWS) + 1, "ENTER/A SET   DEL/X DEFAULT   ESC/B DONE", GREY);
-    draw_text(0, row_line(ROWS) + 3, "F4 NETPLAY & REPLAYS   F8 REPLAY HUD", YELLOW);
+    draw_text(0, row_line(ROWS) + 2, "F4 NETPLAY & REPLAYS   F8 REPLAY HUD", YELLOW);
 }
 
 static void close_menu(void) {
@@ -312,6 +340,8 @@ static void act(int up, int down, int left, int right, int enter, int reset, int
         change_picture(right ? 1 : -1);
     } else if ((left || right || enter) && row == ROW_SPRITES) {
         change_sprites(left ? -1 : 1);
+    } else if ((left || right || enter) && row == ROW_HUD) {
+        change_hud(left ? -1 : 1);
     } else if ((left || right || enter) && row == ROW_RENDERER) {
         change_renderer();
     } else if (enter && row == ROW_PICTURE) {

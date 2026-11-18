@@ -72,6 +72,9 @@ On the Dreamcast, Y X L B A R are its X Y L A B R.
 `mvc2.cfg` has one `key = value` a line:
 
 - `scale = stretch` fills the top screen (the default is 1:1, 320 by 240, between Marvel and Capcom pillars).
+- `wide = on` uses all 800 of the top screen's columns, the game's 640 one to one with only its rows halved; on by
+  default on a New 3DS or New 2DS XL, `wide = off` for 400. The original 2DS has no wide mode. The bottom screen's
+  HI RES and LO RES button switches it.
 - `pillars = off` leaves the sides black.
 - `render = exact` draws at 640 by 480 and halves it: sharper, slower.
 - `arcade =` and `dc =` set other data folders.

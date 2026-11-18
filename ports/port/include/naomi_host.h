@@ -10,9 +10,23 @@
 #include <stdio.h>
 #include "mvc2_match_api.h"
 
-/* mapped at its arcade address: the game keeps buffers there */
-#define NAOMI_RAM_BASE  0x0C000000u
-#define NAOMI_RAM_SIZE  0x02000000u
+/* main RAM, mapped at its arcade address (the game keeps buffers there) unless the build moves it
+   (MVC2_RAM_BASE, which the game's C takes too); the Dreamcast's program alone needs only its 16 MB
+   (MVC2_RAM_SIZE) */
+#ifndef MVC2_RAM_BASE
+#define MVC2_RAM_BASE   0x0C000000
+#endif
+#ifndef MVC2_RAM_SIZE
+#define MVC2_RAM_SIZE   0x02000000
+#endif
+#define NAOMI_RAM_BASE  (0u + MVC2_RAM_BASE)
+#define NAOMI_RAM_SIZE  (0u + MVC2_RAM_SIZE)
+#define SH4_RAM_BASE    0x0C000000u
+#define SH4_RAM_SIZE    0x02000000u     /* the board's; the Dreamcast's is 0x01000000 */
+/* the host's place of the SH-4's main RAM address a */
+#define HOST_RAM(a)     ((void*)(uintptr_t)((a) - SH4_RAM_BASE + NAOMI_RAM_BASE))
+/* the main RAM mapped: NAOMI_RAM_SIZE, or the Dreamcast's 16 MB where the host has room for no more */
+extern uint32_t host_ram_size;
 
 /* a word of the program's data that points at what the host defines (port/tools/gen_host.py) */
 typedef struct {
@@ -94,6 +108,9 @@ unsigned host_frame(void);
 extern uint32_t host_fills;         /* counts the port's writes into the game's memory: ROM and disc reads */
 void host_log(const char* fmt, ...);
 int host_env_on(const char* name);  /* the game's getenv is a stub: for HOST_PORT traces gated by an env var */
+/* how far the start has got, for a front end that keeps it (the PSP's crumbs); NULL elsewhere */
+extern void (*host_crumb)(const char* what);
+#define HOST_CRUMB(what) do { if (host_crumb != NULL) host_crumb(what); } while (0)
 void host_divzero_install(void);    /* a division by zero gives 0, as SHC's code did */
 void host_divzero_allow_module(const void* hmod);
 void host_divzero_disallow_module(const void* hmod);
@@ -118,6 +135,23 @@ const char* dc_image_find(const char* disc_path);     /* a disc image's name the
 const char* dc_image_unpack(const char* disc_path, void (*progress)(uint32_t done, uint32_t total));
 long dc_gd_read_file(const char* name, void* buf, long max);  /* a whole file; its size, or -1 */
 const char* dc_gd_path(const char* name);   /* a file's path on the host */
+void dc_vmu_flush(void);    /* the memory card written now, if MVC2_VMU_LATER=1 has held it back */
+int dc_gd_mount(const char* disc_path);     /* 1 when the disc is read in place from its image there */
+/* the image read in place (dc_image.c): chd_ok, a CHD too; a file's place; its bytes from off, safe on any thread */
+int dc_image_mount(const char* disc_path, int chd_ok);
+void dc_image_unmount(void);
+int dc_image_mounted(void);
+int dc_image_chd(void);         /* the image read in place is a CHD */
+extern const char* const dc_unpack_mark;    /* the file beside the files while an unpack goes on */
+int host_dir_list(const char* dir, void (*add)(const char* name, long size));   /* a folder's files; 0 if unread */
+int dc_image_file(const char* name, uint32_t* lba, uint32_t* bytes);
+size_t dc_image_read(uint32_t lba, uint32_t bytes, uint32_t off, void* to, size_t want);
+/* a disc file as the game's thread and the readers open it: from the image when it is read in place, else from the
+   folder (path as dc_gd_path gives it); each handle used by one thread at a time */
+typedef struct DC_FILE DC_FILE;
+DC_FILE* dc_file_open(const char* path, long* size);
+size_t dc_file_read(DC_FILE* f, long off, void* to, size_t want);
+void dc_file_close(DC_FILE* f);
 
 /* the 3DS's read-ahead of one file (ctr_stream.c) */
 int ctr_stream_open(const char* path, uint32_t most);
@@ -128,24 +162,40 @@ int ctr_stream_put(uint32_t off, uint32_t len, const void* bytes);
 int ctr_stream_find(uint32_t off, uint32_t n);
 const uint8_t* ctr_stream_take(int i, uint32_t* off);
 void ctr_stream_free(int i);
-uint32_t ctr_stream_times(float* mean, float* most);   /* the reads since the last call; mean and most in ms */
+uint32_t ctr_stream_times(float* mean, float* most, uint32_t* dropped);   /* the reads since the last call; mean
+                                                                            and most in ms; those read short */
 int ctr_rom_dma(uint32_t offset, void* dst, uint32_t size);   /* the game's DMA from the ROM, 1 when read (ctr_rom.c) */
+int ctr_save_later(const char* name, const void* data, int size); /* a save written by a thread, 1 when taken */
+void ctr_save_flush(void);                                       /* every save written (ctr_save.c) */
+void host_save_file(const char* name, const void* p, int size);  /* written whole or not at all (nl_am.c) */
 int ctr_rom_packed(uint32_t offset, void* dst, uint32_t size); /* and its packed reads, 1 when given */
-/* and its disc reader, one read at a time (MVC2_GD_ASYNC) */
-int ctr_read_start(FILE* f, long off, void* to, size_t want);
-int ctr_read_busy(void);
-size_t ctr_read_end(float* ms);
-int ctr_ahead_start(const char* path, size_t most);
-int ctr_ahead_has(const char* path);
-int ctr_ahead_idle(void);
-FILE* ctr_ahead_file(const char* path, long* size);
-int ctr_ahead_take(size_t off, void* to, size_t want, float* ms);
-void ctr_ahead_drop(int all);
-void ctr_close_later(FILE* f);
-int ctr_small_start(const char* path, size_t most);
-FILE* ctr_small_open(const char* path, long* size);
-int ctr_small_take(const char* path, size_t off, void* to, size_t want);
-void ctr_small_drop(void);
+void dc_gd_read_elsewhere(const char* name);   /* a file read on another reader, as if by gdFsRead */
+/* the host's disc reader, one read at a time (MVC2_GD_ASYNC): ctr_stream.c on the 3DS, psp_reader.c on the PSP */
+int host_read_start(DC_FILE* f, long off, void* to, size_t want);
+int host_read_busy(void);
+size_t host_read_end(float* ms);
+int host_ahead_start(const char* path, size_t most);
+int host_ahead_has(const char* path);
+int host_ahead_idle(void);
+DC_FILE* host_ahead_file(const char* path, long* size);
+int host_ahead_take(size_t off, void* to, size_t want, float* ms);
+void host_ahead_drop(int all);
+void host_close_later(DC_FILE* f);
+int host_small_start(const char* path, size_t most);
+DC_FILE* host_small_open(const char* path, long* size);
+int host_small_take(const char* path, size_t off, void* to, size_t want);
+void dc_file_let_go(DC_FILE* d);
+int dc_file_has_handle(const DC_FILE* d);        /* the PSP: a listed file's handle closed until its next read */
+int dc_files_open(void);                /* the disc folder's files open now */
+void* psp_copy(void* to, const void* from, size_t n);   /* the PSP: memcpy, by DMA when large */
+int host_on_reader(void);               /* the PSP: 1 on the reader's thread */
+int host_stick_wait(void);              /* the PSP: 1 after a short wait while the memory stick is away for a sleep */
+const char* host_reader_why(void);      /* the PSP: why the reader's last read ahead failed, once; else NULL */
+void host_small_drop(void);
+/* the PSP's: a piece of the music read ahead on the reader, first of its work (dc_adx.c) */
+int host_music_start(DC_FILE* f, long off, void* to, size_t want);
+int host_music_busy(void);
+void host_music_wait(void);
 
 /* port/sys/restart.c */
 void host_keep_start(void);         /* first thing, before any of them runs */

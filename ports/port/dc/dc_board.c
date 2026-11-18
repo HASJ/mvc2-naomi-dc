@@ -3,8 +3,8 @@
  * Dreamcast entries
  *
  * The console's boot ROM reads 1ST_READ.BIN to 8C010000. The program is linked there, in the P1
- * mirror of main RAM, and the port maps main RAM at 0C000000, so the image goes to 0C010000, and
- * gen_host masks the addresses in its data the same way. The rest of the board (the frame, the
+ * mirror of main RAM, and the port maps main RAM at NAOMI_RAM_BASE, so the image goes 0x10000 into it,
+ * and gen_host moves the addresses in its data the same way. The rest of the board (the frame, the
  * interrupts, the timer) is the NAOMI's, which is the same chip set.
  */
 
@@ -16,7 +16,7 @@
 
 void gdFsFinish(void);
 
-#define DC_PROGRAM_ADDRESS 0x0C010000u
+#define DC_PROGRAM_ADDRESS 0x0C010000u     /* in main RAM, as the SH-4 sees it */
 #define DC_PROGRAM_MAX 0x00400000
 #define DC_SCRAMBLE_MAX_CHUNK (2048u * 1024u)
 #define DC_SCRAMBLE_SLICE 32u
@@ -102,12 +102,14 @@ int dc_init(const HOST_PROGRAM* program, const char* disc_path) {
     if (!dc_gd_open(disc_path)) {
         return 0;
     }
-    size = dc_gd_read_file("1ST_READ.BIN", (void*)(uintptr_t)DC_PROGRAM_ADDRESS, DC_PROGRAM_MAX);
+    HOST_CRUMB("reading 1ST_READ.BIN");
+    size = dc_gd_read_file("1ST_READ.BIN", HOST_RAM(DC_PROGRAM_ADDRESS), DC_PROGRAM_MAX);
+    HOST_CRUMB("1ST_READ.BIN read");
     if (size <= 0) {
         host_log("no 1ST_READ.BIN in %s", disc_path);
         return 0;
     }
-    if (!dc_descramble_boot((uint8_t*)(uintptr_t)DC_PROGRAM_ADDRESS, size)) {
+    if (!dc_descramble_boot((uint8_t*)HOST_RAM(DC_PROGRAM_ADDRESS), size)) {
         host_log("out of memory descrambling 1ST_READ.BIN");
         return 0;
     }
@@ -126,6 +128,7 @@ void nlInitLibraryDC(int tvmode, int fbmode, int vwait) {
     (void)tvmode;
     (void)fbmode;
     (void)vwait;
+    HOST_CRUMB("nlInitLibraryDC");
     nlInitLibrary();
 }
 

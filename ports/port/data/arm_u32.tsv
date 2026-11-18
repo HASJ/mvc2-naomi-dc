@@ -1,0 +1,38 @@
+back_color	back_color_bright	r = r_rate * back_work.col[2].c.r ;	r = sh_u32( r_rate * back_work.col[2].c.r ) ;	1
+back_color	back_color_bright	g = g_rate * back_work.col[2].c.g ;	g = sh_u32( g_rate * back_work.col[2].c.g ) ;	1
+back_color	back_color_bright	b = b_rate * back_work.col[2].c.b ;	b = sh_u32( b_rate * back_work.col[2].c.b ) ;	1
+back_color	back_color_bright	r = r_rate * back_work.col[1].c.r ;	r = sh_u32( r_rate * back_work.col[1].c.r ) ;	1
+back_color	back_color_bright	g = g_rate * back_work.col[1].c.g ;	g = sh_u32( g_rate * back_work.col[1].c.g ) ;	1
+back_color	back_color_bright	b = b_rate * back_work.col[1].c.b ;	b = sh_u32( b_rate * back_work.col[1].c.b ) ;	1
+back_color	back_color_bright	r = r_rate * back_work.col[0].c.r ;	r = sh_u32( r_rate * back_work.col[0].c.r ) ;	1
+back_color	back_color_bright	g = g_rate * back_work.col[0].c.g ;	g = sh_u32( g_rate * back_work.col[0].c.g ) ;	1
+back_color	back_color_bright	b = b_rate * back_work.col[0].c.b ;	b = sh_u32( b_rate * back_work.col[0].c.b ) ;	1
+combo	vital_bonus	*lo = ( Float )*lo * 200.0f / 144.0f ;	*lo = sh_u32( ( Float )*lo * 200.0f / 144.0f ) ;	1
+fog	fog_set	r = bright_work.rate[1] * fog_work.r ;	r = sh_u32( bright_work.rate[1] * fog_work.r ) ;	1
+fog	fog_set	g = bright_work.rate[2] * fog_work.g ;	g = sh_u32( bright_work.rate[2] * fog_work.g ) ;	1
+fog	fog_set	b = bright_work.rate[3] * fog_work.b ;	b = sh_u32( bright_work.rate[3] * fog_work.b ) ;	1
+pls09_03	pls09_03_init	pl_char_set( ew, 19, no ) ;	pl_char_set( ew, 19, sh_u32( no ) ) ;	1
+s_pl07	nml_p_chase	if( ( Uint32 )( dx + 1.0f ) > 2 || ( Uint32 )( dy + 1.0f ) > 2 ){	if( ( Uint32 )sh_u32( ( dx + 1.0f ) ) > 2 || ( Uint32 )sh_u32( ( dy + 1.0f ) ) > 2 ){	1
+s_pl0c	hwebthrow_dir_set	pl_w->dir = lw->web_line ;	pl_w->dir = sh_u32( lw->web_line ) ;	1
+s_pl0e	webthrow_ang_set	pl_w->dir = lw->web_line ;	pl_w->dir = sh_u32( lw->web_line ) ;	1
+s_pl13	schwarz_next	pl_w->routine_3 = spd[6] ;	pl_w->routine_3 = sh_u32( spd[6] ) ;	1
+s_pl13	flammeile_next	pl_w->routine_3 = spd[6] ;	pl_w->routine_3 = sh_u32( spd[6] ) ;	1
+s_pl13	flammeile_auto	pl_w->sub_no = dir[pl_w->sub_no] ;	pl_w->sub_no = sh_u32( dir[pl_w->sub_no] ) ;	1
+s_pl13	flammeile_auto	pl_w->routine_3 = spd[6] ;	pl_w->routine_3 = sh_u32( spd[6] ) ;	1
+s_pl1a	pl1a_win	if( ( Uint32 )x <= pl_w->scale.x * DOT_X( 128.0f ) && vs_sys_w->winner_id == pl_w->pl_no && !vs_sys_w->time_over ){	if( ( Uint32 )sh_u32( x ) <= pl_w->scale.x * DOT_X( 128.0f ) && vs_sys_w->winner_id == pl_w->pl_no && !vs_sys_w->time_over ){	1
+s_pl39	nml_p_chase	if( ( Uint32 )( dx + 1.0f ) > 2 || ( Uint32 )( dy + 1.0f ) > 2 ){	if( ( Uint32 )sh_u32( ( dx + 1.0f ) ) > 2 || ( Uint32 )sh_u32( ( dy + 1.0f ) ) > 2 ){	1
+set07_00b	set07_00b_wave	r = nlSin( ang0 & 0xffff ) * 64.0f + 96.0f ;	r = sh_u32( nlSin( ang0 & 0xffff ) * 64.0f + 96.0f ) ;	1
+set07_00b	set07_00b_wave	g = nlSin( ang1 & 0xffff ) * 64.0f + 96.0f ;	g = sh_u32( nlSin( ang1 & 0xffff ) * 64.0f + 96.0f ) ;	1
+set07_00b	set07_00b_wave	b = nlSin( ang2 & 0xffff ) * 64.0f + 96.0f ;	b = sh_u32( nlSin( ang2 & 0xffff ) * 64.0f + 96.0f ) ;	1
+shl20_00	shl20_00_ssand_init	pl_char_set( ew, Char_Effect, no ) ;	pl_char_set( ew, Char_Effect, sh_u32( no ) ) ;	1
+shl35_04	shl35_04_jhk_init	pl_char_set( ew, 25, shl35_04_jhk_anim_tbl[ew->sub_type] ) ;	pl_char_set( ew, 25, sh_u32( shl35_04_jhk_anim_tbl[ew->sub_type] ) ) ;	1
+sound	total_vol_down	nlsndSystemControl( 0, SND_TOTAL_VOLUME, ( Uint8 )snd_w.vol[0] ) ;	nlsndSystemControl( 0, SND_TOTAL_VOLUME, ( Uint8 )sh_u32( snd_w.vol[0] ) ) ;	1
+sound	total_vol_up	nlsndSystemControl( 0, SND_TOTAL_VOLUME, ( Uint8 )snd_w.vol[0] ) ;	nlsndSystemControl( 0, SND_TOTAL_VOLUME, ( Uint8 )sh_u32( snd_w.vol[0] ) ) ;	1
+sound	se_vol_down	nlsndSystemControl( pack, SND_SE_VOLUME, ( Uint8 )snd_w.vol[pack] ) ;	nlsndSystemControl( pack, SND_SE_VOLUME, ( Uint8 )sh_u32( snd_w.vol[pack] ) ) ;	1
+sound	se_vol_up	nlsndSystemControl( pack, SND_SE_VOLUME, ( Uint8 )snd_w.vol[pack] ) ;	nlsndSystemControl( pack, SND_SE_VOLUME, ( Uint8 )sh_u32( snd_w.vol[pack] ) ) ;	1
+sound	s3l_fade_move	s3l_vol_set( snd_w.s3l_vol ) ;	s3l_vol_set( sh_u32( snd_w.s3l_vol ) ) ;	1
+sound	stream_start	s3l_vol_set( snd_w.s3l_vol ) ;	s3l_vol_set( sh_u32( snd_w.s3l_vol ) ) ;	1
+sound	song_req	song_vol_set( 0, snd_w.vol[0] ) ;	song_vol_set( 0, sh_u32( snd_w.vol[0] ) ) ;	1
+stage	stage_fog_set	fog_work.r = bright_work.rate[1] * fog->r ;	fog_work.r = sh_u32( bright_work.rate[1] * fog->r ) ;	1
+stage	stage_fog_set	fog_work.g = bright_work.rate[2] * fog->g ;	fog_work.g = sh_u32( bright_work.rate[2] * fog->g ) ;	1
+stage	stage_fog_set	fog_work.b = bright_work.rate[3] * fog->b ;	fog_work.b = sh_u32( bright_work.rate[3] * fog->b ) ;	1

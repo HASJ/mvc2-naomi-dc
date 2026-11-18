@@ -4,6 +4,7 @@
 #include "book.h"
 #include "naomi.h"
 #include "shinobi.h"
+#include "load.h"
 
 /* SHC's built-ins, as its smachine.h names them */
 #define set_imask( mask )	_builtin_set_imask( mask )
@@ -276,7 +277,7 @@ void system_init( int test )
 	nlSysMetricsInit() ;
 	nlSysUseLatency2V() ;
 	nlSysSetDirectListTypeLatency2V( 0 ) ;
-	nlSysSetVertexBufferBaseAddress( ( void * )0x0cf00000 ) ;
+	nlSysSetVertexBufferBaseAddress( ( void * )VERTEX_BUFF_ADRS ) ;
 	nlSysCreatePunchBuffer( 0x10000 ) ;
 	nlCreateVertexBuffer( 0, 0x4000, 0x24000, 0x4000 ) ;
 	nlSysSetTimeOutCount( 10, 0 ) ;
@@ -334,8 +335,8 @@ void system_init( int test )
 	backup_init() ;
 	sys_set_load() ;
 	sys_open_init() ;
-	file_load( 0, ( void * )0x0cc00000, 1 ) ;
-	nlsndInit( ( void * )0x0cc00000, 0x200 ) ;
+	file_load( 0, ( void * )TEX_ADRS, 1 ) ;
+	nlsndInit( ( void * )TEX_ADRS, 0x200 ) ;
 	com_sound_load( 0 ) ;
 	sound_init() ;
 	nlObjPutInit() ;
@@ -344,12 +345,12 @@ void system_init( int test )
 	nlObjPutMvSetMode( 1 ) ;
 	nlDispStripInit() ;
 	rom_dma_flag = 1 ;
-	cache_inv( ( void * )0x0dd00000, 0xf0000 ) ;
-	nlaReadROMDMA( 0x250000, ( char * )0x0dd00000, 0xf0000, 1 ) ;
-	file_load( 0x32e, ( void * )0x0ce00000, 0 ) ;
-	file_load( 0x32d, ( void * )0x0ce08000, 0 ) ;
-	thd_file_load( 1, ( void * )0x0ce0a000 ) ;
-	thd_file_load( 2, ( void * )0x0ce1d000 ) ;
+	cache_inv( ( void * )CHAR_LZ_ADRS, 0xf0000 ) ;
+	nlaReadROMDMA( 0x250000, ( char * )CHAR_LZ_ADRS, 0xf0000, 1 ) ;
+	file_load( 0x32e, ( void * )BOOT_DM04_TEX_ADRS, 0 ) ;
+	file_load( 0x32d, ( void * )BOOT_DM04_OBJ_ADRS, 0 ) ;
+	thd_file_load( 1, ( void * )SYS_FONT_ADRS ) ;
+	thd_file_load( 2, ( void * )SYS_SPR_ADRS ) ;
 	rom_dma_flag = 0 ;
 	nlInitInterrupt() ;
 	nlSetIntrFunction( 1, VBlankInIrq ) ;

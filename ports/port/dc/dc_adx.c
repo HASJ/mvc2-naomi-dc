@@ -6,10 +6,12 @@
 
 #include <math.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "frame_log.h"
 #include "adx.h"
 #include "naomi_host.h"
 #include "shinobi.h"
@@ -17,6 +19,12 @@
 
 #ifdef __3DS__
 #include <3ds.h>
+#endif
+
+/* a byte's two samples a pass, and a block's run at a time at the output's rate: the same samples, for the slower
+   CPUs */
+#if defined(__3DS__) || defined(PSP)
+#define ADX_RUNS
 #endif
 
 #define ADX_SECTORS 16
@@ -46,6 +54,13 @@ struct _adx_talk {
     int16_t out[2];
     uint8_t buf[ADX_BUF];
     uint32_t buf_off, buf_len;  /* the file's bytes in buf */
+    int head;                   /* the header still being read ahead (3DS) */
+    char name[32];
+#ifdef __PSP__
+    uint8_t next[ADX_BUF];      /* the piece after buf's, read ahead on the reader (psp_reader.c) */
+    uint32_t next_off;
+    int next_on;
+#endif
 };
 
 static struct _adx_talk player;
@@ -119,17 +134,19 @@ static void ahead_queue(const struct _adx_talk* p) {
     }
 }
 
-static void ahead_start(ADXT p, const char* fname) {
-    uint32_t bytes = ADX_BLOCK * (uint32_t)p->ch;
+static int ahead_wanted(void) {
     if (ahead_on < 0) {
         ahead_on = getenv("MVC2_ADX_AHEAD") != NULL && atoi(getenv("MVC2_ADX_AHEAD")) != 0;
         if (ahead_on) {
             host_log("adx: the music read ahead on another thread (MVC2_ADX_AHEAD)");
         }
     }
-    if (!ahead_on || p->total == 0 || !ctr_stream_open(dc_gd_path(fname), ADX_BUF)) {
-        return;
-    }
+    return ahead_on;
+}
+
+/* the pieces from the first block on, the header's sectors (in buf) given as the first when they are one */
+static void ahead_begin(ADXT p) {
+    uint32_t bytes = ADX_BLOCK * (uint32_t)p->ch;
     ah.on = 1;
     ah.cur = -1;
     ah.last = p->data + ((p->loop ? p->loop_end : p->total) - 1) / 32 * bytes;
@@ -140,6 +157,13 @@ static void ahead_start(ADXT p, const char* fname) {
         ah.next = ahead_after(p, ah.next);
     }
     ahead_queue(p);
+}
+
+static void ahead_start(ADXT p, const char* fname) {
+    if (!ahead_wanted() || p->total == 0 || !ctr_stream_open(dc_gd_path(fname), ADX_BUF)) {
+        return;
+    }
+    ahead_begin(p);
 }
 
 static void ahead_stop(void) {
@@ -185,10 +209,12 @@ static void ahead_report(void) {
     unsigned f = host_frame();
     if (ah.taken != 0 && f / 600 != frame / 600) {
         float mean, most;
-        uint32_t n = ctr_stream_times(&mean, &most);
+        uint32_t dropped, n = ctr_stream_times(&mean, &most, &dropped);
         frame = f;
-        host_log("adx ahead: %u pieces taken, %u reads here, %u missed; %u read, %.1f ms each, %.1f at most",
-                 (unsigned)ah.taken, (unsigned)ah.here, (unsigned)ah.missed, (unsigned)n, (double)mean, (double)most);
+        host_log("adx ahead: %u pieces taken, %u reads here, %u missed; %u read, %.1f ms each, %.1f at most; %u read "
+                 "short (read here)",
+                 (unsigned)ah.taken, (unsigned)ah.here, (unsigned)ah.missed, (unsigned)n, (double)mean, (double)most,
+                 (unsigned)dropped);
         if (fill.between || fill.thread) {
             host_log("adx fill: %u frames mixed between the game's, %u not read yet, %u while busy, %u blind",
                      (unsigned)fill.made, (unsigned)fill.unready,
@@ -237,6 +263,48 @@ static int ahead_ready(const struct _adx_talk* p, uint32_t n) {
 }
 #endif
 
+#ifdef __PSP__
+/* MVC2_ADX_AHEAD (on unless 0): the piece from buf's last sector read ahead on the reader, so that the game's thread
+   doesn't wait on the memory stick in a fight; the same bytes as read here */
+DC_FILE* dc_gd_file(GDFS gd, long* size);   /* dc_gd.c */
+
+static void music_ahead(ADXT p) {
+    static int on = -1;
+    long size;
+    DC_FILE* f;
+    uint32_t at = p->buf_off + (ADX_SECTORS - 1) * GDD_SCT_SIZE;
+    if (on < 0) {
+        on = getenv("MVC2_ADX_AHEAD") == NULL || atoi(getenv("MVC2_ADX_AHEAD")) != 0;
+    }
+    if (on && p->buf_len == ADX_BUF && (f = dc_gd_file(p->gd, &size)) != NULL && at < (uint32_t)size &&
+        host_music_start(f, (long)at, p->next, ADX_BUF)) {
+        p->next_off = at;
+        p->next_on = 1;
+    }
+}
+
+static void music_stop(ADXT p) {
+    if (p->next_on) {
+        host_music_wait();
+        p->next_on = 0;
+    }
+}
+
+/* the piece read ahead taken, if it has the bytes */
+static int music_take(ADXT p, uint32_t off, uint32_t n) {
+    if (!p->next_on || off < p->next_off || off + n > p->next_off + ADX_BUF) {
+        return 0;
+    }
+    host_music_wait();
+    memcpy(p->buf, p->next, ADX_BUF);
+    p->buf_off = p->next_off;
+    p->buf_len = ADX_BUF;
+    p->next_on = 0;
+    music_ahead(p);
+    return 1;
+}
+#endif
+
 /* the file's bytes at off (n of them, n at most a sector), read in when they are not in the buffer */
 static const uint8_t* bytes_at(ADXT p, uint32_t off, uint32_t n) {
 #ifdef __3DS__
@@ -269,10 +337,19 @@ static const uint8_t* bytes_at(ADXT p, uint32_t off, uint32_t n) {
 #ifdef __3DS__
         ah.here += (uint32_t)ah.on;
 #endif
+#ifdef __PSP__
+        if (music_take(p, off, n)) {
+            return p->buf + (off - p->buf_off);
+        }
+        music_stop(p);
+#endif
         gdFsSeek(p->gd, (Sint32)sct, 0);
         gdFsRead(p->gd, ADX_SECTORS, p->buf);
         p->buf_off = sct * GDD_SCT_SIZE;
         p->buf_len = ADX_BUF;
+#ifdef __PSP__
+        music_ahead(p);
+#endif
     }
     return p->buf + (off - p->buf_off);
 }
@@ -280,6 +357,9 @@ static const uint8_t* bytes_at(ADXT p, uint32_t off, uint32_t n) {
 static void close_files(ADXT p) {
 #ifdef __3DS__
     ahead_stop();
+#endif
+#ifdef __PSP__
+    music_stop(p);
 #endif
     if (p->gd != NULL) {
         gdFsClose(p->gd);
@@ -326,7 +406,7 @@ static void decode_block(ADXT p) {
     for (c = 0; c < p->ch; c++, b += ADX_BLOCK) {
         int32_t scale = (int32_t)(be16(b) & 0x1FFF) + 1;
         int32_t h1 = p->hist[c][0], h2 = p->hist[c][1];
-#ifndef __3DS__
+#ifndef ADX_RUNS
         for (i = 0; i < 32; i++) {
             int n = b[2 + i / 2] >> (i & 1 ? 0 : 4) & 15;
             int32_t s = (n >= 8 ? n - 16 : n) * scale + (p->coef1 * h1 >> 12) + (p->coef2 * h2 >> 12);
@@ -384,7 +464,7 @@ static int next_sample(ADXT p) {
     return 1;
 }
 
-#ifdef __3DS__
+#ifdef ADX_RUNS
 static int16_t gain(int32_t s, int32_t g) {
     s = s * g >> 15;
     return (int16_t)(s > 32767 ? 32767 : s < -32768 ? -32768 : s);
@@ -449,17 +529,26 @@ static void mix_same_rate(ADXT p, int16_t* buf, int n, int32_t g) {
 static Sint32 adx_g_vol = 0;
 static int32_t adx_g = 32768;
 
+#ifdef __3DS__
+static int head_ready(ADXT p);
+#endif
+
 static void adx_mix(int16_t* buf, int n) {
     ADXT p = &player;
     int i, c;
     if (p->stat != ADXT_STAT_PLAYING || p->pause) {
         return;
     }
+#ifdef __3DS__
+    if (p->head && !head_ready(p)) {
+        return;
+    }
+#endif
     if (p->vol != adx_g_vol) {
         adx_g_vol = p->vol;
         adx_g = (int32_t)(32768.0 * pow(10.0, adx_g_vol / 200.0));
     }
-#ifdef __3DS__
+#ifdef ADX_RUNS
     if (p->step == 0x10000 && p->frac == 0) {
         mix_same_rate(p, buf, n, adx_g);
         return;
@@ -528,7 +617,7 @@ static int adx_extra(int16_t* buf, int n) {
         return 0;
     }
     if (p->stat == ADXT_STAT_PLAYING && !p->pause) {
-        if (!ah.on || p->step != 0x10000 || p->frac != 0 || !ahead_ready(p, (uint32_t)n)) {
+        if (p->head || !ah.on || p->step != 0x10000 || p->frac != 0 || !ahead_ready(p, (uint32_t)n)) {
             fill.unready++;
             ok = 0;
         } else {
@@ -547,9 +636,8 @@ static int adx_extra(int16_t* buf, int n) {
 }
 #endif
 
-/* reads the header: the format, the predictor's coefficients from the cutoff, the loop */
-static int open_header(ADXT p) {
-    const uint8_t* h = bytes_at(p, 0, GDD_SCT_SIZE);
+/* the header: the format, the predictor's coefficients from the cutoff, the loop */
+static int parse_header(ADXT p, const uint8_t* h) {
     double z, a, b, c;
     if (be16(h) != 0x8000 || h[4] != 3 || h[5] != ADX_BLOCK || h[6] != 4 || h[7] < 1 || h[7] > 2) {
         return 0;
@@ -573,6 +661,47 @@ static int open_header(ADXT p) {
     p->step = (uint32_t)(((uint64_t)p->rate << 16) / SND_RATE);
     return 1;
 }
+
+static int open_header(ADXT p) {
+    return parse_header(p, bytes_at(p, 0, GDD_SCT_SIZE));
+}
+
+static void start_log(ADXT p) {
+    if (getenv("MVC2_SNDLOG")) {
+        host_log("adx: %s, %u Hz, %d channels, %u samples, loop %d %u-%u (frame %u)", p->name, p->rate, p->ch,
+                 p->total, p->loop, p->loop_start, p->loop_end, host_frame());
+    }
+}
+
+#ifdef __3DS__
+/* the sound thread's, under fill.lock: the header once its sectors are read, then the pieces after it asked for;
+   0 while they are still being read. A file that isn't ADX stops, closed by the game's thread */
+static int head_ready(ADXT p) {
+    uint32_t from;
+    const uint8_t* at;
+    int i = ctr_stream_find(0, GDD_SCT_SIZE);
+    if (i < 0 || (at = ctr_stream_take(i, &from)) == NULL) {
+        return 0;
+    }
+    memcpy(p->buf, at, ADX_BUF);
+    ctr_stream_free(i);
+    p->buf_off = 0;
+    p->buf_len = ADX_BUF;
+    p->head = 0;
+    if (!parse_header(p, p->buf)) {
+        host_log("adx: %s is not a 4-bit ADX file", p->name);
+        p->stat = ADXT_STAT_STOP;
+        fill.ended = 1;
+        return 0;
+    }
+    start_log(p);
+    if (p->total == 0) {
+        return 1;
+    }
+    ahead_begin(p);
+    return 1;
+}
+#endif
 
 void ADXT_Init(void) {
 #ifdef __3DS__
@@ -644,15 +773,50 @@ void ADXT_Pause(ADXT adxt, Sint32 sw) {
 }
 
 /* the file opened and its header read with the player stopped, so with the sound thread off it */
+static void ADXT_StartFname_body(ADXT adxt, char* fname);
 void ADXT_StartFname(ADXT adxt, char* fname) {
+    uint64_t t = fl_now();
+    ADXT_StartFname_body(adxt, fname);
+    fl.adx_ns += fl_now() - t;
+}
+
+static void ADXT_StartFname_body(ADXT adxt, char* fname) {
     if (adxt == NULL) {
         return;
     }
     halt(adxt);
-    if (!snd_enabled() || (adxt->gd = gdFsOpen(fname, NULL)) == NULL) {
+    if (!snd_enabled()) {
         return;
     }
+    snprintf(adxt->name, sizeof adxt->name, "%s", fname);
     adxt->buf_off = adxt->buf_len = 0;
+#ifdef __3DS__
+    /* with the music decoded on the sound thread, the header read there too: nothing waited for here */
+    if (fill.thread && ahead_wanted() && ctr_stream_open(dc_gd_path(fname), ADX_BUF) &&
+        ctr_stream_queue(0, ADX_BUF) >= 0) {
+        memset(adxt->hist, 0, sizeof adxt->hist);
+        adxt->sample = adxt->total = adxt->step = 0;
+        adxt->dec_left = 0;
+        adxt->frac = 0;
+        adxt->out[0] = adxt->out[1] = 0;
+        adxt->pause = 0;
+        adxt->head = 1;
+        ah.on = 1;
+        ah.cur = -1;
+        ah.next = NO_PIECE;
+        FILL_LOCK();
+        adxt->stat = ADXT_STAT_PLAYING;
+        fill.threaded = 1;
+        FILL_UNLOCK();
+        dc_gd_read_elsewhere(fname);
+        return;
+    }
+    ctr_stream_close();
+    adxt->head = 0;
+#endif
+    if ((adxt->gd = gdFsOpen(fname, NULL)) == NULL) {
+        return;
+    }
     if (!open_header(adxt)) {
         host_log("adx: %s is not a 4-bit ADX file", fname);
         halt(adxt);
@@ -673,13 +837,11 @@ void ADXT_StartFname(ADXT adxt, char* fname) {
     fill.threaded = fill.thread && ah.on;
 #endif
     FILL_UNLOCK();
-    if (getenv("MVC2_SNDLOG")) {
-        host_log("adx: %s, %u Hz, %d channels, %u samples, loop %d %u-%u (frame %u)", fname, adxt->rate, adxt->ch,
-                 adxt->total, adxt->loop, adxt->loop_start, adxt->loop_end, host_frame());
-    }
+    start_log(adxt);
 }
 
 void ADXT_Stop(ADXT adxt) {
+    uint64_t t = fl_now();
     if (adxt != NULL) {
         FILL_LOCK();
         if (adxt->stat == ADXT_STAT_PLAYING && getenv("MVC2_SNDLOG")) {
@@ -688,6 +850,7 @@ void ADXT_Stop(ADXT adxt) {
         FILL_UNLOCK();
         halt(adxt);
     }
+    fl.adx_ns += fl_now() - t;
 }
 
 void ADXT_SetOutVol(ADXT adxt, Sint32 vol) {

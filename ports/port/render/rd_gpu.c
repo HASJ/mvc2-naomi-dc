@@ -106,10 +106,14 @@ static int layers_env;      /* MVC2_GPULAYERS */
 static int fog_on;
 static SDL_GPUTexture* state_tex[RD_MAX_STATES];
 
-/* rd_gpu_view's: the frame drawn at scale times the game's size, then filtered to out_w by out_h (0: not) */
-static int want_scale = 1, want_sprites, want_w, want_h;
-static int scale = 1, out_w, out_h;     /* the targets as made */
+/* rd_gpu_view's: the frame drawn at scale times the game's size (frame_w by frame_h), then filtered to out_w by out_h
+   (0: not) */
+static float want_scale = 1;
+static int want_sprites, want_w, want_h;
+static float scale = 1;     /* the targets as made */
+static int frame_w = RD_WIDTH, frame_h = RD_HEIGHT, out_w, out_h;
 static int sprite_mode;
+static int want_hud, hud_mode, shared_grid;
 static SDL_GPUTexture* out_tex;
 static SDL_GPUShader *full_vs, *resolve_ps;
 static SDL_GPUGraphicsPipeline* resolve_pipe;
@@ -551,10 +555,11 @@ static void release(SDL_GPUTexture** t) {
     }
 }
 
-/* the frame's targets at n times the game's size; 0 when one could not be made */
-static int make_targets(int n) {
+/* the frame's targets at n times the game's size, its height a multiple of 3 so it stays 4:3 in whole pixels; 0 when
+   one could not be made */
+static int make_targets(float n) {
     SDL_GPUTextureUsageFlags key = SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    int i, w = RD_WIDTH * n, h = RD_HEIGHT * n;
+    int i, h = 3 * (int)(RD_HEIGHT * n / 3 + 0.5f), w = h / 3 * 4;
     for (i = 0; i < 2; i++) {
         release(&frame_tex[i]), release(&key_q[i]), release(&key_o[i]);
     }
@@ -566,28 +571,41 @@ static int make_targets(int n) {
         key_o[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, w, h, 1, key);
     }
     depth_tex = make_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT, w, h, 1, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
-    scale = n;
+    scale = (float)h / RD_HEIGHT, frame_w = w, frame_h = h;
     return frame_tex[0] != NULL && frame_tex[1] != NULL && key_q[0] != NULL && key_q[1] != NULL && key_o[0] != NULL &&
            key_o[1] != NULL && depth_tex != NULL;
 }
 
-void rd_gpu_view(int resolution, int aa, int w, int h, int sprites) {
-    int n = resolution > 0 ? resolution : h > 0 ? (h * (aa < 1 ? 1 : aa) + RD_HEIGHT - 1) / RD_HEIGHT : 1;
+void rd_gpu_view(float resolution, int aa, int w, int h, int sprites) {
+    /* auto: a whole multiple, filtered down to the window; texel: the window's own size */
+    float n = resolution > 0 ? resolution
+            : h <= 0 ? 1
+            : sprites == RD_SPRITES_TEXEL ? (float)(h * (aa < 1 ? 1 : aa)) / RD_HEIGHT
+            : (float)((h * (aa < 1 ? 1 : aa) + RD_HEIGHT - 1) / RD_HEIGHT);
     want_scale = n < 1 ? 1 : n > RD_GPU_MAX_SCALE ? RD_GPU_MAX_SCALE : n;
     want_w = w, want_h = h;
     want_sprites = sprites;
 }
 
+void rd_gpu_hud(int mode) {
+    want_hud = mode;
+}
+
+void rd_gpu_texel_grid(int shared) {
+    shared_grid = shared;
+}
+
 /* the targets as rd_gpu_view wants them: a smaller frame when the larger can't be made */
 static void fit_view(void) {
-    int n = want_scale, w = 0, h = 0;
-    if (n != scale) {
+    float n = want_scale;
+    int w = 0, h = 0;
+    if (3 * (int)(RD_HEIGHT * n / 3 + 0.5f) != frame_h) {
         while (!make_targets(n) && n > 1) {
             n--;
         }
         want_scale = scale;
     }
-    if (want_w > 0 && want_h > 0 && (want_w < RD_WIDTH * scale || want_h < RD_HEIGHT * scale)) {
+    if (want_w > 0 && want_h > 0 && (want_w < frame_w || want_h < frame_h)) {
         w = want_w, h = want_h;
     }
     if (w != out_w || h != out_h) {
@@ -599,11 +617,12 @@ static void fit_view(void) {
         out_w = out_tex != NULL ? w : 0, out_h = out_tex != NULL ? h : 0;
     }
     sprite_mode = scale > 1 ? want_sprites : 0;
+    hud_mode = scale > 1 ? want_hud : 0;
 }
 
 void rd_gpu_frame_size(int* w, int* h) {
-    *w = out_w > 0 ? out_w : RD_WIDTH * scale;
-    *h = out_w > 0 ? out_h : RD_HEIGHT * scale;
+    *w = out_w > 0 ? out_w : frame_w;
+    *h = out_w > 0 ? out_h : frame_h;
 }
 
 bool rd_gpu_init(SDL_GPUDevice* device) {
@@ -612,7 +631,7 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     const char* q = getenv("MVC2_RDQUALITY");
     const char* g = getenv("MVC2_GPUEDGES");
     SDL_GPUShaderStage vtx = SDL_GPU_SHADERSTAGE_VERTEX, frag = SDL_GPU_SHADERSTAGE_FRAGMENT;
-    int n = want_scale;
+    float n = want_scale;
     dev = device;
     layers_env = e != NULL && atoi(e) > 0 ? atoi(e) : 0;
     if (q != NULL) {
@@ -676,11 +695,29 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     return true;
 }
 
+static SDL_GPUFence* in_flight[2];
+static int next_flight;
+
+static void wait_flight(int i) {
+    if (in_flight[i] != NULL) {
+        SDL_WaitForGPUFences(dev, true, &in_flight[i], 1);
+        SDL_ReleaseGPUFence(dev, in_flight[i]);
+        in_flight[i] = NULL;
+    }
+}
+
+void rd_gpu_submit(SDL_GPUCommandBuffer* cmd) {
+    wait_flight(next_flight);
+    in_flight[next_flight] = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    next_flight ^= 1;
+}
+
 void rd_gpu_quit(void) {
     SDL_GPUTexture** own[] = { &frame_tex[0], &frame_tex[1], &depth_tex, &key_q[0], &key_q[1], &key_o[0], &key_o[1],
                                &pal_tex, &dummy_rgba, &dummy_r32, &out_tex };
     SDL_GPUGraphicsPipeline** p = &pipes[0][0][0][0];
     size_t i;
+    wait_flight(0), wait_flight(1);
     for (i = 0; i < (size_t)ngtex; i++) {
         SDL_ReleaseGPUTexture(dev, gtex[i].g);
     }
@@ -699,7 +736,7 @@ void rd_gpu_quit(void) {
     SDL_ReleaseGPUShader(dev, full_vs);
     SDL_ReleaseGPUShader(dev, resolve_ps);
     full_vs = resolve_ps = NULL;
-    scale = 1, out_w = out_h = 0, tb_size = 0;
+    scale = 1, frame_w = RD_WIDTH, frame_h = RD_HEIGHT, out_w = out_h = 0, tb_size = 0;
     for (i = 0; i < sizeof pipes / sizeof pipes[0][0][0][0]; i++) {
         if (p[i] != NULL) {
             SDL_ReleaseGPUGraphicsPipeline(dev, p[i]);
@@ -792,6 +829,8 @@ static int edge_owns(const RD_VTX* a, const RD_VTX* b, double sign) {
 
 /* the exact edges' margin, in pixels: well over the GPU's 1/256 snapping */
 #define EDGE_MARGIN (1.0 / 32)
+/* hud arcade's: the game pixels' whose centres are in it, all of each (half a diagonal) */
+#define BLOCK_MARGIN 0.75
 #define MAX_CORNERS 10      /* a hexagon cut by the screen's 4 sides */
 #define NEAR_CORNER 8192.0  /* corners within this of the screen's are snapped as finely */
 
@@ -824,11 +863,11 @@ static int clip(double* x, double* y, int n, int axis, double k, double at) {
     return m;
 }
 
-/* triangle t's vertices into out: g, or with the exact edges the triangle grown by EDGE_MARGIN for
-   the shader to keep rd_soft.c's pixels; how many */
-static int put_triangle(GVTX* out, const GVTX* g, const RD_TRI* t) {
+/* triangle t's vertices into out: g, or with the exact edges the triangle grown by d for the shader to keep
+   rd_soft.c's pixels; how many */
+static int put_triangle(GVTX* out, const GVTX* g, const RD_TRI* t, double d) {
     const RD_VTX *a = &t->v[0], *b = &t->v[1], *c = &t->v[2];
-    double area = edge(a->x, a->y, b->x, b->y, c->x, c->y), sign = area > 0 ? 1.0 : -1.0, d = EDGE_MARGIN, inv = 1.0 / area;
+    double area = edge(a->x, a->y, b->x, b->y, c->x, c->y), sign = area > 0 ? 1.0 : -1.0, inv = 1.0 / area;
     double px[MAX_CORNERS], py[MAX_CORNERS], ux[3], uy[3];
     float flags = (float)(edge_owns(b, c, sign) | edge_owns(c, a, sign) << 1 | edge_owns(a, b, sign) << 2 | (area > 0) << 3);
     GVTX v[MAX_CORNERS];
@@ -1025,6 +1064,35 @@ static uint64_t* corner_slot(uint64_t k) {
     return &corners[i];
 }
 
+/* an upright sprite drawn at the game's own size, a texel 5/3 by 15/7 game pixels (a character's): its texels can
+   be put on the lattice of pixels their edges fall on */
+static int on_lattice(const RD_STATE* s, const RD_TRI* o) {
+    const RD_VTX *a = &o->v[0], *p = &o->v[1], *c = &o->v[2];
+    double area = edge(a->x, a->y, p->x, p->y, c->x, c->y), dux, duy, dvx, dvy;
+    if (area == 0) {
+        return 0;
+    }
+    dux = ((p->u - a->u) * ((double)c->y - a->y) - (c->u - a->u) * ((double)p->y - a->y)) / area * s->tex->width;
+    duy = ((c->u - a->u) * ((double)p->x - a->x) - (p->u - a->u) * ((double)c->x - a->x)) / area * s->tex->width;
+    dvx = ((p->v - a->v) * ((double)c->y - a->y) - (c->v - a->v) * ((double)p->y - a->y)) / area * s->tex->height;
+    dvy = ((c->v - a->v) * ((double)p->x - a->x) - (p->v - a->v) * ((double)c->x - a->x)) / area * s->tex->height;
+    return fabs(duy) < 1e-4 && fabs(dvx) < 1e-4 && fabs(fabs(dux) - 0.6) < 1e-4 && fabs(fabs(dvy) - 7.0 / 15) < 1e-4;
+}
+
+/* texel: the sprites' edges, across (0) and down (1), sorted, for meet() */
+typedef struct {
+    float e, lo, hi;    /* the edge, and the sprite's extent the other way */
+    uint8_t side;       /* 0 its least, 1 its greatest */
+    uint8_t lattice;    /* the sprite is on the lattice (else its corners go to whole game pixels) */
+} EDGE;
+static EDGE* edges[2];
+static int nedges, edges_size;
+
+static int edge_order(const void* a, const void* b) {
+    float x = ((const EDGE*)a)->e, y = ((const EDGE*)b)->e;
+    return x < y ? -1 : x > y;
+}
+
 static void find_corners(void) {
     uint32_t want = 64, count = 0;
     int list, i, j;
@@ -1043,6 +1111,12 @@ static void find_corners(void) {
         return;
     }
     memset(corners, 0xFF, corners_size * sizeof *corners);
+    nedges = 0;
+    if (sprite_mode == RD_SPRITES_TEXEL && (int)count > edges_size) {
+        free(edges[0]), free(edges[1]);
+        edges[0] = malloc(count * sizeof(EDGE)), edges[1] = malloc(count * sizeof(EDGE));
+        edges_size = edges[0] != NULL && edges[1] != NULL ? (int)count : 0;
+    }
     for (list = 0; list < RD_LISTS; list++) {
         for (i = 0; i < rd_frame->ntris[list]; i++) {
             const RD_TRI* t = &rd_frame->tris[list][i];
@@ -1052,8 +1126,24 @@ static void find_corners(void) {
                     uint64_t k = corner_key(snap16(t->v[j].x), snap16(t->v[j].y));
                     *corner_slot(k) = k;
                 }
+                if (sprite_mode == RD_SPRITES_TEXEL && nedges + 2 <= edges_size) {
+                    int axis, lattice = on_lattice(s, t);
+                    for (axis = 0; axis < 2; axis++) {
+                        float lo = 1e30f, hi = -1e30f, olo = 1e30f, ohi = -1e30f;
+                        for (j = 0; j < 3; j++) {
+                            float c = axis ? t->v[j].y : t->v[j].x, d = axis ? t->v[j].x : t->v[j].y;
+                            lo = fminf(lo, c), hi = fmaxf(hi, c), olo = fminf(olo, d), ohi = fmaxf(ohi, d);
+                        }
+                        edges[axis][nedges] = (EDGE){ lo, olo, ohi, 0, (uint8_t)lattice };
+                        edges[axis][nedges + 1] = (EDGE){ hi, olo, ohi, 1, (uint8_t)lattice };
+                    }
+                    nedges += 2;
+                }
             }
         }
+    }
+    if (nedges > 0) {
+        qsort(edges[0], nedges, sizeof(EDGE), edge_order), qsort(edges[1], nedges, sizeof(EDGE), edge_order);
     }
 }
 
@@ -1061,9 +1151,49 @@ static int is_corner(float x, float y) {
     return corners != NULL && *corner_slot(corner_key(x, y)) != ~0ull;
 }
 
+/* texel: a sprite on the lattice keeps every edge on its texels' lattice (at k pixels a game pixel), so its texels all
+   stay whole and in place with the rest of its object, but for one case. Where its edge e across (0) or down (1), its
+   least (side 0) or greatest, lo to hi the other way, meets no edge of another on the lattice (it ends its object
+   there) and another sprite's opposite edge, less than a game pixel off, leaves a gap where at 640 by 480 none shows
+   (they overlap, or end at the same game pixel's edge), it reaches over the gap to where that one is drawn. Its edge l
+   on the lattice, moved or not */
+static float meet(int axis, int side, float e, float l, float lo, float hi, float k) {
+    const EDGE* d = edges[axis];
+    float to = l;
+    int a = 0, b = nedges;
+    while (a < b) {
+        int m = (a + b) / 2;
+        if (d[m].e < e - 1.0f) {
+            a = m + 1;
+        } else {
+            b = m;
+        }
+    }
+    for (; a < nedges && d[a].e < e + 1.0f; a++) {
+        if (d[a].side != side && d[a].lo < hi && d[a].hi > lo) {
+            float m;
+            if (d[a].lattice && fabsf(d[a].e - e) <= 1.0f / 64) {
+                return l;
+            }
+            if ((side ? d[a].e > e : d[a].e < e) && floorf(d[a].e + 0.5f) != floorf(e + 0.5f)) {
+                continue;
+            }
+            m = d[a].lattice ? floorf(d[a].e * k + (0.5f - 1.0f / 64)) / k : floorf(d[a].e + 0.5f);
+            if (side ? m > l && (to == l || m < to) : m < l && (to == l || m > to)) {
+                to = m;
+            }
+        }
+    }
+    return to;
+}
+
+static int gcd(int a, int b) {
+    return b == 0 ? a : gcd(b, a % b);
+}
+
 /* the background's 6 vertices, the invert quad's 6, then each list's triangles; how many */
 static int build(float* zscale) {
-    int list, i, n = 12;
+    int list, i, n = 12, lattice_x, lattice_y;
     float qmax = 0;
     int e;
     for (list = 0; list < RD_LISTS; list++) {
@@ -1135,6 +1265,8 @@ static int build(float* zscale) {
     if (scale > 1) {
         find_corners();
     }
+    /* a character's texel, 5/3 by 15/7 game pixels, is frame_h/288 by frame_h/224 pixels: their fractions' parts */
+    lattice_x = 288 / gcd(frame_h, 288), lattice_y = 224 / gcd(frame_h, 224);
     for (list = 0; list < RD_LISTS; list++) {
         nbatches[list] = 0;
         for (i = 0; i < rd_frame->ntris[list]; i++) {
@@ -1143,40 +1275,74 @@ static int build(float* zscale) {
             RD_TRI snapped;
             GVTX g[3];
             float fb[4];
-            int j, k, fitted = 0;
+            int j, k, fitted = 0, lattice = 0;
+            /* hud smooth or arcade: only sprites read as sprites; arcade: the front in the game's pixels */
+            int as_sprite = sprite(s, o) && (hud_mode == RD_HUD_SHARP || s->origin == RD_SPRITE);
+            int blocks = hud_mode == RD_HUD_ARCADE && s->origin == RD_FRONT && exact_edges;
+            float move_x = 0, move_y = 0, lx0, hx, ly0, hy;
             if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                 continue;
             }
-            if (scale > 1) {
+            if (scale > 1 && !blocks) {
                 /* drawn larger: corners on a sixteenth of a game pixel, so neighbours a float's rounding apart meet,
                    and sprites' corners (and the corners they share) on whole ones, so sprites side by side meet as
-                   they do at 640 by 480 */
+                   they do at 640 by 480 (texel: on whole pixels drawn) */
                 snapped = *t;
+                if (sprite_mode == RD_SPRITES_TEXEL && as_sprite) {
+                    lattice = on_lattice(s, o);
+                }
+                lx0 = fminf(t->v[0].x, fminf(t->v[1].x, t->v[2].x)), hx = fmaxf(t->v[0].x, fmaxf(t->v[1].x, t->v[2].x));
+                ly0 = fminf(t->v[0].y, fminf(t->v[1].y, t->v[2].y)), hy = fmaxf(t->v[0].y, fmaxf(t->v[1].y, t->v[2].y));
                 for (j = 0; j < 3; j++) {
                     float x = snap16(t->v[j].x), y = snap16(t->v[j].y);
                     if (is_corner(x, y)) {
-                        x = floorf(x + 0.5f), y = floorf(y + 0.5f);
+                        if (lattice && shared_grid) {
+                            /* on the CPS2's pixels: a corner at the grid line whose pixel centres it takes (the
+                               first after it), as the art drawn one pixel a texel would be */
+                            float lx = ceilf(t->v[j].x * 0.6f - 0.5f) / 0.6f;
+                            float ly = ceilf(t->v[j].y * (7.0f / 15) - 0.5f) / (7.0f / 15);
+                            if (j == 0) {
+                                move_x = lx - t->v[0].x, move_y = ly - t->v[0].y;
+                            }
+                            x = lx, y = ly;
+                        } else if (lattice) {
+                            /* its texels from where the game put them onto the pixels their corners can fall on
+                               (whole ones at 2688 by 2016, sevenths down at 1920 by 1440): the sprite's texels all
+                               move as far, and its edges stay on their lattice but where it reaches over a gap (meet) */
+                            float kx = scale * lattice_x, ky = scale * lattice_y;
+                            float lx = floorf(t->v[j].x * kx + (0.5f - 1.0f / 64)) / kx;
+                            float ly = floorf(t->v[j].y * ky + (0.5f - 1.0f / 64)) / ky;
+                            if (j == 0) {
+                                move_x = lx - t->v[0].x, move_y = ly - t->v[0].y;
+                            }
+                            x = meet(0, t->v[j].x == hx, t->v[j].x, lx, ly0, hy, kx);
+                            y = meet(1, t->v[j].y == hy, t->v[j].y, ly, lx0, hx, ky);
+                        } else {
+                            x = floorf(x + 0.5f), y = floorf(y + 0.5f);
+                        }
                     }
                     snapped.v[j].x = x, snapped.v[j].y = y;
                 }
                 {
-                    /* the game's planes kept: 1/w, and u and v over w, at the moved corners from the triangle as it was */
+                    /* the game's planes kept: 1/w, and u and v over w, at the moved corners from the triangle as it was
+                       (a sprite on the lattice: moved as far as its texels) */
                     const RD_VTX *a = &o->v[0], *b = &o->v[1], *c = &o->v[2];
                     double inv = 1.0 / edge(a->x, a->y, b->x, b->y, c->x, c->y);
                     int level = a->z == b->z && b->z == c->z;
                     for (j = 0; j < 3; j++) {
                         RD_VTX* v = &snapped.v[j];
-                        double w0 = edge(b->x, b->y, c->x, c->y, v->x, v->y) * inv, w1 = edge(c->x, c->y, a->x, a->y, v->x, v->y) * inv;
+                        double px = (double)v->x - move_x, py = (double)v->y - move_y;
+                        double w0 = edge(b->x, b->y, c->x, c->y, px, py) * inv, w1 = edge(c->x, c->y, a->x, a->y, px, py) * inv;
                         double w2 = 1.0 - w0 - w1;
                         double q = level ? a->z : w0 * a->z + w1 * b->z + w2 * c->z;
                         double uq = w0 * a->u * a->z + w1 * b->u * b->z + w2 * c->u * c->z;
                         double vq = w0 * a->v * a->z + w1 * b->v * b->z + w2 * c->v * c->z;
-                        if (q > 0 && (v->x != o->v[j].x || v->y != o->v[j].y)) {
+                        if (q > 0 && (px != o->v[j].x || py != o->v[j].y)) {
                             v->z = (float)q, v->u = (float)(uq / q), v->v = (float)(vq / q);
                         }
                     }
                 }
-                fitted = sprite(s, o) && fit_texels(s, o, &snapped, fb);
+                fitted = as_sprite && fit_texels(s, o, &snapped, fb);
                 t = &snapped;
                 if (cull(s, &t->v[0], &t->v[1], &t->v[2])) {
                     continue;
@@ -1186,17 +1352,21 @@ static int build(float* zscale) {
                 put_vertex(&g[j], &t->v[j], s->flat ? &t->v[2] : &t->v[j], s, *zscale, (float)i);
             }
             /* a sprite: textured, its 1/w the same at each corner. Half a quad has the quad's u and v, from and to.
-               cf.w 2: its texels fitted to it */
-            if (sprite(s, o)) {
+               cf.w 2: its texels fitted to it; 3: on the lattice; 4: the front in the game's pixels */
+            if (blocks) {
+                for (j = 0; j < 3; j++) {
+                    g[j].cf[3] = 4.0f;
+                }
+            } else if (as_sprite) {
                 float b[4];
                 b[0] = fminf(o->v[0].u, fminf(o->v[1].u, o->v[2].u)), b[1] = fminf(o->v[0].v, fminf(o->v[1].v, o->v[2].v));
                 b[2] = fmaxf(o->v[0].u, fmaxf(o->v[1].u, o->v[2].u)), b[3] = fmaxf(o->v[0].v, fmaxf(o->v[1].v, o->v[2].v));
                 for (j = 0; j < 3; j++) {
-                    g[j].cf[3] = fitted ? 2.0f : 1.0f;
+                    g[j].cf[3] = lattice ? 3.0f : fitted ? 2.0f : 1.0f;
                     memcpy(g[j].uvb, fitted ? fb : b, sizeof b);
                 }
             }
-            k = put_triangle(&verts[n], g, t);
+            k = put_triangle(&verts[n], g, t, blocks ? BLOCK_MARGIN : EDGE_MARGIN);
             if (k > 0) {
                 add_batch(list, n, k, t->state);
                 n += k;
@@ -1355,7 +1525,7 @@ static SDL_GPUTexture* finish(SDL_GPUCommandBuffer* cmd) {
     if (rp == NULL) {
         return frame_tex[0];
     }
-    ratio[0] = (float)(RD_WIDTH * scale) / (float)out_w, ratio[1] = (float)(RD_HEIGHT * scale) / (float)out_h;
+    ratio[0] = (float)frame_w / (float)out_w, ratio[1] = (float)frame_h / (float)out_h;
     ratio[2] = ratio[3] = 0;
     tb.texture = frame_tex[0], tb.sampler = point;
     SDL_BindGPUGraphicsPipeline(rp, resolve_pipe);
@@ -1403,7 +1573,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     fu.fog_color[0] = (float)(rd_fog.color >> 24), fu.fog_color[1] = (float)(rd_fog.color >> 16 & 255);
     fu.fog_color[2] = (float)(rd_fog.color >> 8 & 255), fu.fog_color[3] = (float)(rd_fog.color & 255);
     fu.fog_density = rd_fog.density;
-    fu.inv_scale = 1.0f / (float)scale;
+    fu.inv_scale = 1.0f / scale;
     fu.sprite_mode = sprite_mode;
     SDL_PushGPUFragmentUniformData(cmd, 1, &fu, sizeof fu);
 
@@ -1459,7 +1629,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
             memset(&from, 0, sizeof from);
             memset(&to, 0, sizeof to);
             from.texture = frame_tex[f], to.texture = frame_tex[f ^ 1];
-            SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)(RD_WIDTH * scale), (Uint32)(RD_HEIGHT * scale), 1, false);
+            SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)frame_w, (Uint32)frame_h, 1, false);
         }
         SDL_EndGPUCopyPass(copy);
         keys[0] = keys[1] = NULL, keys[3] = key_o[cur], keys[4] = frame_tex[f];
@@ -1475,7 +1645,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
         memset(&from, 0, sizeof from);
         memset(&to, 0, sizeof to);
         from.texture = frame_tex[1], to.texture = frame_tex[0];
-        SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)(RD_WIDTH * scale), (Uint32)(RD_HEIGHT * scale), 1, false);
+        SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)frame_w, (Uint32)frame_h, 1, false);
         SDL_EndGPUCopyPass(copy);
     }
     return finish(cmd);
@@ -1519,19 +1689,23 @@ static const uint8_t* download(SDL_GPUTexture* t, int w, int h) {
     return SDL_MapGPUTransferBuffer(dev, tb, false);
 }
 
-/* the last frame at the game's size, each pixel the average of those drawn for it: slow, for screenshots */
+/* the last frame at the game's size, each pixel the average of those drawn whose centres are in it: slow, for
+   screenshots */
 bool rd_gpu_read(uint32_t* argb) {
-    const uint8_t* p = download(frame_tex[0], RD_WIDTH * scale, RD_HEIGHT * scale);
-    int x, y, i, j, c, n = scale * scale, pitch = RD_WIDTH * scale * 4;
+    const uint8_t* p = download(frame_tex[0], frame_w, frame_h);
+    int x, y, i, j, c, n, pitch = frame_w * 4;
     if (p == NULL) {
         return false;
     }
     for (y = 0; y < RD_HEIGHT; y++) {
+        int y0 = (int)ceilf(y * scale - 0.5f), y1 = (int)ceilf((y + 1) * scale - 0.5f);
         for (x = 0; x < RD_WIDTH; x++) {
+            int x0 = (int)ceilf(x * scale - 0.5f), x1 = (int)ceilf((x + 1) * scale - 0.5f);
             uint32_t sum[4] = { 0, 0, 0, 0 };
-            for (j = 0; j < scale; j++) {
-                const uint8_t* q = p + (size_t)(y * scale + j) * pitch + (size_t)x * scale * 4;
-                for (i = 0; i < scale * 4; i++) {
+            n = (y1 - y0) * (x1 - x0);
+            for (j = y0; j < y1; j++) {
+                const uint8_t* q = p + (size_t)j * pitch + (size_t)x0 * 4;
+                for (i = 0; i < (x1 - x0) * 4; i++) {
                     sum[i & 3] += q[i];
                 }
             }

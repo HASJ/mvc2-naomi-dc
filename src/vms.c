@@ -4,6 +4,7 @@
 #include "naomi.h"
 #include "book.h"
 #include "vms.h"
+#include "load.h"
 #ifdef TARGET_DC
 #include "shinobi.h"
 #endif
@@ -1706,11 +1707,7 @@ int vms_file_save( Sint8 type, int port )
 
 /* a Backup file image's first bytes: where its data's size is kept */
 /* the exec file's image in the cartridge, the one the card's menu starts */
-#ifdef TARGET_DC
-#define VMS_EXEC_IMAGE	( ( void * )0x0CE1E000 )	/* VS4.BIN, read from the disc at the start */
-#else
-#define VMS_EXEC_IMAGE	( ( void * )0x0D980000 )
-#endif
+#define VMS_EXEC_IMAGE	( ( void * )VMS_EXEC_ADRS )
 #define VMS_BIT( port )	( 1 << ( port ) )
 
 /****************************************************************/

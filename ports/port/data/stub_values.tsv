@@ -1,0 +1,19 @@
+buAnalyzeBackupFileImage	the arcade's VMS card (vms.c), only with VMS mode on, which the port's test menu does not offer
+buDefragDisk	the arcade's VMS card, as above
+buFindExecFile	the arcade's VMS card, as above
+buGetDiskFree	the arcade's VMS card, as above
+buGetFileInfo	the arcade's VMS card, as above
+buGetFileSize	the arcade's VMS card, as above
+buIsExistFile	the arcade's VMS card, as above
+buLoadFile	the arcade's VMS card, as above
+buLoadFileEx	the arcade's VMS card, as above
+buMakeBackupFileImage	the arcade's VMS card, as above
+buMountDisk	the arcade's VMS card, as above
+buRewriteExecFile	the arcade's VMS card, as above
+buSaveExecFile	the arcade's VMS card, as above
+buSaveFile	the arcade's VMS card, as above
+buUnmount	the arcade's VMS card, as above
+pdLcdGetDirection	the arcade's VMS card's screen, only with VMS mode on
+pdVibMxIsReady	the arcade's vibration packs, only with VMS mode on
+pdVmsLcdIsReady	the arcade's VMS card's screen, only with VMS mode on
+nlCommonTextureGetFreeMem	tex_mem_disp, a debug display of the free texture memory

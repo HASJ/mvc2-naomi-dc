@@ -34,7 +34,7 @@ it says what and where; put it there and press Enter.
 5 is a coin, 9 service, F2 the arcade's test menu.
 
 - F1: the controls screen (or Back with the right shoulder held). Enter sets a control from the next key
-  or button, Delete puts it back, Escape closes. It also sets the renderer, the picture and the sprites.
+  or button, Delete puts it back, Escape closes. It also sets the renderer, the picture, the sprites and the HUD.
 - F3: frame times.
 - F9: switch between the arcade and the Dreamcast.
 - F10: scaling (aspect, integer, stretch). F11 or Alt+Enter: full screen.
@@ -58,8 +58,11 @@ Controllers: the first plugged in is player 1's, the second player 2's.
 
 The graphics card draws the game at the window's resolution: 3D stages, polygons and effects come out sharp, while the
 characters keep their pixels (`sprites = sharp`; `smooth` to smooth them, `pixel` for no smoothing at all,
-`arcade` for the arcade's own filtering). `aa = 2` (up to 4) smooths edges by drawing larger still; `resolution = 1` is
-the arcade's 640 by 480. F1 sets these too.
+`arcade` for the arcade's own filtering, `texel` for the characters' own pixels, each the same size; with
+`scale = integer` it is shown pixel for pixel, 2688 by 2016 on a 4K screen; every sprite sits on one grid of the
+characters' pixels, so a character's parts meet with no slivers, or on its own with `texel_grid = object`). The timer, gauges and words keep the
+arcade's own pixels (`hud = arcade`; `smooth` to smooth them, `sharp` to read them as sprites). `aa = 2` (up to 4)
+smooths edges by drawing larger still; `resolution = 1` is the arcade's 640 by 480. F1 sets these too.
 
 Without a graphics card that can, or with `renderer = soft`, the CPU draws the arcade's 640 by 480
 instead; on a slow PC, `render = half` makes that much faster.

@@ -194,7 +194,7 @@ Uint8 pl_air_dash_ck( PLAYER_WORK *pl_w, COM_WORK *cw )
 	if( DASH8_CK( pl_w ) ) sw = 0x3c00 ;
 	if( DASH2_CK( pl_w ) ) sw = 0x0c00 ;
 	pl_w->dir = ( cw->sw & sw ) >> 10 ;
-	pl_act_set( pl_w, N_AIR_DASH ) ;
+	return pl_act_set( pl_w, N_AIR_DASH ) ;
 }
 
 /****************************************************************/
@@ -238,7 +238,7 @@ Uint8 pl_air_dash_sw_ck( PLAYER_WORK *pl_w )
 	}
 	pl_w->dir = ( pl_w->pl_sw_new & KEY_LEVER ) >> 10 ;
 	if( !pl_w->fly_flag ) pl_w->jump_dash_cnt ++ ;
-	pl_act_set( pl_w, N_AIR_DASH ) ;
+	return pl_act_set( pl_w, N_AIR_DASH ) ;
 }
 
 /*==============================================================*/
@@ -1426,6 +1426,17 @@ static Uint32 cpu_renda_tbl[] = {
 	0x000007ff, 0x00000fff, 0x00000fff, 0x00000fff, 0x00001fff, 0x00001fff, 0x00003fff, 0x00003fff,
 } ;
 
+#ifdef HOST_PORT
+/* a level reads the word 32 on from the last, so past level 0 it reads the data after the table: the board's words */
+static const Uint32 cpu_renda_past[8] = {
+#ifdef TARGET_DC
+	0x00000001, 0x10101010, 0x8c05828e, 0x8c057d6c, 0x8c0583ae, 0xfa000000, 0x08080408, 0xffe40680,
+#else
+	0x00000001, 0x10101010, 0x0c04a006, 0x0c049ae4, 0x0c04a124, 0xfa000000, 0x08080408, 0xffe40680,
+#endif
+} ;
+#endif
+
 /*==============================================================*/
 static int cpu_renda_ck( PLAYER_WORK *pl_w )
 {
@@ -1436,7 +1447,11 @@ static int cpu_renda_ck( PLAYER_WORK *pl_w )
 	if( vs_sys_w->vs_st != VS_FIGHT ) return 0 ;
 	bit = 1 << ( Rnd() & 31 ) ;
 	lv = Sys->cpu_renda_level ;
+#ifdef HOST_PORT
+	if( bit & cpu_renda_past[lv] ) return 1 ;
+#else
 	if( bit & cpu_renda_tbl[lv * 32] ) return 1 ;
+#endif
 	return 0 ;
 }
 

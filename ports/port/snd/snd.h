@@ -9,6 +9,7 @@
 #include <stdio.h>
 
 #define SND_RATE 44100
+#define SND_FRAME_US 16683          /* the board's frame, as the port's timer counts it */
 
 int snd_enabled(void);                      /* MVC2_SOUND=0 turns it off */
 int snd_frame(const int16_t** out);         /* a frame's stereo samples (about 736), made once a frame */

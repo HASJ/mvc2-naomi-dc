@@ -255,13 +255,13 @@ int ctr_ask_bottom(int current) {
     return result;
 }
 
-/* the pillars in the bars beside the game, as the render target has them: the screen's columns as its rows, scale
-   to a column, in 8x8 tiles, R G B A; the left bar's rows, then the right's. NULL with pillars = off in mvc2.cfg
+/* the pillars in the bars beside the game, as the render target has them: the screen's columns as its rows, bar of
+   them to a bar, in 8x8 tiles, R G B A; the left bar's rows, then the right's. NULL with pillars = off in mvc2.cfg
    (or MVC2_PILLARS=0), or when there is no memory */
-u32* ctr_art_pillars(int target_w, int scale) {
+u32* ctr_art_pillars(int target_w, int bar) {
     const char* off = getenv("MVC2_PILLARS") != NULL ? getenv("MVC2_PILLARS") : config_get("pillars");
     ART pillar[2];
-    int bar = 40 * scale, side, r, c;
+    int across = bar / 40, down = target_w / 240, side, r, c;
     u32* out;
     if ((off != NULL && (strcmp(off, "0") == 0 || strcmp(off, "off") == 0)) || !unpack_pillars(pillar)) {
         return NULL;
@@ -270,7 +270,7 @@ u32* ctr_art_pillars(int target_w, int scale) {
     for (side = 0; side < 2 && out != NULL; side++) {
         for (r = 0; r < bar; r++) {
             for (c = 0; c < target_w; c++) {
-                u32 rgb = over_black(pillar[side].px[tiled(r / scale, 239 - c / scale, pillar[side].w)], 256);
+                u32 rgb = over_black(pillar[side].px[tiled(r / across, 239 - c / down, pillar[side].w)], 256);
                 out[side * bar * target_w + tiled(c, r, target_w)] = rgb << 8 | 0xFF;
             }
         }

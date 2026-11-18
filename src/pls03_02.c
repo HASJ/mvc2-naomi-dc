@@ -566,7 +566,18 @@ static void pls03_02_appear_start( PLAYER_WORK *ew, PLAYER_WORK *pl_w )
 	if( ew->disp_dir ) ew->pos.x += pls03_02_ofs[ew->sub_type][0] * 1.6666666f / 256.0f ;
 	else ew->pos.x -= pls03_02_ofs[ew->sub_type][0] * 1.6666666f / 256.0f ;
 	ew->pos.y += pls03_02_ofs[ew->sub_type][1] * 2.142857f / 256.0f ;
+#ifdef HOST_PORT
+	/* the cast takes the low byte of the row's address, which on a host is wherever the table lands: use the board's */
+#if defined( TARGET_DC )
+	ew->sub_prio = ( Sint8 )( 0x8c15ad64 + ew->sub_type * sizeof pls03_02_ofs[0] ) ;
+#elif ROM_BOARD == 2
+	ew->sub_prio = ( Sint8 )( 0x0c25732c + ew->sub_type * sizeof pls03_02_ofs[0] ) ;
+#else
+	ew->sub_prio = ( Sint8 )( 0x0c2571cc + ew->sub_type * sizeof pls03_02_ofs[0] ) ;
+#endif
+#else
 	ew->sub_prio = ( Sint8 )pls03_02_ofs[ew->sub_type] ;
+#endif
 	ef_char_set2( ew, 27, 8, nlRand() & 3 ) ;
 }
 

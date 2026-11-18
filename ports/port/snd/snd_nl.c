@@ -721,7 +721,7 @@ void nlsndStreamSetHdPan(uint8_t* hd, int16_t c, int32_t pan) {
 
 /* ---- each frame ---- */
 
-#define FRAME_US 16683u         /* the board's frame, as the port's timer counts it */
+#define FRAME_US ((uint32_t)SND_FRAME_US)
 
 static int16_t frame_buf[2 * 2048];
 static int16_t mix_buf[2 * 2048];   /* the mixer's part of the next frame */
@@ -731,7 +731,9 @@ static int prepared;                /* mix_buf holds the next frame's */
 static SND_MIXER mixer;
 static void (*sync_fn)(void);
 static int (*defer_fn)(SND_WORK work, int a, int b);
-static clock_t render_time;     /* for MVC2_SNDDBG: the time the AICA takes */
+static int dbg = -1;            /* MVC2_SNDDBG: the time the AICA takes; =n the chip's state every n frames */
+static int dbg_every;
+static clock_t render_time;
 static uint32_t render_frames;
 
 void snd_set_mixer(SND_MIXER fn) {
@@ -798,6 +800,10 @@ static uint32_t next_count(void) {
 void snd_prepare(void) {
     uint32_t n = next_count();
     PROF_START(t);
+    if (dbg < 0) {
+        dbg = getenv("MVC2_SNDDBG") != NULL;
+        dbg_every = dbg ? atoi(getenv("MVC2_SNDDBG")) : 0;
+    }
     memset(mix_buf, 0, n * 4);
     if (snd_enabled()) {
         if (mixer != NULL) {
@@ -839,23 +845,20 @@ int snd_frame(const int16_t** out) {
             late_mixer(mix_buf, (int)n);
         }
 #endif
-        if (inited) {
-            static int dbg = -1;
-            if (dbg < 0) {
-                dbg = getenv("MVC2_SNDDBG") ? atoi(getenv("MVC2_SNDDBG")) : 0;
-            }
-            if (dbg > 0 && host_frame() % (unsigned)dbg == 0) {
+        if (inited && !dbg) {
+            aica_render(frame_buf, (int)n);
+        } else if (inited) {
+            clock_t t0;
+            if (dbg_every > 0 && host_frame() % (unsigned)dbg_every == 0) {
                 AICA_STATS st;
                 aica_stats(&st);
                 host_log("frame %u: %llu ARM cycles", host_frame(), (unsigned long long)st.cpu_cycles);
                 aica_dump(host_log);
             }
-            {
-                clock_t t0 = clock();
-                aica_render(frame_buf, (int)n);
-                render_time += clock() - t0;
-                render_frames++;
-            }
+            t0 = clock();
+            aica_render(frame_buf, (int)n);
+            render_time += clock() - t0;
+            render_frames++;
         } else {
             memset(frame_buf, 0, n * 4);
         }

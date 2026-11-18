@@ -38,6 +38,14 @@ void nl_tex_free(NL_TEX* t);        /* the game's free: its texels given back wh
 void nl_tex_frame(void);            /* before each frame is given to the renderer */
 void nl_tex_free_all(void);
 uint64_t nl_hash64(const void* src, size_t n);    /* a texture source's, as its cache keeps them */
+int nl_lz_key(const void* p, size_t n, uint64_t* key);   /* bytes from the cell last unpacked: their key */
+/* set by a front end before the game starts: PAL4 and VQ textures kept as their sources, rd_texture's unpack making
+   their texels when the renderer wants them (not for rd_soft) */
+extern int nl_tex_sources;
+/* set by a front end whose renderer is done with a frame when it returns: freed texels go after the next frames
+   whether drawn or not */
+extern int nl_tex_sync;
+size_t nl_tex_held(void);           /* the bytes the textures take */
 
 /* nlObjPutSetFadeColor's, 0 to 1 */
 extern float nl_fade_r, nl_fade_g, nl_fade_b;

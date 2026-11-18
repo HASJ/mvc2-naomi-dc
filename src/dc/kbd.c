@@ -5,6 +5,7 @@
 #include "shinobi.h"
 #include "dm.h"
 #include "dm0d.h"
+#include "load.h"
 
 extern int sprintf( char *s, const char *fmt, ... ) ;
 extern char *strcat( char *s1, const char *s2 ) ;
@@ -12,16 +13,16 @@ extern char *strcat( char *s1, const char *s2 ) ;
 #define KB_CMD	100000		/* the editor's commands: kb_cmd's codes from here, the characters below */
 
 /* ASK.BIN's entries: kana-kanji conversion */
-#define ASK_INIT	( ( void ( * )( void ) )0x0cd004c2 )
-#define ASK_KATAKANA	( ( int ( * )( char *roma, char *kana ) )0x0cd00064 )
-#define ASK_HIRAGANA	( ( int ( * )( char *roma, char *kana ) )0x0cd00082 )
-#define ASK_HENKAN	( ( int ( * )( char *yomi, char *kanji, char *rest ) )0x0cd000a0 )
-#define ASK_PREV	( ( void ( * )( char *kanji, char *rest ) )0x0cd000c0 )
-#define ASK_NEXT	( ( void ( * )( char *kanji, char *rest ) )0x0cd000de )
-#define ASK_LONG	( ( int ( * )( char *kanji, char *rest ) )0x0cd00208 )
-#define ASK_SHORT	( ( int ( * )( char *kanji, char *rest ) )0x0cd00226 )
-#define ASK_YOMI	( ( void ( * )( char *kanji, char *rest ) )0x0cd00280 )
-#define ASK_CANCEL	( ( int ( * )( char *kanji, char *rest ) )0x0cd0029e )
+#define ASK_INIT	( ( void ( * )( void ) )( ASK_ADRS + 0x4c2 ) )
+#define ASK_KATAKANA	( ( int ( * )( char *roma, char *kana ) )( ASK_ADRS + 0x64 ) )
+#define ASK_HIRAGANA	( ( int ( * )( char *roma, char *kana ) )( ASK_ADRS + 0x82 ) )
+#define ASK_HENKAN	( ( int ( * )( char *yomi, char *kanji, char *rest ) )( ASK_ADRS + 0xa0 ) )
+#define ASK_PREV	( ( void ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0xc0 ) )
+#define ASK_NEXT	( ( void ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0xde ) )
+#define ASK_LONG	( ( int ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0x208 ) )
+#define ASK_SHORT	( ( int ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0x226 ) )
+#define ASK_YOMI	( ( void ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0x280 ) )
+#define ASK_CANCEL	( ( int ( * )( char *kanji, char *rest ) )( ASK_ADRS + 0x29e ) )
 
 /* a character of the text being typed */
 typedef struct KB_CHAR {

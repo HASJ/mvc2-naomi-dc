@@ -19,7 +19,7 @@ extern Sint32 stg_obj_tbl[] ;
 /* the start of a block of data, from the table of offsets at its start */
 #define DATA_ADRS( top, n )	( ( Uint8 * )( top ) + ( top )[n] )
 
-#define CHAR_LZ_TBL	( ( Sint32 * )0x0dd00000 )	/* the characters' packed animation data */
+#define CHAR_LZ_TBL	( ( Sint32 * )CHAR_LZ_ADRS )
 
 typedef CATCH_POS CATCH_TBL[128] ;	/* where it holds each character */
 
@@ -317,8 +317,10 @@ const PFSB_BLOCK *pfsb_list_tbl[6] = {
 } ;
 
 /* where each player work's sounds are read to, before they go to the sound memory */
+#define PL_SND_ADRS	RAM_ADRS( 0x0db00000 )
 static Uint32 pl_snd_adrs[6] = {
-	0x0db00000, 0x0db30000, 0x0db60000, 0x0db90000, 0x0dbc0000, 0x0dbf0000
+	PL_SND_ADRS, PL_SND_ADRS + 0x30000, PL_SND_ADRS + 0x60000, PL_SND_ADRS + 0x90000, PL_SND_ADRS + 0xc0000,
+	PL_SND_ADRS + 0xf0000
 } ;
 
 #if ROM_BOARD == 2
@@ -731,9 +733,9 @@ static void stg_load_req( void )
 	const FILE_DATA *file ;
 
 	file = &stream_tbl[stg_obj_tbl[stage_no]] ;
-	dma_req( 2, file->adrs, 0x0d82d000, file->size ) ;
+	dma_req( 2, file->adrs, STG_OBJ_ADRS, file->size ) ;
 	file = &stream_tbl[stg_file_tbl[stage_no]] ;
-	dma_req( 3, file->adrs, 0x0d85d000, file->size ) ;
+	dma_req( 3, file->adrs, STG_TEX_ADRS, file->size ) ;
 }
 
 /****************************************************************/

@@ -6,6 +6,7 @@
 #include "pl_char.h"
 #include "pl_color.h"
 #include "pl_act.h"
+#include "load.h"
 #ifdef HOST_PORT
 #include "naomi_input.h"
 extern void host_log( const char *fmt, ... ) ;
@@ -318,9 +319,9 @@ void pl_work_init( PLAYER_WORK *pl_w )
 {
 #if defined( TARGET_DC ) && !defined( HOST_PORT )	/* the characters' modules load at six places, one for each player; a host build links them all in */
 	static void ( *tbl_set_jmp[6] )( PLAYER_WORK *pl_w ) = {
-		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce30000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce38000,
-		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce40000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce48000,
-		( void ( * )( PLAYER_WORK *pl_w ) )0x0ce50000, ( void ( * )( PLAYER_WORK *pl_w ) )0x0ce58000,
+		( void ( * )( PLAYER_WORK *pl_w ) )S_PL_ADRS, ( void ( * )( PLAYER_WORK *pl_w ) )( S_PL_ADRS + 0x8000 ),
+		( void ( * )( PLAYER_WORK *pl_w ) )( S_PL_ADRS + 0x10000 ), ( void ( * )( PLAYER_WORK *pl_w ) )( S_PL_ADRS + 0x18000 ),
+		( void ( * )( PLAYER_WORK *pl_w ) )( S_PL_ADRS + 0x20000 ), ( void ( * )( PLAYER_WORK *pl_w ) )( S_PL_ADRS + 0x28000 ),
 	} ;
 	void ( *tbl_set )( PLAYER_WORK *pl_w ) ;
 #else

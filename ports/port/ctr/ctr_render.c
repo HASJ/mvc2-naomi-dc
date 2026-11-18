@@ -110,8 +110,11 @@ static inline double max_d(double a, double b) {
 }
 
 static C3D_RenderTarget* target;
-static int target_w, target_h;      /* turned: 240x400, or 480x800 at full size */
+static int target_w, target_h;      /* turned: 240x400, 240x800 wide, or 480x800 at full size */
 static u32 output_flags;            /* the display transfer to the screen */
+static int full_now;                /* 640x480 drawn, then halved down the screen, and across it unless wide */
+static int wide_now = -1, wide_want = -1;  /* the top screen's 800 columns; -1: not on this model */
+static int wide_at[16], wide_at_n, wide_at_i;  /* MVC2_WIDE_AT=frame,...: test runs, switched at each */
 static int game_y0, game_h;         /* the game's columns on it */
 static int stretch_now, stretch_want = -1;  /* ctr_render_set_stretch's, taken as the next frame begins */
 static int stretch_at[16], stretch_at_n, stretch_at_i;  /* MVC2_STRETCH_AT=frame,...: test runs, switched at each */
@@ -1107,15 +1110,18 @@ static void store_probe(void) {
 #endif
 
 /* A twiddled 8x8 block is 64 texels in a row, x in the index's odd bits and y in the even; a tile has them the
-   other way round. Each 4 texels of the source, (x, y) to (x + 1, y + 1), are a word of the tile. */
-static void convert_twiddled4(const uint8_t* src, int n, uint8_t* data) {
+   other way round. Each 4 texels of the source, (x, y) to (x + 1, y + 1), are a word of the tile. A rectangle is
+   squares of its shorter side, one after another along the longer */
+static void convert_twiddled4(const uint8_t* src, int w, int h, uint8_t* data) {
     static const uint8_t place[16] = { 0, 2, 1, 3, 8, 10, 9, 11, 4, 6, 5, 7, 12, 14, 13, 15 };
     uint32_t* d = (uint32_t*)data;
-    uint32_t x, y, sx, sy, tiles = (uint32_t)n / 8;
-    /* sx and sy count up in the odd and the even bits */
-    for (y = 0, sy = 0; y < tiles; y++, sy = ((sy | 0xAAAAAAAAu) + 1) & 0x55555555u) {
-        for (x = 0, sx = 0; x < tiles; x++, sx = ((sx | 0x55555555u) + 1) & 0xAAAAAAAAu, d += 16) {
-            const uint32_t* s = (const uint32_t*)src + (sx | sy) * 8;
+    uint32_t n = (uint32_t)(w < h ? w : h), tiles = n / 8, square = n * n / 8;     /* a square's words */
+    uint32_t x, y, sx, sy;
+    /* sx and sy count up in the odd and the even bits, from 0 again at each square */
+    for (y = 0, sy = 0; y < (uint32_t)h / 8; y++, sy = y % tiles ? ((sy | 0xAAAAAAAAu) + 1) & 0x55555555u : 0) {
+        const uint32_t* row = (const uint32_t*)src + (w < h ? y / tiles * square : 0);
+        for (x = 0, sx = 0; x < (uint32_t)w / 8; x++, sx = x % tiles ? ((sx | 0x55555555u) + 1) & 0xAAAAAAAAu : 0, d += 16) {
+            const uint32_t* s = row + (w > h ? x / tiles * square : 0) + (sx | sy) * 8;
             int k;
 #pragma GCC unroll 8
             for (k = 0; k < 8; k++) {
@@ -1313,7 +1319,7 @@ static void convert(const RD_TEXTURE* t, GTEX* g) {
         return;
     }
     if (t->twiddled != NULL && g->format == GPU_L8 && g->width == t->width && g->height == t->height && g->levels == 0) {
-        convert_twiddled4(t->twiddled, t->width, g->tex.data);
+        convert_twiddled4(t->twiddled, t->width, t->height, g->tex.data);
         tex_written(g->tex.data, tex_bytes(&g->tex));
         return;
     }
@@ -6380,6 +6386,7 @@ static void draw(void) {
 
 static void pipe_start(void);
 static void lists1_start(void);
+static void wide_take(void);
 
 #ifdef MVC2_PROF
 /* the GPU's time for a frame's list: from its C3D_FrameEnd to the end of the list, timed by the interrupt */
@@ -6406,7 +6413,7 @@ static void pillars_setup(void) {
     pillars = NULL;
     if (game_y0 > 0) {
         if (pillars_made == NULL) {
-            pillars_made = ctr_art_pillars(target_w, target_w / 240);
+            pillars_made = ctr_art_pillars(target_w, game_y0);
         }
         pillars = pillars_made;
     }
@@ -6423,7 +6430,7 @@ static void pillars_setup(void) {
 static int texel_centre;
 
 static float make_proj(void) {
-    float across = 0.0f;
+    float across = -1.0f;
     int i;
     Mtx_OrthoTilt(&proj, GAME_X - (float)game_y0 * RD_WIDTH / game_h, GAME_X + (float)(target_h - game_y0) * RD_WIDTH / game_h,
                   (float)VIEW_H, 0.0f, 0.0f, 1.0f, true);
@@ -6435,12 +6442,13 @@ static float make_proj(void) {
     proj.r[3].y = 0.0f;
     proj.r[3].z = 0.0f;
     proj.r[3].w = 1.0f;
-    if (texel_centre && (game_h * 2 == RD_WIDTH || game_h == target_h) && target_w * 2 == RD_HEIGHT) {
+    if (texel_centre && (game_h * 2 == RD_WIDTH || game_h == RD_WIDTH || game_h == target_h) && target_w * 2 == RD_HEIGHT) {
         /* across, half size, or stretched to 400: 1.6 game pixels a pixel, whose centres fall on 0.8, 0.4, 0, 0.6
-           and 0.2 of a game pixel by turns; a tenth along, none is on a texel's edge. At half size a pixel's centre
-           is on the game's pixels' corners, where a tile's edge and its texels' edges are: half a game pixel along,
-           it is on a texel's centre, as the PowerVR2's are */
-        across = game_h * 2 == RD_WIDTH ? 0.5f : 0.1f;
+           and 0.2 of a game pixel by turns; a tenth along, none is on a texel's edge (nor stretched to 800, 0.8 a
+           pixel). At half size a pixel's centre is on the game's pixels' corners, where a tile's edge and its
+           texels' edges are: half a game pixel along, it is on a texel's centre, as the PowerVR2's are. Wide, a
+           column is a game pixel, its centre on a texel's already */
+        across = game_h * 2 == RD_WIDTH ? 0.5f : game_h == RD_WIDTH ? 0.0f : 0.1f;
         proj_corner = proj;
         for (i = 0; i < 2; i++) {
             proj.r[i].w += across * proj.r[i].x + 0.5f * proj.r[i].y;
@@ -6455,6 +6463,7 @@ void ctr_render_set_stretch(int stretch) {
 
 /* as a frame begins, when nothing is building the lists */
 static void stretch_take(void) {
+    wide_take();
     if (stretch_at_i < stretch_at_n && ctr_presented >= (unsigned)stretch_at[stretch_at_i]) {
         stretch_at_i++;
         stretch_want = !stretch_now;
@@ -6468,7 +6477,96 @@ static void stretch_take(void) {
     stretch_want = -1;
 }
 
-int ctr_render_init(int full, int stretch) {
+/* a test run's frames, NAME=frame,...: how many */
+static int frames_at(const char* name, int at[16]) {
+    const char* p = getenv(name);
+    int n = 0;
+    while (p != NULL && n < 16 && *p != '\0') {
+        at[n++] = atoi(p);
+        while (*p != '\0' && *p++ != ',') {
+        }
+    }
+    return n;
+}
+
+/* the target's size and the transfer to the screen: wide, the rows alone halved at full size */
+static void sizes(int wide) {
+    target_w = full_now ? VIEW_H : VIEW_H / 2;
+    target_h = full_now || wide ? VIEW_W : VIEW_W / 2;
+    output_flags = DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(!full_now ? GX_TRANSFER_SCALE_NO
+                                                                : wide    ? GX_TRANSFER_SCALE_X
+                                                                          : GX_TRANSFER_SCALE_XY);
+}
+
+static C3D_RenderTarget* target_make(void) {
+    return C3D_RenderTargetCreate(target_w, target_h, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+}
+
+void ctr_render_set_wide(int wide) {
+    wide_want = wide != 0;
+}
+
+int ctr_render_wide(void) {
+    return wide_now;
+}
+
+int ctr_render_top_w(void) {
+    return wide_now > 0 ? 800 : 400;
+}
+
+/* as a frame begins: the target made again at its new size once the GPU is done with the last, VRAM's textures
+   dropped first when there is no room for it */
+static void wide_take(void) {
+    int was = wide_now, was_h = target_h;
+    if (wide_now >= 0 && wide_at_i < wide_at_n && ctr_presented >= (unsigned)wide_at[wide_at_i]) {
+        wide_at_i++;
+        wide_want = !wide_now;
+    }
+    if (wide_now < 0 || wide_want < 0 || wide_want == wide_now) {
+        wide_want = -1;
+        return;
+    }
+    if (c3d_queue != NULL) {
+        gxCmdQueueWait(c3d_queue, -1);
+    }
+    wide_now = wide_want;
+    wide_want = -1;
+    sizes(wide_now);
+    if (target_h != was_h) {
+        C3D_RenderTargetDelete(target);
+        target = target_make();
+        if (target == NULL && tex_vram) {
+            uint32_t fence_was = fence;
+            fence = UINT32_MAX;
+            retired_free();
+            vram_drop_all();
+            kept_drop_all();
+            fence = fence_was;
+            target = target_make();
+        }
+        if (target == NULL) {
+            wide_now = was;
+            sizes(was);
+            target = target_make();
+            if (target == NULL) {
+                ctr_stop("There is no memory for the top screen's picture.");
+            }
+        }
+        if (pillars_made != NULL) {
+            linearFree(pillars_made);
+            pillars_made = NULL;
+        }
+    }
+    C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, output_flags);
+    gfxSetWide(wide_now);
+    layout(stretch_now);
+    make_proj();
+    pillars_setup();
+    host_log("drawing: frame %u on, %s", ctr_presented + 1,
+             wide_now == was ? "not wide: no room for the target" : wide_now ? "wide" : "not wide");
+}
+
+int ctr_render_init(int full, int stretch, int wide) {
     C3D_AttrInfo* attr;
     C3D_BufInfo* buf;
     float across;
@@ -6491,13 +6589,18 @@ int ctr_render_init(int full, int stretch) {
         return 0;
     }
     tex_flush_init();
-    target_w = full ? VIEW_H : VIEW_H / 2;
-    target_h = full ? VIEW_W : VIEW_W / 2;
+    full_now = full != 0;
+    wide_now = wide < 0 ? -1 : wide != 0;
+    sizes(wide_now > 0);
     layout(stretch);
-    target = C3D_RenderTargetCreate(target_w, target_h, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
+    target = target_make();
     if (target == NULL) {
         return 0;
     }
+    gfxSetWide(wide_now > 0);
+    host_log("top screen: %s", wide_now < 0 ? "400 columns (no wide mode on this model)"
+                               : wide_now  ? "800 columns (wide), the game's 640 one to one"
+                                           : "400 columns");
     pillars_setup();
     if (pillars_once) {
         host_log("drawing: the pillars copied once, a frame clearing only the game's rows (MVC2_PILLARS_ONCE)");
@@ -6505,16 +6608,14 @@ int ctr_render_init(int full, int stretch) {
     if (pillars_line) {
         host_log("drawing: each pillar copied as one line (MVC2_PILLARS_LINE)");
     }
-    if (getenv("MVC2_STRETCH_AT") != NULL) {
-        const char* p = getenv("MVC2_STRETCH_AT");
-        while (stretch_at_n < 16 && *p != '\0') {
-            stretch_at[stretch_at_n++] = atoi(p);
-            while (*p != '\0' && *p++ != ',') {
-            }
-        }
+    stretch_at_n = frames_at("MVC2_STRETCH_AT", stretch_at);
+    if (stretch_at_n != 0) {
         host_log("drawing: stretched or not by turns from frames %s (MVC2_STRETCH_AT)", getenv("MVC2_STRETCH_AT"));
     }
-    output_flags = DISPLAY_TRANSFER_FLAGS | GX_TRANSFER_SCALING(full ? GX_TRANSFER_SCALE_XY : GX_TRANSFER_SCALE_NO);
+    wide_at_n = frames_at("MVC2_WIDE_AT", wide_at);
+    if (wide_at_n != 0) {
+        host_log("drawing: wide or not by turns from frames %s (MVC2_WIDE_AT)", getenv("MVC2_WIDE_AT"));
+    }
     C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, output_flags);
     vbuf[0] = linearAlloc((sizeof(GV) + sizeof *L->idx) * MAX_VERTS);
     if (vbuf[0] == NULL) {
@@ -6603,10 +6704,11 @@ int ctr_render_init(int full, int stretch) {
 
     texel_centre = getenv("MVC2_TEXEL_CENTRE") == NULL || strcmp(getenv("MVC2_TEXEL_CENTRE"), "0") != 0;
     across = make_proj();
-    if (across != 0.0f) {
+    if (across >= 0.0f) {
         smooth_2d = getenv("MVC2_SMOOTH_2D") == NULL || strcmp(getenv("MVC2_SMOOTH_2D"), "0") != 0;
         host_log("drawing: %s game pixel along, the pixels' centres %s; not with MVC2_TEXEL_CENTRE=0",
-                 across == 0.5f ? "half a" : "a tenth of a", across == 0.5f ? "on the texels'" : "off the texels' edges");
+                 across == 0.5f ? "half a" : across == 0.0f ? "half a game pixel down and no" : "a tenth of a",
+                 across == 0.1f ? "off the texels' edges" : "on the texels'");
         host_log("drawing: %s", smooth_2d ? "the game's point-sampled textures, not palettes, filtered at the game's pixels' corners"
                                           : "the game's point-sampled textures point-sampled (MVC2_SMOOTH_2D=0)");
     }
@@ -7572,23 +7674,25 @@ static int read_target(uint32_t* frame) {
     return 1;
 }
 
-/* the last frame as the top screen has it, 400x240 ARGB: the display transfer to the screen made again */
+/* the last frame as the top screen has it, 400x240 ARGB (800x240 wide): the display transfer to the screen made
+   again */
 static int read_screen(uint32_t* px) {
-    uint8_t* lin = linearAlloc(240 * 400 * 3);
-    int x, y;
+    int w = ctr_render_top_w(), x, y;
+    uint8_t* lin = linearAlloc((size_t)240 * w * 3);
     if (lin == NULL) {
         return 0;
     }
     C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+    /* the output's size given as the input's, as citro3d gives it: the transfer halves it */
     C3D_SyncDisplayTransfer((u32*)target->frameBuf.colorBuf, GX_BUFFER_DIM(target_w, target_h), (u32*)lin,
-                            GX_BUFFER_DIM(240, 400), output_flags);
+                            GX_BUFFER_DIM(target_w, target_h), output_flags);
     C3D_FrameEnd(0);
-    GSPGPU_InvalidateDataCache(lin, 240 * 400 * 3);
+    GSPGPU_InvalidateDataCache(lin, (u32)(240 * w * 3));
     /* a column of the screen a row of 240, from its bottom, B G R */
-    for (x = 0; x < 400; x++) {
+    for (x = 0; x < w; x++) {
         for (y = 0; y < 240; y++) {
             const uint8_t* p = lin + (x * 240 + 239 - y) * 3;
-            px[y * 400 + x] = 0xFF000000u | (u32)p[2] << 16 | (u32)p[1] << 8 | p[0];
+            px[y * w + x] = 0xFF000000u | (u32)p[2] << 16 | (u32)p[1] << 8 | p[0];
         }
     }
     linearFree(lin);
