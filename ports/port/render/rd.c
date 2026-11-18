@@ -148,6 +148,7 @@ size_t rd_state_size(void) {
 
 void rd_state_save(void* out) {
     RD_STATE_SNAP s;
+    memset(&s, 0, sizeof s);
     memcpy(s.palette, rd_palette, sizeof rd_palette);
     s.fog = rd_fog;
     s.invert = rd_invert;

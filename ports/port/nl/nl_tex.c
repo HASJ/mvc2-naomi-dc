@@ -1091,6 +1091,60 @@ void nl_tex_state_load(const void* buf) {
     }
 }
 
+uint64_t nl_tex_state_snap_hash(const void* buf) {
+    const NL_TEX_SNAP* s = (const NL_TEX_SNAP*)buf;
+    uint64_t h = 14695981039346656037ULL;
+    const uint8_t* p;
+    size_t k;
+    int i;
+    uint32_t hdr[4];
+    if (!s) return 0ULL;
+    hdr[0] = (uint32_t)s->tex_offset;
+    hdr[1] = (uint32_t)s->pal_dirty;
+    hdr[2] = (uint32_t)s->pal_mode;
+    hdr[3] = (uint32_t)s->palette_direct;
+    p = (const uint8_t*)hdr;
+    for (k = 0; k < sizeof hdr; k++) {
+        h ^= p[k];
+        h *= 1099511628211ULL;
+    }
+    p = (const uint8_t*)s->pal_work;
+    for (k = 0; k < sizeof s->pal_work; k++) {
+        h ^= p[k];
+        h *= 1099511628211ULL;
+    }
+    for (i = 0; i < NL_MAX_TEX; i++) {
+        const NL_TEX_SLOT_SNAP* sl = &s->slots[i];
+        const NL_TEX_BLOB* b = sl->blob;
+        if (!sl->loaded && b == NULL) {
+            continue;
+        }
+        {
+            uint32_t m[9] = { (uint32_t)i, (uint32_t)sl->loaded, (uint32_t)sl->type, (uint32_t)sl->palette,
+                              (uint32_t)sl->width, (uint32_t)sl->height, (uint32_t)sl->format,
+                              (uint32_t)sl->levels, (uint32_t)sl->hash_ok };
+            uint64_t bhash = b != NULL ? b->hash : 0;
+            uint64_t lhash = sl->loaded_hash;
+            p = (const uint8_t*)m;
+            for (k = 0; k < sizeof m; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+            p = (const uint8_t*)&bhash;
+            for (k = 0; k < 8; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+            p = (const uint8_t*)&lhash;
+            for (k = 0; k < 8; k++) {
+                h ^= p[k];
+                h *= 1099511628211ULL;
+            }
+        }
+    }
+    return h;
+}
+
 uint64_t nl_tex_state_hash(void) {
     uint64_t h = 14695981039346656037ULL;
     const uint8_t* p;

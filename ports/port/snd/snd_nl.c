@@ -91,7 +91,8 @@ int snd_enabled(void) {
             int keep_snd = cli_has_flag("savestate-check") || cli_has_flag("patch-check") ||
                            cli_get_opt("replay-verify") != NULL || cli_get_opt("takeover-test") != NULL ||
                            cli_get_opt("record") != NULL || cli_get_opt("replay") != NULL ||
-                           cli_get_opt("synctest") != NULL || cli_get_opt("connect") != NULL ||
+                           cli_has_flag("synctest") || cli_get_opt("synctest") != NULL ||
+                           cli_get_opt("p2p") != NULL || cli_get_opt("connect") != NULL ||
                            cli_get_opt("host") != NULL || cli_get_opt("join") != NULL ||
                            cli_get_opt("spectate") != NULL ||
                            getenv("MVC2_SAVESTATE_TEST") != NULL || getenv("MVC2_SYNCTEST") != NULL ||

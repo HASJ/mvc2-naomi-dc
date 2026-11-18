@@ -57,6 +57,7 @@ extern void nl_tex_state_free(void* buf);
 extern void nl_tex_state_save(void* buf);
 extern void nl_tex_state_load(const void* buf);
 extern uint64_t nl_tex_state_hash(void);
+extern uint64_t nl_tex_state_snap_hash(const void* buf);
 extern size_t dc_gd_state_size(void);
 extern void dc_gd_state_save(void* out);
 extern void dc_gd_state_load(const void* in);
@@ -75,6 +76,7 @@ extern void dc_adx_state_load(const void* in);
 extern uint64_t dc_adx_state_hash(void);
 extern size_t aica_state_size(void);
 extern uint64_t aica_state_hash(void);
+extern uint64_t aica_state_struct_hash(const AICA_STATE* s);
 extern uint64_t arm7_state_hash(void);
 extern size_t snd_nl_state_size(void);
 extern void snd_nl_state_save(void* out);
@@ -320,43 +322,43 @@ SAVESTATE* savestate_alloc(void) {
     }
     s->ram = (COW_PAGE**)calloc(RAM_PAGES, sizeof(COW_PAGE*));
     s->board_sz = naomi_board_state_size();
-    s->board_buf = malloc(s->board_sz);
+    s->board_buf = calloc(1, s->board_sz);
     s->nlproj_sz = nlproj_state_size();
-    s->nlproj_buf = malloc(s->nlproj_sz);
+    s->nlproj_buf = calloc(1, s->nlproj_sz);
     s->nl_am_sz = nl_am_state_size();
-    s->nl_am_buf = malloc(s->nl_am_sz);
+    s->nl_am_buf = calloc(1, s->nl_am_sz);
     s->nl_work_sz = nl_work_state_size();
-    s->nl_work_buf = malloc(s->nl_work_sz);
+    s->nl_work_buf = calloc(1, s->nl_work_sz);
     s->nl_sys_sz = nl_sys_state_size();
-    s->nl_sys_buf = malloc(s->nl_sys_sz);
+    s->nl_sys_buf = calloc(1, s->nl_sys_sz);
     s->nl_sprite_sz = nl_sprite_state_size();
-    s->nl_sprite_buf = malloc(s->nl_sprite_sz);
+    s->nl_sprite_buf = calloc(1, s->nl_sprite_sz);
     s->nl_strip_sz = nl_strip_state_size();
-    s->nl_strip_buf = malloc(s->nl_strip_sz);
+    s->nl_strip_buf = calloc(1, s->nl_strip_sz);
     s->nl_xmtr_sz = nl_xmtr_state_size();
-    s->nl_xmtr_buf = malloc(s->nl_xmtr_sz);
+    s->nl_xmtr_buf = calloc(1, s->nl_xmtr_sz);
     s->nl_obj_sz = nl_obj_state_size();
-    s->nl_obj_buf = malloc(s->nl_obj_sz);
+    s->nl_obj_buf = calloc(1, s->nl_obj_sz);
     s->rd_sz = rd_state_size();
-    s->rd_buf = malloc(s->rd_sz);
+    s->rd_buf = calloc(1, s->rd_sz);
     s->nl_tex_sz = nl_tex_state_size();
-    s->nl_tex_buf = malloc(s->nl_tex_sz);
+    s->nl_tex_buf = calloc(1, s->nl_tex_sz);
     if (s->nl_tex_buf != NULL) {
         nl_tex_state_init(s->nl_tex_buf);
     }
     s->dc_gd_sz = dc_gd_state_size();
-    s->dc_gd_buf = malloc(s->dc_gd_sz);
+    s->dc_gd_buf = calloc(1, s->dc_gd_sz);
     s->dc_shinobi_sz = dc_shinobi_state_size();
-    s->dc_shinobi_buf = malloc(s->dc_shinobi_sz);
+    s->dc_shinobi_buf = calloc(1, s->dc_shinobi_sz);
     s->dc_vmu_sz = dc_vmu_state_size();
-    s->dc_vmu_buf = malloc(s->dc_vmu_sz);
+    s->dc_vmu_buf = calloc(1, s->dc_vmu_sz);
     s->dc_adx_sz = dc_adx_state_size();
-    s->dc_adx_buf = malloc(s->dc_adx_sz);
+    s->dc_adx_buf = calloc(1, s->dc_adx_sz);
     s->aica_st = aica_state_new();
     s->snd_nl_sz = snd_nl_state_size();
-    s->snd_nl_buf = malloc(s->snd_nl_sz);
+    s->snd_nl_buf = calloc(1, s->snd_nl_sz);
     s->s3l_sz = s3l_state_size();
-    s->s3l_buf = malloc(s->s3l_sz);
+    s->s3l_buf = calloc(1, s->s3l_sz);
 
     if (!s->ram || !s->board_buf || !s->nlproj_buf || !s->nl_am_buf || !s->nl_work_buf || !s->nl_sys_buf ||
         !s->nl_sprite_buf || !s->nl_strip_buf || !s->nl_xmtr_buf || !s->nl_obj_buf || !s->rd_buf || !s->nl_tex_buf ||
@@ -746,6 +748,55 @@ uint64_t savestate_hash(void) {
     SAVESTATE_HASHES d;
     savestate_hash_detail(&d);
     return d.total;
+}
+
+static uint64_t hash_cow_array(COW_PAGE* const* arr, size_t n) {
+    uint64_t h = 14695981039346656037ULL;
+    size_t i;
+    if (!arr) return 0ULL;
+    for (i = 0; i < n; i++) {
+        uint64_t ph = arr[i] ? arr[i]->hash : 0ULL;
+        h ^= ph;
+        h *= 0x9E3779B97F4A7C15ULL;
+        h ^= h >> 30;
+    }
+    return h;
+}
+
+/* Sub-100us checksum over a captured SAVESTATE using cached COW_PAGE hashes and flat buffers. */
+uint64_t savestate_fast_checksum(const SAVESTATE* s) {
+    uint64_t vec[27];
+    uint64_t aica_h;
+    if (!s) return 0ULL;
+    aica_h = aica_state_struct_hash(s->aica_st);
+    vec[0]  = hash_cow_array(s->ram, RAM_PAGES);
+    vec[1]  = hash_cow_array(s->data, s->data_pages);
+    vec[2]  = hash_cow_array(s->bss, s->bss_pages);
+    vec[3]  = hash_cow_array(s->aica, s->aica_pages);
+    vec[4]  = (s->coro_buf && s->coro_len) ? hash_block(s->coro_buf, s->coro_len) : 0ULL;
+    vec[5]  = (s->board_buf && s->board_sz) ? hash_block(s->board_buf, s->board_sz) : 0ULL;
+    vec[6]  = (uint64_t)s->nl_rng;
+    vec[7]  = (s->nlproj_buf && s->nlproj_sz) ? hash_block(s->nlproj_buf, s->nlproj_sz) : 0ULL;
+    vec[8]  = (s->nl_am_buf && s->nl_am_sz) ? hash_block(s->nl_am_buf, s->nl_am_sz) : 0ULL;
+    vec[9]  = (s->nl_work_buf && s->nl_work_sz) ? hash_block(s->nl_work_buf, s->nl_work_sz) : 0ULL;
+    vec[10] = (s->nl_sys_buf && s->nl_sys_sz) ? hash_block(s->nl_sys_buf, s->nl_sys_sz) : 0ULL;
+    vec[11] = (s->nl_sprite_buf && s->nl_sprite_sz) ? hash_block(s->nl_sprite_buf, s->nl_sprite_sz) : 0ULL;
+    vec[12] = (s->nl_strip_buf && s->nl_strip_sz) ? hash_block(s->nl_strip_buf, s->nl_strip_sz) : 0ULL;
+    vec[13] = (s->nl_xmtr_buf && s->nl_xmtr_sz) ? hash_block(s->nl_xmtr_buf, s->nl_xmtr_sz) : 0ULL;
+    vec[14] = (s->nl_obj_buf && s->nl_obj_sz) ? hash_block(s->nl_obj_buf, s->nl_obj_sz) : 0ULL;
+    vec[15] = (s->rd_buf && s->rd_sz) ? hash_block(s->rd_buf, s->rd_sz) : 0ULL;
+    vec[16] = nl_tex_state_snap_hash(s->nl_tex_buf);
+    vec[17] = (s->dc_gd_buf && s->dc_gd_sz) ? hash_block(s->dc_gd_buf, s->dc_gd_sz) : 0ULL;
+    vec[18] = (s->dc_shinobi_buf && s->dc_shinobi_sz) ? hash_block(s->dc_shinobi_buf, s->dc_shinobi_sz) : 0ULL;
+    vec[19] = (s->dc_vmu_buf && s->dc_vmu_sz) ? hash_block(s->dc_vmu_buf, s->dc_vmu_sz) : 0ULL;
+    vec[20] = (s->dc_adx_buf && s->dc_adx_sz) ? hash_block(s->dc_adx_buf, s->dc_adx_sz) : 0ULL;
+    vec[21] = aica_h;
+    vec[22] = hash_block(&s->arm7_regs, sizeof s->arm7_regs);
+    vec[23] = (s->snd_nl_buf && s->snd_nl_sz) ? hash_block(s->snd_nl_buf, s->snd_nl_sz) : 0ULL;
+    vec[24] = (s->s3l_buf && s->s3l_sz) ? hash_block(s->s3l_buf, s->s3l_sz) : 0ULL;
+    vec[25] = (uint64_t)s->data_bytes;
+    vec[26] = (uint64_t)s->bss_bytes;
+    return hash_block(vec, sizeof vec);
 }
 
 static double now_ms(void) {

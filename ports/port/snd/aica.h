@@ -40,6 +40,7 @@ typedef struct AICA_STATE AICA_STATE;
 AICA_STATE* aica_state_new(void);
 void aica_state_save(AICA_STATE* s);
 void aica_state_load(const AICA_STATE* s);
+uint64_t aica_state_struct_hash(const AICA_STATE* s);
 extern void (*aica_write_log)(uint32_t off, uint32_t v, uint32_t mask);
 extern uint32_t aica_watch_gen;     /* moved by each chunk and each write to a channel's first word, its loop start
                                        or 0x280C: what snd_drv.c's channel watch reads */

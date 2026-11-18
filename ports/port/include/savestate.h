@@ -34,6 +34,7 @@ void savestate_free(SAVESTATE* s);
 int savestate_save(SAVESTATE* s);
 int savestate_load(const SAVESTATE* s);
 uint64_t savestate_hash(void);
+uint64_t savestate_fast_checksum(const SAVESTATE* s);
 void savestate_hash_detail(SAVESTATE_HASHES* out);
 void savestate_reset_pools(void);
 size_t savestate_pool_bytes(void);

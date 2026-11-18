@@ -1873,29 +1873,33 @@ size_t aica_state_size(void) {
     return sizeof(AICA_STATE);
 }
 
-uint64_t aica_state_hash(void) {
+static uint64_t aica_hash_fields(const uint8_t* reg_p, const CHANNEL* ch_p, const uint8_t* ch_on_p,
+                                 uint32_t v_scipd, uint32_t v_mcipd, uint32_t v_intreq,
+                                 const int* tc, const int* ts, const int* tl,
+                                 int v_dsp_dirty, int v_cpu_reset, int v_cpu_debt,
+                                 uint32_t v_mdec, int32_t v_memval) {
     uint64_t h = 14695981039346656037ULL;
     size_t i;
     const uint8_t* p;
     for (i = 0; i < sizeof reg; i++) {
-        h ^= reg[i];
+        h ^= reg_p[i];
         h *= 1099511628211ULL;
     }
-    p = (const uint8_t*)ch;
+    p = (const uint8_t*)ch_p;
     for (i = 0; i < sizeof ch; i++) {
         h ^= p[i];
         h *= 1099511628211ULL;
     }
     for (i = 0; i < 64; i++) {
-        h ^= ch_on[i];
+        h ^= ch_on_p[i];
         h *= 1099511628211ULL;
     }
     {
-        uint32_t w[17] = { scipd, mcipd, intreq, (uint32_t)timer_count[0], (uint32_t)timer_count[1],
-                           (uint32_t)timer_count[2], (uint32_t)timer_sub[0], (uint32_t)timer_sub[1],
-                           (uint32_t)timer_sub[2], (uint32_t)timer_load[0], (uint32_t)timer_load[1],
-                           (uint32_t)timer_load[2], (uint32_t)dsp_dirty, (uint32_t)cpu_reset, (uint32_t)cpu_debt,
-                           mdec, (uint32_t)memval };
+        uint32_t w[17] = { v_scipd, v_mcipd, v_intreq, (uint32_t)tc[0], (uint32_t)tc[1],
+                           (uint32_t)tc[2], (uint32_t)ts[0], (uint32_t)ts[1],
+                           (uint32_t)ts[2], (uint32_t)tl[0], (uint32_t)tl[1],
+                           (uint32_t)tl[2], (uint32_t)v_dsp_dirty, (uint32_t)v_cpu_reset, (uint32_t)v_cpu_debt,
+                           v_mdec, (uint32_t)v_memval };
         p = (const uint8_t*)w;
         for (i = 0; i < sizeof w; i++) {
             h ^= p[i];
@@ -1903,4 +1907,17 @@ uint64_t aica_state_hash(void) {
         }
     }
     return h;
+}
+
+uint64_t aica_state_hash(void) {
+    return aica_hash_fields(reg, ch, ch_on, scipd, mcipd, intreq,
+                            timer_count, timer_sub, timer_load,
+                            dsp_dirty, cpu_reset, cpu_debt, mdec, memval);
+}
+
+uint64_t aica_state_struct_hash(const AICA_STATE* s) {
+    if (!s) return 0;
+    return aica_hash_fields(s->reg, s->ch, s->ch_on, s->scipd, s->mcipd, s->intreq,
+                            s->timer_count, s->timer_sub, s->timer_load,
+                            s->dsp_dirty, s->cpu_reset, s->cpu_debt, s->mdec, s->memval);
 }

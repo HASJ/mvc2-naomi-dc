@@ -1067,11 +1067,11 @@ static __attribute__((section(".text.nlhot"))) void put(const int* obj, float tr
         return;
     }
     scale_factor = nl_take_scale_factor();
+    memcpy(&zneg, nl_objput_param + 0x0c, 4);
+    near_w = -zneg > 0.0f ? -zneg : 1e-3f;     /* before any projection is set */
     if (rd_discard) {
         return;
     }
-    memcpy(&zneg, nl_objput_param + 0x0c, 4);
-    near_w = -zneg > 0.0f ? -zneg : 1e-3f;     /* before any projection is set */
     if (use_view) {
         mul(to_screen, nl_view_matrix(), nl_cnv_proj_pers);
     } else {
@@ -1209,6 +1209,7 @@ size_t nl_obj_state_size(void) {
 
 void nl_obj_state_save(void* out) {
     NL_OBJ_STATE s;
+    memset(&s, 0, sizeof s);
     s.light = light;
     s.global_ambience = global_ambience;
     s.trnsl_blend = trnsl_blend;

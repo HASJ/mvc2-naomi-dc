@@ -81,7 +81,8 @@ void host_log(const char* fmt, ...) {
 static void x87_check(void) {
 #if defined(__i386__)
     static int reported;
-    unsigned short env[14];
+    /* Keep fnstenv in host .bss so CPU global x87 FIP/FDP pointers never land on game_coro's stack. */
+    static unsigned short env[14];
     int i, n = 0;
     __asm__ volatile("fnstenv %0" : "=m"(env));
     __asm__ volatile("fldenv %0" : : "m"(env));
@@ -265,6 +266,7 @@ void naomi_run_frame(void) {
         PROF_STOP(PZ_GAME_IRQ, t1);
     }
     coro_switch(game_coro);
+    host_present();
 }
 
 __attribute__((section(".text.nlhot"))) unsigned host_frame(void) {
@@ -286,7 +288,6 @@ void host_poll(void) {
 void nlWaitVSync(void) {
     x87_check();
     nl_tex_frame();
-    host_present();
     coro_switch(host_coro);
 }
 
