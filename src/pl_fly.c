@@ -143,6 +143,7 @@ void pl_fly_start( PLAYER_WORK *pl_w )
 	case PL_TRON :
 	case PL_SONSON :
 	case PL_OMEGA_RED :
+	case PL_KEN :
 		pl_w->pl_tbl[TBL_AIR_DASH]( pl_w ) ;
 		return ;
 	case PL_ROGUE :

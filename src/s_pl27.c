@@ -25,6 +25,9 @@ void pl27_sp_unison( PLAYER_WORK *pl_w );
 void pl27_sp_gattai( PLAYER_WORK *pl_w );
 void pl27_sp_assist( PLAYER_WORK *pl_w );
 void pl27_sp_zero( PLAYER_WORK *pl_w );
+void pl27_air_dash( PLAYER_WORK *pl_w );
+
+extern Sint16 air_dash_y_tbl[];
 
 /* each attack's table: standing and crouching, jumping, super jumping */
 static Sint8 lp_tbl[4] = {  1,  2,  0,  2 } ;
@@ -77,6 +80,8 @@ static void ( *pl27_tbl[28])( PLAYER_WORK *pl_w ) = {
 	pl27_sp_gattai,
 	pl27_sp_assist,
 	pl27_sp_zero,
+	0,
+	pl27_air_dash,
 } ;
 
 static Uint8 hadou_ck( PLAYER_WORK *pl_w );
@@ -89,6 +94,9 @@ static Uint8 shinryuu_ck( PLAYER_WORK *pl_w );
 static Uint8 shippu_ck( PLAYER_WORK *pl_w );
 static int snapback_ck( PLAYER_WORK *pl_w );
 static int chouhatsu_ck( PLAYER_WORK *pl_w );
+static void sp_contact_set( PLAYER_WORK *pl_w );
+static Uint8 air_dash_ck( PLAYER_WORK *pl_w );
+static Uint8 sp_dash_cancel_ck( PLAYER_WORK *pl_w );
 
 /****************************************************************/
 void pl27_tbl_set( PLAYER_WORK *pl_w )
@@ -104,6 +112,7 @@ void pl27_tbl_set( PLAYER_WORK *pl_w )
 /****************************************************************/
 void pl27_com_ck( PLAYER_WORK *pl_w )
 {
+	sp_contact_set( pl_w ) ;
 	if( pl_v_combi_ck( pl_w ) ) return ;
 	if( pl_assist_ck( pl_w ) ) return ;
 	if( pl_change_ck( pl_w ) ) return ;
@@ -118,8 +127,145 @@ void pl27_com_ck( PLAYER_WORK *pl_w )
 	if( jtatsumaki_ck( pl_w ) ) return ;
 	if( snapback_ck( pl_w ) ) return ;
 	if( chouhatsu_ck( pl_w ) ) return ;
+	if( air_dash_ck( pl_w ) ) return ;
 	pl_dash_ck( pl_w ) ;
+	if( sp_dash_cancel_ck( pl_w ) ) return ;
 	pl_sjump_ck( pl_w ) ;
+}
+
+/*==============================================================*/
+/*			Notes whether the special or hyper under way has	*/
+/*			touched, through the hits that clear hit_flag		*/
+/*==============================================================*/
+static void sp_contact_set( PLAYER_WORK *pl_w )
+{
+	PL27_LOCAL_W *lw = ( PL27_LOCAL_W * )pl_w->tlocal ;
+	Uint8 no = 0xff ;
+
+	if( pl_w->routine_1 == PL_NORM ){
+		if( pl_w->act_st == N_SPECIAL ) no = pl_w->pl_sp_type ;
+		else if( pl_w->act_st == N_SUPER ) no = pl_w->pl_sp_type | 0x80 ;
+	}
+	if( no != lw->sp_contact_no ){
+		lw->sp_contact_no = no ;
+		lw->sp_contact = 0 ;
+	}
+	if( no == 0xff || !pl_w->hit_flag ) return ;
+	lw->sp_contact |= ( pl_w->hit_flag & HR_GUARD ) ? 2 : 1 ;
+}
+
+/*==============================================================*/
+/*			The gauge a dash out of the special or hyper under	*/
+/*			way costs, in gauge points (144 a level): -1 if it	*/
+/*			can't be cancelled. Only after it has touched: a	*/
+/*			special that hit is free, a guarded one half a		*/
+/*			level, a hyper a level								*/
+/*==============================================================*/
+static Sint16 sp_dash_cost( PLAYER_WORK *pl_w )
+{
+	PL27_LOCAL_W *lw = ( PL27_LOCAL_W * )pl_w->tlocal ;
+
+	if( !lw->sp_contact ) return -1 ;
+	if( pl_w->act_st == N_SUPER ){
+		switch( pl_w->pl_sp_type ){
+		case pl27_sp_reppa :
+		case pl27_sp_shinryuu :
+		case pl27_sp_shippu :
+			return 144 ;
+		}
+		return -1 ;
+	}
+	switch( pl_w->pl_sp_type ){
+	case pl27_sp_hadou :
+	case pl27_sp_jhadou :
+	case pl27_sp_shouryuu :
+	case pl27_sp_jshouryuu :
+	case pl27_sp_tatsumaki :
+	case pl27_sp_jtatsumaki :
+		return ( lw->sp_contact & 1 ) ? 0 : 72 ;
+	}
+	return -1 ;
+}
+
+/*==============================================================*/
+/*			Takes no gauge points from the side's gauge, or		*/
+/*			returns 0 if there aren't that many					*/
+/*==============================================================*/
+static int dash_gauge_pay( PLAYER_WORK *pl_w, Sint16 no )
+{
+	Sint32 total ;
+
+	if( no <= 0 ) return 1 ;
+	total = *pl_w->gauge_level * 144 + *pl_w->gauge ;
+	if( total < no ) return 0 ;
+	total -= no ;
+	*pl_w->gauge_level = ( Sint8 )( total / 144 ) ;
+	*pl_w->gauge = ( Sint16 )( total % 144 ) ;
+	return 1 ;
+}
+
+/* the air dash's direction by the stick ((pl_sw_new & KEY_LEVER) >> 10: 1 back, 2 forward,
+   4 down, 8 up), 0 for none: back, down-back, down, down-forward, forward and up-forward;
+   the stick left alone dashes forward */
+static Uint8 air_dash_dir_tbl[16] = { 2, 1, 2, 0, 4, 5, 6, 0, 0, 0, 10, 0, 0, 0, 0, 0 } ;
+
+/*==============================================================*/
+/*			The air dash: the dash button or both punches, in	*/
+/*			six directions, once a jump. It also cancels a		*/
+/*			special or hyper that has touched, for its cost		*/
+/*==============================================================*/
+static Uint8 air_dash_ck( PLAYER_WORK *pl_w )
+{
+	Sint16 cost = 0 ;
+	Uint8 dir ;
+	Float y ;
+
+	if( pl_w->target_w->fly_screen_flag ) return 0 ;
+	if( pl_w->pl_stance != STANCE_AIR ) return 0 ;
+	if( pl_w->routine_1 != PL_NORM ) return 0 ;
+	if( pl_w->jump_dash_cnt ) return 0 ;
+	if( pl_w->act_st == N_AIR_DASH ) return 0 ;
+	if( pl_w->act_st == N_AIR_GUARD ) return 0 ;
+	if( pl_w->act_st == N_ESCAPE ) return 0 ;
+	if( pl_w->act_st == N_CHANGE ) return 0 ;
+	y = pl_w->ground_y + air_dash_y_tbl[pl_w->pl_type] * 2.142857f / 256.0f ;
+	if( pl_w->pos.y < y ) return 0 ;
+	if( !pl_dash_sw_ck( pl_w ) ) return 0 ;
+	if( !( dir = air_dash_dir_tbl[( pl_w->pl_sw_new & KEY_LEVER ) >> 10] ) ) return 0 ;
+	if( pl_w->act_st == N_SPECIAL || pl_w->act_st == N_SUPER ){
+		if( ( cost = sp_dash_cost( pl_w ) ) < 0 ) return 0 ;
+	} else if( !pl_nml_atck_kara_ok( pl_w ) ){
+		if( !sp_ok_ck( pl_w ) ) return 0 ;
+	}
+	if( !dash_gauge_pay( pl_w, cost ) ) return 0 ;
+	pl_w->cg_atck_flag = 0 ;
+	pl_w->atck_flag = 0 ;
+	pl_w->dir = dir ;
+	pl_w->jump_dash_cnt ++ ;
+	pl_act_set( pl_w, N_AIR_DASH ) ;
+	return 1 ;
+}
+
+/*==============================================================*/
+/*			A dash on the ground out of a special or hyper		*/
+/*			that has touched, for its cost (pl_dash_ck has		*/
+/*			read the stick this frame)							*/
+/*==============================================================*/
+static Uint8 sp_dash_cancel_ck( PLAYER_WORK *pl_w )
+{
+	Sint16 cost ;
+
+	if( pl_w->act_st != N_SPECIAL && pl_w->act_st != N_SUPER ) return 0 ;
+	if( pl_w->routine_1 != PL_NORM ) return 0 ;
+	if( pl_w->pl_stance == STANCE_AIR ) return 0 ;
+	if( pl_w->dash_w.ok_flag != 1 ) return 0 ;
+	if( ( cost = sp_dash_cost( pl_w ) ) < 0 ) return 0 ;
+	if( !dash_gauge_pay( pl_w, cost ) ) return 0 ;
+	pl_w->cg_atck_flag = 0 ;
+	pl_w->atck_flag = 0 ;
+	pl_w->pos.y = pl_w->ground_y ;
+	pl_w->pl_stance = STANCE_STAND ;
+	return pl_dash_set( pl_w ) ;
 }
 
 /*==============================================================*/
@@ -297,6 +443,10 @@ void pl27_atck_set( PLAYER_WORK *pl_w )
 		nml_atck, jump_atck_ck, jump_atck, nml_atck,
 	} ;
 
+	if( pl_w->old_act_st == N_AIR_DASH && pl_w->pl_stance == STANCE_AIR ){
+		pl_w->acc.x = 0.0f ;
+		pl_w->acc.y = -DOT_Y( 0.375f ) ;
+	}
 	atck_set_jmp[pl_w->atck_type]( pl_w ) ;
 }
 
@@ -705,6 +855,66 @@ void pl27_upper( PLAYER_WORK *pl_w )
 static void dash_start( PLAYER_WORK *pl_w );
 static void dash_move( PLAYER_WORK *pl_w );
 static void dash_stop( PLAYER_WORK *pl_w );
+static void air_dash_init( PLAYER_WORK *pl_w );
+static void air_dash_move( PLAYER_WORK *pl_w );
+
+/* the air dash's speed in dots a frame, forward and up, by air_dash_dir_tbl's direction
+   (dir: 1 back, 2 forward, 4 down, 5 down-back, 6 down-forward, 10 up-forward) */
+static Sint8 air_dash_spd_tbl[16][2] = {
+	{  0,  0 }, { -8,  0 }, { 10,  0 }, {  0,  0 },
+	{  0, -9 }, { -6, -6 }, {  7, -7 }, {  0,  0 },
+	{  0,  0 }, {  0,  0 }, {  7,  5 }, {  0,  0 },
+	{  0,  0 }, {  0,  0 }, {  0,  0 }, {  0,  0 },
+} ;
+
+/****************************************************************/
+/*			The air dash (TBL_AIR_DASH): straight along the		*/
+/*			direction air_dash_ck took, then the fall; a dash	*/
+/*			down ends on the floor								*/
+/****************************************************************/
+void pl27_air_dash( PLAYER_WORK *pl_w )
+{
+	static void ( *air_dash_jmp[])( PLAYER_WORK *pl_w ) = {
+		air_dash_init, air_dash_move,
+	} ;
+
+	air_dash_jmp[pl_w->routine_2]( pl_w ) ;
+}
+
+/*==============================================================*/
+static void air_dash_init( PLAYER_WORK *pl_w )
+{
+	Uint8 dir = pl_w->dir & 15 ;
+	Float x = DOT_X( air_dash_spd_tbl[dir][0] ) ;
+
+	pl_w->routine_2 ++ ;
+	pl_w->timer0 = 16 ;
+	if( !pl_w->pl_dir ) x = -x ;
+	pl_w->spd.x = x ;
+	pl_w->acc.x = -x / 32.0f ;
+	pl_w->spd.y = DOT_Y( air_dash_spd_tbl[dir][1] ) ;
+	pl_w->acc.y = 0.0f ;
+	pl_char_set( pl_w, Char_Dash, 0 ) ;	/* the grounded forward dash's animation, for every direction */
+}
+
+/*--------------------------------------------------------------*/
+static void air_dash_move( PLAYER_WORK *pl_w )
+{
+	pl_char_move( pl_w ) ;
+	pl_w->pos.x += pl_w->spd.x ;
+	pl_w->spd.x += pl_w->acc.x ;
+	pl_w->pos.y += pl_w->spd.y ;
+	pl_w->spd.y += pl_w->acc.y ;
+	if( pl_w->spd.y < 0.0f && pl_land_ck( pl_w ) ){
+		pl_land_set( pl_w ) ;
+		return ;
+	}
+	if( -- pl_w->timer0 <= 0 ){
+		pl_w->acc.x = 0.0f ;
+		if( pl_w->spd.y > 0.0f ) pl_w->spd.y /= 2.0f ;
+		pl_jump_ret( pl_w ) ;
+	}
+}
 
 /****************************************************************/
 /*			A hop forward										*/

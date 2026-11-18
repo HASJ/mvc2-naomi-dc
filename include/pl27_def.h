@@ -42,6 +42,8 @@ typedef struct PL27_LOCAL_W {
 	Uint8	guard_cnt;	/* Shouryuuken: hits left that are guarded */
 	Uint8	shot_flag;	/* the hadouken (shl27_00 type 0) is out */
 	Sint8	unk_3;
+	Uint8	sp_contact;	/* the special or hyper under way has touched: 1 a hit, 2 a guard */
+	Uint8	sp_contact_no;	/* which one: pl_sp_type, 0x80 for N_SUPER, 0xff none */
 } PL27_LOCAL_W;
 
 #endif
