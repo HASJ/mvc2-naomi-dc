@@ -134,6 +134,19 @@ void pl27_com_ck( PLAYER_WORK *pl_w )
 }
 
 /*==============================================================*/
+/*			Whether a combo or guard string is under way: the	*/
+/*			opponent is reeling or still in guard stun			*/
+/*==============================================================*/
+static int combo_on_ck( PLAYER_WORK *pl_w )
+{
+	PLAYER_WORK *em = pl_w->target_w ;
+
+	if( !em ) return 0 ;
+	if( em->routine_1 == PL_DAMAGE ) return 1 ;
+	return em->guard_cnt != 0 ;
+}
+
+/*==============================================================*/
 /*			Notes whether the special or hyper under way has	*/
 /*			touched, through the hits that clear hit_flag		*/
 /*==============================================================*/
@@ -150,6 +163,7 @@ static void sp_contact_set( PLAYER_WORK *pl_w )
 		lw->sp_contact_no = no ;
 		lw->sp_contact = 0 ;
 	}
+	if( !combo_on_ck( pl_w ) ) lw->dash_cancel_cnt = 0 ;
 	if( no == 0xff || !pl_w->hit_flag ) return ;
 	lw->sp_contact |= ( pl_w->hit_flag & HR_GUARD ) ? 2 : 1 ;
 }
@@ -166,6 +180,7 @@ static Sint16 sp_dash_cost( PLAYER_WORK *pl_w )
 	PL27_LOCAL_W *lw = ( PL27_LOCAL_W * )pl_w->tlocal ;
 
 	if( !lw->sp_contact ) return -1 ;
+	if( lw->dash_cancel_cnt >= 3 ) return -1 ;	/* three a combo */
 	if( pl_w->act_st == N_SUPER ){
 		switch( pl_w->pl_sp_type ){
 		case pl27_sp_reppa :
@@ -216,6 +231,7 @@ static Uint8 air_dash_dir_tbl[16] = { 2, 1, 2, 0, 4, 5, 6, 0, 0, 0, 10, 0, 0, 0,
 /*==============================================================*/
 static Uint8 air_dash_ck( PLAYER_WORK *pl_w )
 {
+	PL27_LOCAL_W *lw = ( PL27_LOCAL_W * )pl_w->tlocal ;
 	Sint16 cost = 0 ;
 	Uint8 dir ;
 	Float y ;
@@ -238,6 +254,7 @@ static Uint8 air_dash_ck( PLAYER_WORK *pl_w )
 		if( !sp_ok_ck( pl_w ) ) return 0 ;
 	}
 	if( !dash_gauge_pay( pl_w, cost ) ) return 0 ;
+	if( pl_w->act_st == N_SPECIAL || pl_w->act_st == N_SUPER ) lw->dash_cancel_cnt ++ ;
 	pl_w->cg_atck_flag = 0 ;
 	pl_w->atck_flag = 0 ;
 	pl_w->dir = dir ;
@@ -265,7 +282,9 @@ static Uint8 sp_dash_cancel_ck( PLAYER_WORK *pl_w )
 	pl_w->atck_flag = 0 ;
 	pl_w->pos.y = pl_w->ground_y ;
 	pl_w->pl_stance = STANCE_STAND ;
-	return pl_dash_set( pl_w ) ;
+	if( !pl_dash_set( pl_w ) ) return 0 ;
+	( ( PL27_LOCAL_W * )pl_w->tlocal )->dash_cancel_cnt ++ ;
+	return 1 ;
 }
 
 /*==============================================================*/

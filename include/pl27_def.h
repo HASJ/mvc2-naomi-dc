@@ -44,6 +44,7 @@ typedef struct PL27_LOCAL_W {
 	Sint8	unk_3;
 	Uint8	sp_contact;	/* the special or hyper under way has touched: 1 a hit, 2 a guard */
 	Uint8	sp_contact_no;	/* which one: pl_sp_type, 0x80 for N_SUPER, 0xff none */
+	Uint8	dash_cancel_cnt;	/* dash cancels out of specials and hypers this combo (at most 3) */
 } PL27_LOCAL_W;
 
 #endif
