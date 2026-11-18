@@ -1179,6 +1179,9 @@ static void hadou_move( PLAYER_WORK *pl_w, PL27_LOCAL_W *lw )
 	if( pl_w->cg_type ){
 		pl_w->cg_type = 0 ;
 		shl27_00_set( pl_w, 0 ) ;
+		pl_w->cancel_timer = 100 ;	/* cancellable from the moment the shot is out */
+		( ( PL27_LOCAL_W * )pl_w->tlocal )->sp_contact_no = pl_w->pl_sp_type ;
+		( ( PL27_LOCAL_W * )pl_w->tlocal )->sp_contact = 1 ;
 	}
 }
 
@@ -1601,6 +1604,9 @@ static void jhadou_move( PLAYER_WORK *pl_w, PL27_LOCAL_W *lw )
 		pl_w->cg_type = 0 ;
 		pl_w->routine_2 ++ ;
 		shl27_00_set( pl_w, 1 ) ;
+		pl_w->cancel_timer = 100 ;	/* cancellable from the moment the shot is out */
+		lw->sp_contact_no = pl_w->pl_sp_type ;
+		lw->sp_contact = 1 ;
 	}
 }
 
