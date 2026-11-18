@@ -15,18 +15,18 @@
         },
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "de413278e3e447d3b4303cd8e8e4a015edfe348d2dec256dff262ca044d22d9f"
+          "sha256": "07cba8e5157a3127d22965463fc9827c2a3a9fdeb1b3a71523759fa2b004841a"
         }
       ],
-      "verified_at": "2026-11-18T11:04:28Z"
+      "verified_at": "2026-11-18T12:18:56Z"
     },
     {
       "id": "runtime-data-lookup",
-      "text": "ports/port/sdl/start.c locates game data via SDL_GetBasePath(): roms/mvsc2 or disc (or arcade=/dc=/MVC2_ROM/MVC2_DC_DISC). Supports --config=<dir|file> (forwarding multi-arg CLI options like --p2p 3 and --spectate 2 without misreading positional paths), host_config_path() for per-instance logs/saves/replays/netplay_profile.cfg/mvc2_ipc.port, and unlock = all in mvc2.cfg.",
+      "text": "ports/port/sdl/start.c locates game data via SDL_GetBasePath(): roms/mvsc2 or disc (or arcade=/dc=/MVC2_ROM/MVC2_DC_DISC). Supports --config=<dir|file> (forwarding multi-arg CLI options like --p2p 3 and --spectate 2 without misreading positional paths), host_config_path() for per-instance logs/saves/replays/netplay_profile.cfg/mvc2_ipc.port, host_front_open_netplay(), and unlock = all in mvc2.cfg.",
       "sources": [
         {
           "path": "ports/port/sdl/start.c",
-          "sha256": "b20073b7b2b0f5113b8237185f584c5e06270884194f75a3eb7dcee2f2145a71"
+          "sha256": "46c44cc542e7a58a37ce2a66b44dee390c4068e0b2ebd91332a300c4e2af3290"
         },
         {
           "path": "ports/port/dist/PLAYING.md",
@@ -37,7 +37,7 @@
           "sha256": "ec24e9ef2923e54e5ce623392167513ed6e484cf08b0284f0ee1d698c805fb53"
         }
       ],
-      "verified_at": "2026-11-18T11:04:28Z"
+      "verified_at": "2026-11-18T12:18:56Z"
     },
     {
       "id": "dc-disc-validation",
@@ -52,14 +52,14 @@
     },
     {
       "id": "headless-test-env",
-      "text": "MVC2_FRAMES=<N> or test flags (--savestate-check, --patch-check, --replay-verify, --takeover-test, --ui-smoke-test, --synctest) activate test_run mode in main_sdl.c: SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN=0 + SW_SHOWMINNOACTIVE avoids focus stealing, no audio device is opened, software renderer rules apply unless configured gpu, and frames_left counts down even while F1/F4 overlays are open.",
+      "text": "MVC2_FRAMES=<N> or test flags (--savestate-check, --patch-check, --replay-verify, --takeover-test, --ui-smoke-test, --synctest) activate test_run mode in main_sdl.c: SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN=0 + SW_SHOWMINNOACTIVE avoids focus stealing, no audio device is opened, software renderer rules apply unless configured gpu, frames_left counts down even while F1/F4 overlays are open, and MVC2_SHOT captures overlays too.",
       "sources": [
         {
           "path": "ports/port/sdl/main_sdl.c",
-          "sha256": "de413278e3e447d3b4303cd8e8e4a015edfe348d2dec256dff262ca044d22d9f"
+          "sha256": "07cba8e5157a3127d22965463fc9827c2a3a9fdeb1b3a71523759fa2b004841a"
         }
       ],
-      "verified_at": "2026-11-18T11:04:29Z"
+      "verified_at": "2026-11-18T12:18:56Z"
     },
     {
       "id": "trap-implicit-decl-stub",
@@ -150,7 +150,7 @@
     },
     {
       "id": "netplay-patches-replays-ui",
-      "text": "Retrocompatible patches bundle dc_game.dll + manifest.json + Ed25519 manifest.sig (sign_patch_manifest.py) verified by ed25519_verify.c + patch_dll.c BEFORE LoadLibraryA. Binary .mvc2r v1 replays (216B LE header, RLE+XOR input payload, 60f checksums, 20f COW keyframes for <12ms Takeover seek in replay.c) pair with F4 Netplay/F8 Replay HUDs backed by non-blocking WinHTTP/WebSocket (http_client.c, net_ui.c).",
+      "text": "Retrocompatible patches bundle dc_game.dll + manifest.json + Ed25519 manifest.sig (sign_patch_manifest.py) verified by ed25519_verify.c + patch_dll.c BEFORE LoadLibraryA. Binary .mvc2r v1 replays (216B LE header, RLE+XOR input payload, 60f checksums, 20f COW keyframes for <12ms Takeover seek in replay.c) pair with F4 Netplay/F8 Replay HUDs (http_client.c, net_ui.c) and the Dreamcast main menu Netplay item replacing Score Attack (HOME_SCORE=7 in home_menu.c, dm0c_menu.c, dm0c_netplay_art.h, host_netplay_open in dc_board.c).",
       "sources": [
         {
           "path": "ports/port/sys/patch_dll.c",
@@ -166,14 +166,26 @@
         },
         {
           "path": "ports/port/net/net_ui.c",
-          "sha256": "8d1ce8b3e4f0416f84fff789ad8c7dc4190fa98e32fc57cc45595bbb0ad6433e"
+          "sha256": "ab5ee02c17e1437a79652ef2bf91ed5783f1963ea24fa6c369d0d52da171a914"
         },
         {
           "path": "tools/sign_patch_manifest.py",
           "sha256": "3fed8c96c68a9f65d35cdcf8021f798e5e22696465ef177a9d9a3fcbbd0fe7ca"
+        },
+        {
+          "path": "src/dc/home_menu.c",
+          "sha256": "4064f895debab9519fac3a7844d3eff2e072f9a9cf12832c151e6c653cfa5ca3"
+        },
+        {
+          "path": "src/dc/dm0c_menu.c",
+          "sha256": "18e72a00a56f03d8966d6c9ea4c2df70e5b5a06534d20059b50f5a9afbaf75fd"
+        },
+        {
+          "path": "ports/port/dc/dc_board.c",
+          "sha256": "91d22f473e607b7ff4ad083fed973a7456bde4cadf39b562f51d7d76c0aeb37a"
         }
       ],
-      "verified_at": "2026-11-18T11:04:29Z"
+      "verified_at": "2026-11-18T12:18:56Z"
     }
   ]
 }
