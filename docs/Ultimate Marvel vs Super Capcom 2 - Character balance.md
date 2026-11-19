@@ -45,8 +45,7 @@
 - [/] 6HK
   - [x] Decrease recovery
   - [x] Normal cancellable
-  - [ ] Fix its infinite
-    - [ ] Allow only once per combo?
+    - [x] Allow only once per combo
 - [/] j236LK
   - [x] Make it jump cancellable
     - [ ] Actions can be taken afterwards even during a normal jump
