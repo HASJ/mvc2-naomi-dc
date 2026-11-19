@@ -66,6 +66,16 @@
 * [x] 623PP
   - [x] Make it cancellable into supers
 
+## Bison
+  - [] Randomly, display his name as "Bipson"
+  - Gameplay redesign is to take the Psycho in Psycho Power to it's ultimate limits
+    - Jump scare teleports
+    - Horizontal vanishing ground and air dash
+      - Inspired by Slayer and SF5 Bison
+      - Unwiedly, the player has to be intentional on what he wants to do
+        - Holding '6' or Dash determines how far Bison will appear from the initial spot
+        - 
+
 ## Strider
 
 - [x] j236x
