@@ -37,6 +37,13 @@ fail() {
 	exit 1
 }
 
+# 0 when one of the paths is there
+any() {
+	for f; do
+		[ -e "$f" ] && return 0
+	done
+	return 1
+}
 has_section() { grep -q "^\[$SECTION\]" "$INI" 2> /dev/null; }
 
 ini_backup() {
@@ -142,11 +149,11 @@ install() {
 
 	echo
 	say "Done: $version. In the menu: _Other, then \"MVC2 Arcade (Pinedra)\" or \"MVC2 Dreamcast (Pinedra)\"."
-	ls "$GAME/roms/mvsc2/epr-23085a.ic11" "$GAME/roms/mvsc2/mvsc2.zip" "$GAME/roms/mvsc2.zip" > /dev/null 2>&1 &&
+	any "$GAME/roms/mvsc2/epr-23085a.ic11" "$GAME/roms/mvsc2/mvsc2.zip" "$GAME/roms/mvsc2.zip" &&
 		say "Arcade: the ROM set is in games/mvc2/roms/mvsc2." ||
 		say "Arcade: put MAME's mvsc2.zip (or its files) in games/mvc2/roms/mvsc2."
-	ls "$GAME/disc/1ST_READ.BIN" "$GAME"/disc/*.chd "$GAME"/disc/*.gdi "$GAME"/disc/*.cue "$GAME"/disc/*.iso \
-		> /dev/null 2>&1 && say "Dreamcast: the disc is in games/mvc2/disc." ||
+	any "$GAME/disc/1ST_READ.BIN" "$GAME"/disc/*.chd "$GAME"/disc/*.gdi "$GAME"/disc/*.cue "$GAME"/disc/*.iso &&
+		say "Dreamcast: the disc is in games/mvc2/disc." ||
 		say "Dreamcast: put the USA disc (an image, or its files) in games/mvc2/disc."
 }
 

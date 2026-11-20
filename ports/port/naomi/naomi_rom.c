@@ -461,6 +461,16 @@ int naomi_rom_make_image(const char* dir, const char* path, PROGRESS progress) {
     return 1;
 }
 
+#ifdef MVC2_MISTER
+void mister_unpacking(const char* name, uint32_t done_kb, uint32_t total_kb);  /* port/mister: on the OSD */
+
+static void unpack_progress(uint32_t done, uint32_t total) {
+    mister_unpacking(ZIP, done << (BLOCK_SHIFT - 10), total << (BLOCK_SHIFT - 10));
+}
+#else
+#define unpack_progress NULL
+#endif
+
 const char* naomi_rom_image_name(void) {
     return IMAGE;
 }
@@ -483,7 +493,7 @@ int naomi_rom_open(const char* dir) {
     } else {
         if (!has_file(dir, IMAGE, ROM_SIZE) && missing_file(dir) != NULL) {
             host_log("unpacking the set's zip into %s", path);
-            if (!naomi_rom_make_image(dir, path, NULL)) {
+            if (!naomi_rom_make_image(dir, path, unpack_progress)) {
                 host_log("could not unpack the set's zip into %s", path);
             }
         }

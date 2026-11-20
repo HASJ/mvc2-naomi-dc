@@ -68,7 +68,8 @@ cbuffer Draw : register(b0, space3) {
     int palette;
     float mip_bias;
     int mode;           /* 0 shade, 1 the nearest 1/w past the last layer, 2 the first place at it,
-                           3 shade that fragment and blend it over under */
+                           3 shade that fragment and blend it over under, 4 under where the last layer's fragment
+                           was, 5 one for each fragment */
     int blend;          /* source factor + 16 * destination factor */
 };
 
@@ -311,6 +312,12 @@ float4 ps_main(VOut i) : SV_Target0 {
         i.offs += offs_x * d.x + offs_y * d.y;
         at = c, z = i.q;
     }
+    if (mode == 4) {
+        if (z != prev_q.Load(int3(p, 0)) || i.order != prev_o.Load(int3(p, 0))) {
+            discard;
+        }
+        return under.Load(int3(p, 0));
+    }
     /* the edge test last, as the dearest (fxc's || doesn't skip) */
     if (!(z > 0.0)) {
         discard;
@@ -332,6 +339,12 @@ float4 ps_main(VOut i) : SV_Target0 {
             discard;
         }
         return float4(i.order, 0, 0, 0);
+    }
+    if (mode == 5) {
+        [branch] if (!INSIDE(at, i)) {
+            discard;
+        }
+        return float4(1, 0, 0, 0);
     }
     if (mode == 3 && (z != min_q.Load(int3(p, 0)) || i.order != min_o.Load(int3(p, 0)))) {
         discard;

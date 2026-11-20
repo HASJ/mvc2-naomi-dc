@@ -91,7 +91,8 @@ has (`MVC2_RDTHREADS=n` sets the count; the picture is the same for any count). 
 small text and sprites lose detail.
 `render =` in `mvc2.cfg` sets the quality for every run, and `MVC2_RDQUALITY` overrides it for one. Its words:
 `exact` (the default, every pixel as the PowerVR2 draws it), `fast` (the nearest texel, one mip level a
-triangle), `half`, `fast+half`, `nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
+triangle), `lite` (near the exact pixels, in integers: with `fast`, the quickest at 640 by 480), `half`, `fast+half`,
+`nofog` (no fog) and `nosort` (translucent triangles not sorted per pixel).
 
 The front end is built with SDL3 (`SDL3.dll` beside the executable). When the GPU can't start, it says why and
 draws in software; test runs draw in software unless `mvc2.cfg` names a renderer.

@@ -225,8 +225,67 @@ void game_stop()
 	back_to_menu();
 }
 
+// The game's first start unpacking its data (the arcade's zip, a disc image),
+// shown as Main's ProgressMessage shows a load: the name and a bar, here with
+// the size. Drawn again each second, or the message's own timeout hides it.
+int g_unpack_step = -1;
+uint64_t g_unpack_drawn;
+
+uint64_t now_ms()
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
+
+void unpack_show()
+{
+	static const char glyph[] = { '\x8C', '\x8E', '\x8F', '\x90', '\x91', '\x7F' };
+	const int cells = 27, n = (int)sizeof(glyph), steps = cells * n - 1;
+	if (!g_joy || !g_joy->unpack_kb_total) return;
+	uint32_t total = g_joy->unpack_kb_total, done = g_joy->unpack_kb;
+	if (done > total) done = total;
+	int step = (int)((uint64_t)done * steps / total);
+	uint64_t now = now_ms();
+	if (g_unpack_step == steps || (step == g_unpack_step && now - g_unpack_drawn < 1000)) return;
+	bool first = g_unpack_step < 0;
+	g_unpack_step = step;
+	g_unpack_drawn = now;
+
+	char name[28], bar[cells + 1] = {};
+	snprintf(name, sizeof(name), "%s", (const char *)g_joy->unpack_name);
+	for (int i = 0; i <= step / n; i++) bar[i] = i < step / n ? '\x7F' : glyph[step % n];
+	char text[160];
+	snprintf(text, sizeof(text), "\n\n %s\n %s\n\n %u of %u MB\n Only at the first start", name, bar,
+		(unsigned)(done >> 10), (unsigned)(total >> 10));
+	InfoMessage(text, step < steps ? 2000 : 500, "Unpacking");
+	if (first || step == steps) logf("unpacking %s: %u of %u KB", name, (unsigned)done, (unsigned)total);
+}
+
+// Main's video poll, every 500 ms as user_io_poll runs it: the core's mode read
+// and acted on (vsync_adjust, vscale_mode, the filters), and the S-Video and
+// composite encoder set for it (vga_mode=svideo or cvbs)
+void video_poll()
+{
+	static uint64_t next;
+	static uint32_t width, height;
+	uint64_t now = now_ms();
+	if (now < next) return;
+	next = now + 500;
+	video_mode_adjust();
+	const VideoInfo &vi = current_video_info;
+	if (vi.width == width && vi.height == height) return;
+	width = vi.width;
+	height = vi.height;
+	logf("video %ux%u%s, %.2f Hz, %.3f MHz, vga_mode %s", vi.width, vi.height, vi.interlaced ? "i" : "",
+		vi.vtime ? 100000000.0 / vi.vtime : 0.0, vi.ptime ? vi.ctime * 100.0 / vi.ptime : 0.0,
+		cfg.vga_mode[0] ? cfg.vga_mode : "rgb");
+}
+
 pid_t game_start()
 {
+	if (g_joy) g_joy->unpack_kb_total = 0;
+	g_unpack_step = -1;
 	int log = open(kRunLog, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
 	pid_t pid = fork();
 	if (pid == 0)
@@ -283,6 +342,7 @@ int game_wait(pid_t pid, bool *restart, bool *quit)
 
 		if (is_fpga_ready(1))
 		{
+			video_poll();
 			frame_timer();
 			input_poll(0);
 			if (g_joy)
@@ -293,6 +353,7 @@ int game_wait(pid_t pid, bool *restart, bool *quit)
 					g_joy->joy_mask[i] = g_gl ? pinedra_to_mvc2(mask[i]) : mask[i];
 			}
 		}
+		unpack_show();
 		HandleUI();
 		OsdUpdate();
 

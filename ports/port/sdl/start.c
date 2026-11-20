@@ -374,6 +374,8 @@ int pick_game(int argc, char** argv) {
 
 #ifdef MVC2_DC
 #ifdef MVC2_MISTER
+static const char* unpacking;
+
 static void unpack_progress(uint32_t done, uint32_t total) {
     static uint32_t shown = ~0u;
     uint32_t pct = total > 0 ? (uint32_t)((uint64_t)done * 100 / total) : 0;
@@ -381,6 +383,7 @@ static void unpack_progress(uint32_t done, uint32_t total) {
         shown = pct / 10;
         host_log("unpacking the disc's files: %u%%", (unsigned)pct);
     }
+    mister_unpacking(unpacking, done, total);
 }
 #elif !defined(__3DS__) && !defined(__PSP__)
 /* the window's title says how far it is, and the window keeps answering */
@@ -423,7 +426,7 @@ static int unpack_disc(const char* dir) {
     err = dc_image_unpack(dir, psp_unpack_progress);
     psp_unpack_screen(NULL);
 #elif defined(MVC2_MISTER)
-    (void)image;
+    unpacking = image != NULL ? image : "";
     err = dc_image_unpack(dir, unpack_progress);
 #else
     (void)image;

@@ -1,5 +1,5 @@
 /*
- * menu_sdl.c  The controls screen (F1): each player's keys and buttons, and the renderer, over the paused game
+ * menu_sdl.c  The controls screen (F1): each player's keys and buttons, the renderer and exit, over the paused game
  */
 
 #include <stdio.h>
@@ -106,13 +106,13 @@ static const char* const labels[ACTIONS] = {
     "LIGHT KICK", "HEAVY KICK", "ASSIST 2", "START", "COIN",
 };
 
-enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_HUD, ROW_DEFAULTS, ROW_DONE, ROWS };
+enum { ROW_RENDERER = ACTIONS, ROW_PICTURE, ROW_SPRITES, ROW_HUD, ROW_DEFAULTS, ROW_DONE, ROW_EXIT, ROWS };
 
 static int row_line(int a) {
-    return 3 + a;
+    return 2 + a;
 }
 
-static const char* const pictures[] = { "exact", "fast", "fast+half" };
+static const char* const pictures[] = { "exact", "fast", "lite+fast", "fast+half" };
 enum { PICTURES = sizeof pictures / sizeof pictures[0] };
 
 static const char* picture(void) {
@@ -124,7 +124,7 @@ static const struct {
     const char *name, *resolution, *aa;
 } gpu_pictures[] = {
     { "auto", "auto", "1" }, { "auto, aa 2x", "auto", "2" }, { "auto, aa 3x", "auto", "3" }, { "auto, aa 4x", "auto", "4" },
-    { "2688 by 2016", "4.2", "1" }, { "the arcade's 640 by 480", "1", "1" },
+    { "4.2x", "4.2", "1" }, { "1x, the arcade's", "1", "1" },
 };
 enum { GPU_PICTURES = sizeof gpu_pictures / sizeof gpu_pictures[0] };
 
@@ -230,8 +230,11 @@ static const char* setting(int a, char* buf, size_t size) {
     } else if (a == ROW_HUD) {
         snprintf(buf, size, "%s%s", hud(), renderer_gpu() ? "" : "  (GPU ONLY)");
     } else if (renderer_gpu()) {
-        int i = gpu_picture();
-        snprintf(buf, size, "%s", i >= 0 ? gpu_pictures[i].name : "as mvc2.cfg sets it");
+        int i = gpu_picture(), w = 0, h = 0;
+#ifdef MVC2_SDL3
+        view_drawn(&w, &h);
+#endif
+        snprintf(buf, size, "%s: %d by %d", i >= 0 ? gpu_pictures[i].name : "mvc2.cfg's", w, h);
     } else {
         snprintf(buf, size, "%s", picture());
     }
@@ -287,8 +290,8 @@ void menu_draw(uint32_t* frame, int w, int h) {
             draw_text(0, row_line(a), "SET TO DEFAULT", color);
             continue;
         }
-        if (a == ROW_DONE) {
-            draw_text(0, row_line(a), "DONE", color);
+        if (a == ROW_DONE || a == ROW_EXIT) {
+            draw_text(0, row_line(a), a == ROW_DONE ? "DONE" : "EXIT THE GAME", color);
             continue;
         }
         if (a == ROW_RENDERER || a == ROW_PICTURE || a == ROW_SPRITES || a == ROW_HUD) {
@@ -348,6 +351,10 @@ static void act(int up, int down, int left, int right, int enter, int reset, int
         close_menu();
     } else if (enter && row == ROW_DONE) {
         close_menu();
+    } else if (enter && row == ROW_EXIT) {
+        SDL_Event quit = { SDL_EVENT_QUIT };
+        close_menu();
+        SDL_PushEvent(&quit);
     } else if (enter && row == ROW_DEFAULTS) {
         for (a = 0; a < ACTIONS; a++) {
             input_defaults(player, a);

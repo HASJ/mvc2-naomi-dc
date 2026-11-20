@@ -10,9 +10,12 @@ export PND_MSAA=0
 export PND_FRAMES_AHEAD=1
 # the sound thread (SDLAudio) on CPU1, off the game thread's CPU0: select about 1 ms a frame faster
 export PND_AUDIO_CORE=1
+# Pinedra Config's "Enable 240p mode": drawn in 240 lines, which a 15 kHz CRT shows without interlace
+grep -qx 'crt_240p=1' /media/fat/pinedra/settings/all.cfg 2>/dev/null && export PND_240P=1
 if [ -f env.txt ]; then
     set -a
     . ./env.txt
     set +a
 fi
+[ "$PND_240P" = 1 ] || unset PND_240P
 exec bin/mvc2-pinedra "$@"

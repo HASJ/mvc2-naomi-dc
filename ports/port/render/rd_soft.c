@@ -251,6 +251,19 @@ PIXEL_STEP int32x4_t bilinear_mix(const TEXCACHE* tc, float ax, float ay) {
     float32x4_t m = vaddq_f32(vmulq_f32(top, by), vmulq_f32(bottom, fy));
     return vbslq_s32(vcaltq_f32(m, vdupq_n_f32(2147483648.0f)), vcvtq_s32_f32(m), vdupq_n_s32(INT_MIN));
 }
+#elif defined(RD_SSE2)
+/* m's bits from a, the others from b */
+PIXEL_STEP __m128i sel128(__m128i m, __m128i a, __m128i b) {
+    return _mm_or_si128(_mm_and_si128(m, a), _mm_andnot_si128(m, b));
+}
+
+/* the texels mixed: a r g b, by to_int */
+PIXEL_STEP __m128i bilinear_mix(const TEXCACHE* tc, float ax, float ay) {
+    __m128 bx = _mm_set1_ps(1 - ax), fx = _mm_set1_ps(ax), by = _mm_set1_ps(1 - ay), fy = _mm_set1_ps(ay);
+    __m128 top = _mm_add_ps(_mm_mul_ps(_mm_load_ps(tc->c[0]), bx), _mm_mul_ps(_mm_load_ps(tc->c[1]), fx));
+    __m128 bottom = _mm_add_ps(_mm_mul_ps(_mm_load_ps(tc->c[2]), bx), _mm_mul_ps(_mm_load_ps(tc->c[3]), fx));
+    return _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(top, by), _mm_mul_ps(bottom, fy)));
+}
 #endif
 
 PIXEL_STEP COLOR sample_bilinear(const RD_STATE* s, const int tex, int k, const void* d, int w, int h, float u, float v,
@@ -260,10 +273,7 @@ PIXEL_STEP COLOR sample_bilinear(const RD_STATE* s, const int tex, int k, const 
     bilinear_texels(s, tex, k, d, w, h, u, v, tc, &ax, &ay);
 #if defined(RD_SSE2)
     {
-        __m128 bx = _mm_set1_ps(1 - ax), fx = _mm_set1_ps(ax), by = _mm_set1_ps(1 - ay), fy = _mm_set1_ps(ay);
-        __m128 top = _mm_add_ps(_mm_mul_ps(_mm_load_ps(tc->c[0]), bx), _mm_mul_ps(_mm_load_ps(tc->c[1]), fx));
-        __m128 bottom = _mm_add_ps(_mm_mul_ps(_mm_load_ps(tc->c[2]), bx), _mm_mul_ps(_mm_load_ps(tc->c[3]), fx));
-        __m128i k = _mm_cvttps_epi32(_mm_add_ps(_mm_mul_ps(top, by), _mm_mul_ps(bottom, fy)));
+        __m128i k = bilinear_mix(tc, ax, ay);
         c.a = _mm_cvtsi128_si32(k);
         c.r = _mm_cvtsi128_si32(_mm_srli_si128(k, 4));
         c.g = _mm_cvtsi128_si32(_mm_srli_si128(k, 8));
@@ -491,6 +501,14 @@ PIXEL_STEP void add_frag(WORKER* w, int at, float z, uint32_t color, int order) 
 PIXEL_STEP int32x4_t div255q(int32x4_t x) {
     return vshrq_n_s32(vaddq_s32(vaddq_s32(x, vdupq_n_s32(1)), vshrq_n_s32(x, 8)), 8);
 }
+#elif defined(RD_SSE2)
+PIXEL_STEP __m128i div255q(__m128i x) {
+    return _mm_srai_epi32(_mm_add_epi32(_mm_add_epi32(x, _mm_set1_epi32(1)), _mm_srai_epi32(x, 8)), 8);
+}
+
+/* the lowest and the highest of 4 lanes' bits */
+static const int8_t lane_lo[16] = { 0, 0, 1, 0, 2, 0, 1, 0, 3, 0, 1, 0, 2, 0, 1, 0 };
+static const int8_t lane_hi[16] = { 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3 };
 #endif
 
 /* how raster takes a triangle's pixels: drawn; opaque, only its depth, noting the pixels it takes; opaque, only those
@@ -809,6 +827,42 @@ PIXEL_STEP int depth_run(const SETUP* p, WORKER* wk, int y, int xs, int xe, int 
             first = (int)vget_lane_u32(l2, 0) - 1, last = (int)vget_lane_u32(h2, 0) - 1;
         }
     }
+#elif defined(RD_SSE2)
+    /* on the bits, as NEON's */
+    if (xe - xs >= 4) {
+        const __m128i m1 = _mm_set1_epi32(mask & 1 ? -1 : 0), m2 = _mm_set1_epi32(mask & 2 ? -1 : 0);
+        const __m128i m4 = _mm_set1_epi32(mask & 4 ? -1 : 0), m8 = _mm_set1_epi32(mask & 8 ? -1 : 0);
+        const __m128i zw = _mm_set1_epi32(p->zwrite ? -1 : 0), idv = _mm_set1_epi32(id);
+        const __m128i one = _mm_set1_epi32(1), inf = _mm_set1_epi32(0x7F800000), abs = _mm_set1_epi32(0x7FFFFFFF);
+        for (;;) {
+            __m128i zb = _mm_loadu_si128((const __m128i*)&lz[x]), ob = _mm_loadu_si128((const __m128i*)&zrow[x]);
+            __m128i nan = _mm_cmpgt_epi32(_mm_and_si128(ob, abs), inf);
+            __m128i pos = _mm_andnot_si128(_mm_cmpgt_epi32(zb, inf), _mm_cmpgt_epi32(zb, _mm_setzero_si128()));
+            __m128i ord = _mm_or_si128(_mm_or_si128(_mm_and_si128(_mm_cmplt_epi32(zb, ob), m1),
+                                                    _mm_and_si128(_mm_cmpeq_epi32(zb, ob), m2)),
+                                       _mm_and_si128(_mm_cmpgt_epi32(zb, ob), m4));
+            __m128i ok = _mm_and_si128(sel128(nan, m8, ord), pos);
+            int k;
+            if (take) {
+                _mm_storeu_si128((__m128i*)&win[x], sel128(ok, idv, _mm_loadu_si128((const __m128i*)&win[x])));
+                _mm_storeu_si128((__m128i*)&zrow[x], sel128(_mm_and_si128(ok, zw), zb, ob));
+            } else {
+                __m128i n = _mm_packs_epi32(_mm_and_si128(ok, one), ok);
+                k = _mm_cvtsi128_si32(_mm_packus_epi16(n, n));
+                memcpy(&lok[x], &k, 4);
+            }
+            k = _mm_movemask_ps(_mm_castsi128_ps(ok));
+            if (k != 0) {
+                first = x + lane_lo[k] < first ? x + lane_lo[k] : first;
+                last = x + lane_hi[k] > last ? x + lane_hi[k] : last;
+            }
+            if (x + 4 >= xe) {
+                break;
+            }
+            x = x + 8 <= xe ? x + 4 : xe - 4;
+        }
+        x = xe;
+    }
 #endif
     for (; x < xe; x++) {
         float z = lz[x];
@@ -1009,6 +1063,74 @@ PIXEL_STEP int span(const SETUP* p, WORKER* wk, int y, int xs, int xe, int id, c
             }
             continue;
         }
+#elif defined(RD_SSE2)
+        /* as NEON's: the channels all under 2^15, so a madd lane multiplies one */
+        if (tex && p->level >= 0 && (mode == SHADE_WON || list == RD_OPAQUE || (list == RD_TRANS && !nosort)) &&
+            (!bil || (fabsf(u * w) < 16777216.0f && fabsf(v * h) < 16777216.0f))) {
+            const __m128i lane_a = _mm_setr_epi32(-1, 0, 0, 0);
+            __m128i t, b, q;
+            uint32_t out;
+            if (bil) {
+                float ax, ay;
+                bilinear_texels(s, tex, p->level, d, w, h, u, v, &wk->tex, &ax, &ay);
+                t = bilinear_mix(&wk->tex, ax, ay);
+            } else {
+                /* b g r a, turned */
+                __m128i z0 = _mm_setzero_si128();
+                t = _mm_cvtsi32_si128((int)point_texel(s, tex, d, w, h, u, v));
+                t = _mm_shuffle_epi32(_mm_unpacklo_epi16(_mm_unpacklo_epi8(t, z0), z0), _MM_SHUFFLE(0, 1, 2, 3));
+            }
+            if (!s->tex_alpha) {
+                t = sel128(lane_a, _mm_set1_epi32(255), t);
+            }
+            b = _mm_loadu_si128((const __m128i*)&base.a);
+            switch (s->shading) {
+            case RD_DECAL:
+                q = t;
+                break;
+            case RD_MODULATE:
+                q = sel128(lane_a, t, div255q(_mm_madd_epi16(t, b)));
+                break;
+            case RD_DECAL_ALPHA: {
+                __m128i ta = _mm_shuffle_epi32(t, 0);
+                q = div255q(_mm_add_epi32(_mm_madd_epi16(t, ta), _mm_madd_epi16(b, _mm_sub_epi32(_mm_set1_epi32(255), ta))));
+                q = sel128(lane_a, b, q);
+                break;
+            }
+            default:
+                q = div255q(_mm_madd_epi16(t, b));
+                break;
+            }
+            if (offset) {
+                /* both 0 to 255 */
+                q = _mm_min_epi16(_mm_add_epi32(q, _mm_loadu_si128((const __m128i*)&offs.a)), _mm_set1_epi32(255));
+            }
+            if (fogged) {
+                float f = zconst ? fog0 : fog_value(z);
+                __m128i k = _mm_loadu_si128((const __m128i*)&p->fogc.a);
+                if (s->fog == RD_FOG_TABLE2) {
+                    q = sel128(lane_a, _mm_cvtsi32_si128((int)(f * 255.0f + 0.5f)), k);
+                } else {
+                    __m128 g;
+                    k = sel128(lane_a, q, k);
+                    g = _mm_mul_ps(_mm_cvtepi32_ps(_mm_sub_epi32(k, q)), _mm_set1_ps(f));
+                    g = _mm_add_ps(g, _mm_castsi128_ps(sel128(_mm_cmpgt_epi32(k, q), _mm_castps_si128(_mm_set1_ps(0.5f)),
+                                                              _mm_castps_si128(_mm_set1_ps(-0.5f)))));
+                    q = _mm_add_epi32(q, _mm_cvttps_epi32(g));
+                }
+            }
+            q = _mm_packs_epi32(_mm_shuffle_epi32(q, _MM_SHUFFLE(0, 1, 2, 3)), q);
+            out = (uint32_t)_mm_cvtsi128_si32(_mm_packus_epi16(q, q));
+            if (mode == SHADE_WON || list == RD_OPAQUE) {
+                crow[x] = out;
+                if (mode != SHADE_WON && p->zwrite) {
+                    zrow[x] = z;
+                }
+            } else if (!(p->clear0 && out >> 24 == 0)) {
+                add_frag(wk, y * RD_WIDTH + x, z, out, p->order);
+            }
+            continue;
+        }
 #endif
         c = base;
         if (tex) {
@@ -1188,6 +1310,12 @@ PIXEL_STEP float lite_point(const SETUP* p, int x, int y, float* q) {
         float32x4_t t = vmlaq_n_f32(vmlaq_n_f32(vld1q_f32(&p->lpa[k]), vld1q_f32(&p->lpx[k]), xf), vld1q_f32(&p->lpy[k]), yf);
         vst1q_f32(&q[k], vaddq_f32(vmulq_n_f32(t, rz), vld1q_f32(&p->lpb[k])));
     }
+#elif defined(RD_SSE2)
+    for (k = 0; k < LPLANES; k += 4) {
+        __m128 t = _mm_add_ps(_mm_loadu_ps(&p->lpa[k]), _mm_mul_ps(_mm_loadu_ps(&p->lpx[k]), _mm_set1_ps(xf)));
+        t = _mm_add_ps(t, _mm_mul_ps(_mm_loadu_ps(&p->lpy[k]), _mm_set1_ps(yf)));
+        _mm_storeu_ps(&q[k], _mm_add_ps(_mm_mul_ps(t, _mm_set1_ps(rz)), _mm_loadu_ps(&p->lpb[k])));
+    }
 #else
     for (k = 0; k < LPLANES; k++) {
         float t = p->lpa[k] + p->lpx[k] * xf;
@@ -1208,6 +1336,20 @@ PIXEL_STEP int div255(int x) {
 /* f as an int, held to +-lim, NaN 0: as NEON takes it */
 PIXEL_STEP int lite_int(float f, float lim) {
     return f > lim ? (int)lim : f < -lim ? -(int)lim : f == f ? (int)f : 0;
+}
+#endif
+
+#if defined(RD_SSE2)
+/* lite_int's, 4 at a time */
+PIXEL_STEP __m128i lite_int4(__m128 f, float lim) {
+    __m128i k = _mm_cvttps_epi32(_mm_min_ps(_mm_max_ps(f, _mm_set1_ps(-lim)), _mm_set1_ps(lim)));
+    return _mm_and_si128(k, _mm_castps_si128(_mm_cmpord_ps(f, f)));
+}
+
+/* s + d at for at from a to a + 3 */
+PIXEL_STEP __m128i plane4(int32_t s, int32_t d, int a) {
+    uint32_t k = (uint32_t)s + (uint32_t)d * (uint32_t)a;
+    return _mm_setr_epi32((int32_t)k, (int32_t)(k + (uint32_t)d), (int32_t)(k + 2 * (uint32_t)d), (int32_t)(k + 3 * (uint32_t)d));
 }
 #endif
 
@@ -1248,6 +1390,12 @@ static void lite_points(const SETUP* p, LBUF* b, int first, int last, int y) {
             vst1q_s32(&b->s[k][i], vcvtq_s32_f32(a));
             vst1q_s32(&b->d[k][i], vcvtq_s32_f32(d));
         }
+#elif defined(RD_SSE2)
+        for (i = 0; i < LPLANES; i += 4) {
+            __m128 a = _mm_loadu_ps(&pk[i]), d = _mm_mul_ps(_mm_sub_ps(_mm_loadu_ps(&pn[i]), a), _mm_set1_ps(lrcp[n]));
+            _mm_storeu_si128((__m128i*)&b->s[k][i], lite_int4(a, 1073741824.0f));
+            _mm_storeu_si128((__m128i*)&b->d[k][i], lite_int4(d, 33554432.0f));
+        }
 #else
         for (i = 0; i < LPLANES; i++) {
             float d = pn[i] - pk[i];
@@ -1281,6 +1429,27 @@ PIXEL_STEP int32x4_t wrap4(int32x4_t x, int n, int mode) {
         return vandq_s32(x, vdupq_n_s32(n - 1));
     }
 }
+#elif defined(RD_SSE2)
+PIXEL_STEP __m128i wrap4(__m128i x, int n, int mode) {
+    switch (mode) {
+    case L_CLAMP:
+        x = _mm_andnot_si128(_mm_srai_epi32(x, 31), x);
+        return sel128(_mm_cmpgt_epi32(x, _mm_set1_epi32(n - 1)), _mm_set1_epi32(n - 1), x);
+    case L_FLIP:
+        x = _mm_and_si128(x, _mm_set1_epi32(2 * n - 1));
+        return sel128(_mm_cmplt_epi32(x, _mm_set1_epi32(n)), x, _mm_sub_epi32(_mm_set1_epi32(2 * n - 1), x));
+    default:
+        return _mm_and_si128(x, _mm_set1_epi32(n - 1));
+    }
+}
+
+/* 4 bytes from the low ones of 4 lanes, each 0 to 255 */
+PIXEL_STEP void store4_u8(uint8_t* o, __m128i k) {
+    int n;
+    k = _mm_packs_epi32(k, k);
+    n = _mm_cvtsi128_si32(_mm_packus_epi16(k, k));
+    memcpy(o, &n, 4);
+}
 #endif
 
 /* the texels' places and weights for count pixels */
@@ -1310,6 +1479,23 @@ static void lite_places(const SETUP* p, LBUF* b, int count, int w, int h) {
         } else {
             vst1q_s32(&b->o[0][j], vmlaq_s32(wrap4(x0, w, mu), wrap4(y0, h, mv), wv));
         }
+#elif defined(RD_SSE2)
+        /* a row and the width both under 2^15: a madd lane multiplies them */
+        __m128i u = plane4(sk[0], dk[0], j % LSEG), v = plane4(sk[1], dk[1], j % LSEG);
+        __m128i x0 = _mm_srai_epi32(u, 16), y0 = _mm_srai_epi32(v, 16), wv = _mm_set1_epi32(w);
+        if (bil) {
+            const __m128i one = _mm_set1_epi32(1), m8 = _mm_set1_epi32(255);
+            __m128i x1 = wrap4(_mm_add_epi32(x0, one), w, mu), y1 = _mm_madd_epi16(wrap4(_mm_add_epi32(y0, one), h, mv), wv);
+            x0 = wrap4(x0, w, mu), y0 = _mm_madd_epi16(wrap4(y0, h, mv), wv);
+            _mm_storeu_si128((__m128i*)&b->o[0][j], _mm_add_epi32(y0, x0));
+            _mm_storeu_si128((__m128i*)&b->o[1][j], _mm_add_epi32(y0, x1));
+            _mm_storeu_si128((__m128i*)&b->o[2][j], _mm_add_epi32(y1, x0));
+            _mm_storeu_si128((__m128i*)&b->o[3][j], _mm_add_epi32(y1, x1));
+            store4_u8(&b->fx[j], _mm_and_si128(_mm_srai_epi32(u, 8), m8));
+            store4_u8(&b->fy[j], _mm_and_si128(_mm_srai_epi32(v, 8), m8));
+        } else {
+            _mm_storeu_si128((__m128i*)&b->o[0][j], _mm_add_epi32(wrap4(x0, w, mu), _mm_madd_epi16(wrap4(y0, h, mv), wv)));
+        }
 #else
         int i;
         for (i = 0; i < 4; i++) {
@@ -1333,6 +1519,12 @@ PIXEL_STEP int32x4_t ifloor4(float32x4_t f) {
     uint32x4_t in = vandq_u32(vcgeq_f32(f, vdupq_n_f32(-2147483648.0f)), vcltq_f32(f, vdupq_n_f32(2147483648.0f)));
     int32x4_t t = vbslq_s32(in, vcvtq_s32_f32(f), vdupq_n_s32(INT_MIN));
     return vaddq_s32(t, vreinterpretq_s32_u32(vandq_u32(vcltq_f32(f, vcvtq_f32_s32(t)), in)));
+}
+#elif defined(RD_SSE2)
+PIXEL_STEP __m128i ifloor4(__m128 f) {
+    __m128i t = _mm_cvttps_epi32(f);
+    __m128i m = _mm_andnot_si128(_mm_cmpeq_epi32(t, _mm_set1_epi32(INT_MIN)), _mm_castps_si128(_mm_cmplt_ps(f, _mm_cvtepi32_ps(t))));
+    return _mm_add_epi32(t, m);
 }
 #endif
 
@@ -1368,6 +1560,14 @@ static void lite_places_exact(const SETUP* p, LBUF* b, int y, int xs, int first,
         for (j = 0; j < count; j += 4) {
             int32x4_t xi = wrap4(ifloor4(vld1q_f32(&b->fu[j])), w, mu), yi = wrap4(ifloor4(vld1q_f32(&b->fv[j])), h, mv);
             vst1q_s32(&b->o[0][j], vmlaq_s32(xi, yi, vdupq_n_s32(w)));
+        }
+    }
+#elif defined(RD_SSE2)
+    {
+        const int mu = uv & 2 ? L_CLAMP : uv & 8 ? L_FLIP : L_REPEAT, mv = uv & 1 ? L_CLAMP : uv & 4 ? L_FLIP : L_REPEAT;
+        for (j = 0; j < count; j += 4) {
+            __m128i xi = wrap4(ifloor4(_mm_loadu_ps(&b->fu[j])), w, mu), yi = wrap4(ifloor4(_mm_loadu_ps(&b->fv[j])), h, mv);
+            _mm_storeu_si128((__m128i*)&b->o[0][j], _mm_add_epi32(xi, _mm_madd_epi16(yi, _mm_set1_epi32(w))));
         }
     }
 #else
@@ -1476,6 +1676,96 @@ PIXEL_STEP uint8x8_t lite_channel(const LBUF* b, int j, int i) {
     int32x4_t hi = vmlaq_s32(vld1q_dup_s32(sk), vaddq_s32(at, vdupq_n_s32(4)), vld1q_dup_s32(dk));
     return vqmovn_u16(vcombine_u16(vqshrun_n_s32(lo, 16), vqshrun_n_s32(hi, 16)));
 }
+#elif defined(RD_SSE2)
+/* 8 pixels' channels, a 16-bit lane each */
+typedef struct {
+    __m128i a, r, g, b;
+} LCOL;
+
+/* c5's and c6's: i 255 / 31 and i 255 / 63 rounded down, by multiplying */
+PIXEL_STEP __m128i c5x8(__m128i i) {
+    return _mm_srli_epi16(_mm_mulhi_epu16(_mm_mullo_epi16(i, _mm_set1_epi16(255)), _mm_set1_epi16(8457)), 2);
+}
+
+PIXEL_STEP __m128i c6x8(__m128i i) {
+    return _mm_srli_epi16(_mm_mulhi_epu16(_mm_mullo_epi16(i, _mm_set1_epi16(255)), _mm_set1_epi16(16645)), 4);
+}
+
+/* 8 of a corner's texels as channels */
+PIXEL_STEP LCOL lite_texels(const LBUF* b, int c, int j, int format, int pal) {
+    LCOL k;
+    if (pal) {
+        const __m128i m8 = _mm_set1_epi32(255);
+        __m128i lo = _mm_loadu_si128((const __m128i*)&b->t32[c][j]), hi = _mm_loadu_si128((const __m128i*)&b->t32[c][j + 4]);
+        k.a = _mm_packs_epi32(_mm_srli_epi32(lo, 24), _mm_srli_epi32(hi, 24));
+        k.r = _mm_packs_epi32(_mm_and_si128(_mm_srli_epi32(lo, 16), m8), _mm_and_si128(_mm_srli_epi32(hi, 16), m8));
+        k.g = _mm_packs_epi32(_mm_and_si128(_mm_srli_epi32(lo, 8), m8), _mm_and_si128(_mm_srli_epi32(hi, 8), m8));
+        k.b = _mm_packs_epi32(_mm_and_si128(lo, m8), _mm_and_si128(hi, m8));
+        return k;
+    }
+    {
+        __m128i t = _mm_loadu_si128((const __m128i*)&b->t16[c][j]);
+        const __m128i m5 = _mm_set1_epi16(31), m8 = _mm_set1_epi16(255);
+        switch (format) {
+        case RD_ARGB1555:
+            k.a = _mm_and_si128(_mm_srai_epi16(t, 15), m8);
+            k.r = c5x8(_mm_and_si128(_mm_srli_epi16(t, 10), m5));
+            k.g = c5x8(_mm_and_si128(_mm_srli_epi16(t, 5), m5));
+            k.b = c5x8(_mm_and_si128(t, m5));
+            break;
+        case RD_RGB565:
+            k.a = m8;
+            k.r = c5x8(_mm_srli_epi16(t, 11));
+            k.g = c6x8(_mm_and_si128(_mm_srli_epi16(t, 5), _mm_set1_epi16(63)));
+            k.b = c5x8(_mm_and_si128(t, m5));
+            break;
+        default: {
+            const __m128i m4 = _mm_set1_epi16(15), x17 = _mm_set1_epi16(17);
+            k.a = _mm_mullo_epi16(_mm_srli_epi16(t, 12), x17);
+            k.r = _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi16(t, 8), m4), x17);
+            k.g = _mm_mullo_epi16(_mm_and_si128(_mm_srli_epi16(t, 4), m4), x17);
+            k.b = _mm_mullo_epi16(_mm_and_si128(t, m4), x17);
+            break;
+        }
+        }
+    }
+    return k;
+}
+
+/* (a (256 - f) + b f) / 256, rounded or down: all of it fits 16 bits */
+PIXEL_STEP __m128i lerp16(__m128i a, __m128i b, __m128i f, const int round) {
+    __m128i k = _mm_add_epi16(_mm_mullo_epi16(a, _mm_sub_epi16(_mm_set1_epi16(256), f)), _mm_mullo_epi16(b, f));
+    return _mm_srli_epi16(round ? _mm_add_epi16(k, _mm_set1_epi16(128)) : k, 8);
+}
+
+/* rounded across, down after: near the one truncation of the exact mix */
+PIXEL_STEP LCOL lerp_col(LCOL a, LCOL b, __m128i f, const int round) {
+    LCOL k;
+    k.a = lerp16(a.a, b.a, f, round), k.r = lerp16(a.r, b.r, f, round);
+    k.g = lerp16(a.g, b.g, f, round), k.b = lerp16(a.b, b.b, f, round);
+    return k;
+}
+
+/* x / 255 rounded down, for x from 0 to 65025 */
+PIXEL_STEP __m128i div255x8(__m128i x) {
+    return _mm_srli_epi16(_mm_add_epi16(_mm_add_epi16(x, _mm_srli_epi16(x, 8)), _mm_set1_epi16(1)), 8);
+}
+
+/* (s + d at) >> 16 for 8 pixels from at, held to 0 to hi */
+PIXEL_STEP __m128i plane8(int32_t s, int32_t d, int at, int hi) {
+    __m128i k = _mm_packs_epi32(_mm_srai_epi32(plane4(s, d, at), 16), _mm_srai_epi32(plane4(s, d, at + 4), 16));
+    return _mm_min_epi16(_mm_max_epi16(k, _mm_setzero_si128()), _mm_set1_epi16((short)hi));
+}
+
+/* plane i at 8 pixels from j as 0 to 255 */
+PIXEL_STEP __m128i lite_channel(const LBUF* b, int j, int i) {
+    return plane8(b->s[j / LSEG][i], b->d[j / LSEG][i], j % LSEG, 255);
+}
+
+/* 8 bytes as 16-bit lanes */
+PIXEL_STEP __m128i load8_u8(const uint8_t* p) {
+    return _mm_unpacklo_epi8(_mm_loadl_epi64((const __m128i*)p), _mm_setzero_si128());
+}
 #endif
 
 /* the colours of count pixels */
@@ -1555,6 +1845,81 @@ static void lite_colours(const SETUP* p, LBUF* b, int count) {
         {
             uint8x8x4_t q = { { c.b, c.g, c.r, c.a } };
             vst4_u8((uint8_t*)&b->col[j], q);
+        }
+    }
+#elif defined(RD_SSE2)
+    for (j = 0; j < count; j += 8) {
+        const __m128i k255 = _mm_set1_epi16(255);
+        LCOL c, t;
+        if (flat) {
+            c.a = _mm_set1_epi16((short)p->fbase.a), c.r = _mm_set1_epi16((short)p->fbase.r);
+            c.g = _mm_set1_epi16((short)p->fbase.g), c.b = _mm_set1_epi16((short)p->fbase.b);
+        } else {
+            c.a = s->use_alpha ? lite_channel(b, j, 2) : k255;
+            c.r = lite_channel(b, j, 3), c.g = lite_channel(b, j, 4), c.b = lite_channel(b, j, 5);
+        }
+        if (tex) {
+            t = lite_texels(b, 0, j, format, pal);
+            if (bil) {
+                __m128i fx = load8_u8(&b->fx[j]);
+                t = lerp_col(lerp_col(t, lite_texels(b, 1, j, format, pal), fx, 1),
+                             lerp_col(lite_texels(b, 2, j, format, pal), lite_texels(b, 3, j, format, pal), fx, 1),
+                             load8_u8(&b->fy[j]), 0);
+            }
+            if (!s->tex_alpha) {
+                t.a = k255;
+            }
+            switch (s->shading) {
+            case RD_DECAL:
+                c = t;
+                break;
+            case RD_MODULATE:
+                c.r = div255x8(_mm_mullo_epi16(t.r, c.r)), c.g = div255x8(_mm_mullo_epi16(t.g, c.g));
+                c.b = div255x8(_mm_mullo_epi16(t.b, c.b)), c.a = t.a;
+                break;
+            case RD_DECAL_ALPHA: {
+                __m128i na = _mm_sub_epi16(k255, t.a);
+                c.r = div255x8(_mm_add_epi16(_mm_mullo_epi16(t.r, t.a), _mm_mullo_epi16(c.r, na)));
+                c.g = div255x8(_mm_add_epi16(_mm_mullo_epi16(t.g, t.a), _mm_mullo_epi16(c.g, na)));
+                c.b = div255x8(_mm_add_epi16(_mm_mullo_epi16(t.b, t.a), _mm_mullo_epi16(c.b, na)));
+                break;
+            }
+            default:
+                c.r = div255x8(_mm_mullo_epi16(t.r, c.r)), c.g = div255x8(_mm_mullo_epi16(t.g, c.g));
+                c.b = div255x8(_mm_mullo_epi16(t.b, c.b)), c.a = div255x8(_mm_mullo_epi16(t.a, c.a));
+                break;
+            }
+        }
+        if (s->offset) {
+            if (flat) {
+                c.r = _mm_add_epi16(c.r, _mm_set1_epi16((short)p->foffs.r));
+                c.g = _mm_add_epi16(c.g, _mm_set1_epi16((short)p->foffs.g));
+                c.b = _mm_add_epi16(c.b, _mm_set1_epi16((short)p->foffs.b));
+            } else {
+                c.r = _mm_add_epi16(c.r, lite_channel(b, j, 7)), c.g = _mm_add_epi16(c.g, lite_channel(b, j, 8));
+                c.b = _mm_add_epi16(c.b, lite_channel(b, j, 9));
+            }
+            c.r = _mm_min_epi16(c.r, k255), c.g = _mm_min_epi16(c.g, k255), c.b = _mm_min_epi16(c.b, k255);
+        }
+        if (fogged) {
+            __m128i g = plane8(b->fs[j / LSEG], b->fd[j / LSEG], j % LSEG, 256), k = _mm_set1_epi16(128);
+            if (s->fog == RD_FOG_TABLE2) {
+                c.a = _mm_srli_epi16(_mm_add_epi16(_mm_mullo_epi16(g, k255), k), 8);
+                c.r = _mm_set1_epi16((short)p->fogc.r), c.g = _mm_set1_epi16((short)p->fogc.g);
+                c.b = _mm_set1_epi16((short)p->fogc.b);
+            } else {
+                __m128i ng = _mm_sub_epi16(_mm_set1_epi16(256), g);
+                c.r = _mm_add_epi16(_mm_mullo_epi16(c.r, ng), _mm_mullo_epi16(g, _mm_set1_epi16((short)p->fogc.r)));
+                c.g = _mm_add_epi16(_mm_mullo_epi16(c.g, ng), _mm_mullo_epi16(g, _mm_set1_epi16((short)p->fogc.g)));
+                c.b = _mm_add_epi16(_mm_mullo_epi16(c.b, ng), _mm_mullo_epi16(g, _mm_set1_epi16((short)p->fogc.b)));
+                c.r = _mm_srli_epi16(_mm_add_epi16(c.r, k), 8), c.g = _mm_srli_epi16(_mm_add_epi16(c.g, k), 8);
+                c.b = _mm_srli_epi16(_mm_add_epi16(c.b, k), 8);
+            }
+        }
+        {
+            __m128i bg = _mm_or_si128(c.b, _mm_slli_epi16(c.g, 8)), ra = _mm_or_si128(c.r, _mm_slli_epi16(c.a, 8));
+            _mm_storeu_si128((__m128i*)&b->col[j], _mm_unpacklo_epi16(bg, ra));
+            _mm_storeu_si128((__m128i*)&b->col[j + 4], _mm_unpackhi_epi16(bg, ra));
         }
     }
 #else
@@ -1665,6 +2030,21 @@ static void lite_span(const SETUP* p, WORKER* wk, int y, int xs, int xe, int id,
         for (;;) {
             uint32x4_t m = vceqq_s32(vld1q_s32(&win[x]), idv);
             vst1q_u32(&crow[x], vbslq_u32(m, vld1q_u32(&b->col[x - first]), vld1q_u32(&crow[x])));
+            if (x + 4 > last) {
+                break;
+            }
+            x = x + 8 <= last + 1 ? x + 4 : last - 3;
+        }
+        return;
+    }
+#elif defined(RD_SSE2)
+    if (mode == SHADE_WON && last - first >= 3) {
+        const __m128i idv = _mm_set1_epi32(id);
+        int x = first;
+        for (;;) {
+            __m128i m = _mm_cmpeq_epi32(_mm_loadu_si128((const __m128i*)&win[x]), idv);
+            _mm_storeu_si128((__m128i*)&crow[x], sel128(m, _mm_loadu_si128((const __m128i*)&b->col[x - first]),
+                                                      _mm_loadu_si128((const __m128i*)&crow[x])));
             if (x + 4 > last) {
                 break;
             }
@@ -2021,6 +2401,23 @@ static void row565(uint16_t* o, const uint32_t* c) {
             uint16x8x2_t z = vzipq_u16(k, k);
             vst1q_u16(&o[2 * x], z.val[0]);
             vst1q_u16(&o[2 * x + 8], z.val[1]);
+        }
+    }
+#elif defined(RD_SSE2)
+    for (; x + 8 <= draw_w; x += 8) {
+        const __m128i mr = _mm_set1_epi32(0xF800), mg = _mm_set1_epi32(0x07E0), mb = _mm_set1_epi32(0x001F);
+        __m128i lo = _mm_loadu_si128((const __m128i*)&c[x]), hi = _mm_loadu_si128((const __m128i*)&c[x + 4]), k;
+        lo = _mm_or_si128(_mm_or_si128(_mm_and_si128(_mm_srli_epi32(lo, 8), mr), _mm_and_si128(_mm_srli_epi32(lo, 5), mg)),
+                          _mm_and_si128(_mm_srli_epi32(lo, 3), mb));
+        hi = _mm_or_si128(_mm_or_si128(_mm_and_si128(_mm_srli_epi32(hi, 8), mr), _mm_and_si128(_mm_srli_epi32(hi, 5), mg)),
+                          _mm_and_si128(_mm_srli_epi32(hi, 3), mb));
+        /* sign-extended from 16 bits, so the pack keeps them */
+        k = _mm_packs_epi32(_mm_srai_epi32(_mm_slli_epi32(lo, 16), 16), _mm_srai_epi32(_mm_slli_epi32(hi, 16), 16));
+        if (scale == 1) {
+            _mm_storeu_si128((__m128i*)&o[x], k);
+        } else {
+            _mm_storeu_si128((__m128i*)&o[2 * x], _mm_unpacklo_epi16(k, k));
+            _mm_storeu_si128((__m128i*)&o[2 * x + 8], _mm_unpackhi_epi16(k, k));
         }
     }
 #endif

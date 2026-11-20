@@ -26,7 +26,7 @@ Besides that section and the copy, it writes only these:
 No game data comes with it:
 
 - the arcade: MAME's `mvsc2.zip` in `games/mvc2/roms/mvsc2` (or its files, unzipped there). The first start
-  unpacks the zip into `mvsc2.bin` beside it (136 MB);
+  unpacks the zip into `mvsc2.bin` beside it (136 MB, with a bar on the OSD);
 - the Dreamcast: your own USA disc in `games/mvc2/disc`: a `.chd`, a `.gdi` with its tracks, a `.cue` with its
   `.bin`s, an `.iso` of track 3, or its files (`1ST_READ.BIN` and the rest). The first start unpacks an image
   there (210 MB).
@@ -58,8 +58,13 @@ The first pad is player 1's, the second player 2's.
 
 F12 (or the pad's OSD button) opens it. Its options are Pinedra's own, as for its games: the analog output
 (31 kHz 480p or 15 kHz), interlaced or progressive at 15 kHz, 60 or 50 Hz (the game is made for 60), and which
-output the frame rate follows. The game's own settings (difficulty, timer and the rest) are in its options or the
+output the frame rate follows. For a 15 kHz CRT, Pinedra Config's "Enable 240p mode" (its Settings page) draws the
+game in 240 lines, shown without interlace. A line in `games/mvc2/env.txt` sets it for this game alone:
+`PND_240P=1` on, `PND_240P=0` off. The game's own settings (difficulty, timer and the rest) are in its options or the
 arcade's test menu, and kept in `games/mvc2`.
+
+A TV with only S-Video or composite: `vga_mode=svideo` or `vga_mode=cvbs` in MiSTer.ini (with `vga_scaler=0`), and
+15 kHz in the OSD. Pinedra's core makes the colour (release 20261115 or later; not yet tried on a real set).
 
 ## Quitting
 
@@ -77,7 +82,9 @@ the GNU AGPL 3.0; its source is in `licenses/MiSTer_MVC2`. Pinedra GPU is © its
   "MVC2 Pinedra" (one setname: one MiSTer.ini section, one button map); MiSTer.ini's `[MVC2 Pinedra]` has the MVC2
   wrapper (`MiSTer_MVC2`) start the game there. Each names its version in a `<file>`
   path (`arcade`, `dc`), which the wrapper passes on as `--arcade` or `--dc`. When the game ends with 10 + a
-  `PICK_` reason (its data missing or unreadable), the wrapper says so on the OSD.
+  `PICK_` reason (its data missing or unreadable), the wrapper says so on the OSD, and while the first start
+  unpacks the data it shows the progress the game puts on the shared page. It reads the core's video mode every
+  500 ms as MiSTer's own main does, which sets the S-Video and composite colour up.
 - The picture: each frame's lists drawn by rd_gl1 and swapped at the core's vblank. `MVC2_GL1` sets its options
   (default `less pool`).
 - The sound: made on a thread of its own, resampled to 48 kHz and written to `/dev/MrAudio`, the ring the core
