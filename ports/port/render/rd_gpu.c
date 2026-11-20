@@ -59,7 +59,7 @@ enum {
 /* 8, though the shader reads 7: SDL's Direct3D 12 driver needs a table size that divides its heaps' */
 #define BINDINGS 8
 
-enum { P_BACKGROUND, P_OPAQUE, P_PUNCH, P_KEY, P_PEEL };
+enum { P_BACKGROUND, P_OPAQUE, P_PUNCH, P_KEY, P_PEEL, P_COUNT, P_FIX, P_KINDS };
 
 /* a run of triangles of one state */
 typedef struct {
@@ -88,7 +88,7 @@ static SDL_GPUDevice* dev;
 static SDL_GPUShader *vs, *ps;
 static SDL_GPUSampler* point;
 static SDL_GPUTexture *frame_tex[2], *depth_tex, *key_q[2], *key_o[2], *pal_tex, *dummy_rgba, *dummy_r32;
-static SDL_GPUGraphicsPipeline* pipes[5][8][8][2];
+static SDL_GPUGraphicsPipeline* pipes[P_KINDS][8][8][2];
 static SDL_GPUBuffer* vbuf;
 static SDL_GPUTransferBuffer* vtrans;
 static uint32_t vcap;
@@ -118,6 +118,15 @@ static SDL_GPUTexture* out_tex;
 static SDL_GPUShader *full_vs, *resolve_ps;
 static SDL_GPUGraphicsPipeline* resolve_pipe;
 static uint32_t tb_size;
+/* the layers a frame needs (rd_gpu_count.hlsl): each pixel's translucent fragments counted, the most found, and the
+   peeling's draws made from it, so that the layers past it draw nothing. MVC2_GPUCOUNT=0, or a device without
+   compute, draws them all */
+static int count_on;
+static SDL_GPUTexture* count_tex;
+static SDL_GPUComputePipeline *most_cp, *draws_cp;
+static SDL_GPUBuffer *most_buf, *draws_buf, *args_buf;
+static SDL_GPUTransferBuffer* draws_trans;
+static uint32_t draws_cap, args_cap;    /* their entries */
 
 static uint32_t argb16_to_rgba(int format, uint32_t p) {
     uint32_t a, r, g, b;
@@ -484,7 +493,16 @@ static SDL_GPUGraphicsPipeline* pipeline(int kind, int a, int b) {
         ct.blend_state.color_blend_op = ct.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_MIN;
         ci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
         break;
+    case P_COUNT:
+        ct.format = SDL_GPU_TEXTUREFORMAT_R32_FLOAT;
+        ct.blend_state.enable_blend = true;
+        ct.blend_state.src_color_blendfactor = ct.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        ct.blend_state.src_alpha_blendfactor = ct.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+        ct.blend_state.color_blend_op = ct.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        ci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
+        break;
     case P_PEEL:    /* blended by the shader, over the opaque depth */
+    case P_FIX:
         ci.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_GREATER_OR_EQUAL;
         break;
     default:        /* P_PUNCH: blended, over the opaque depth, and writing it */
@@ -521,6 +539,22 @@ static SDL_GPUShader* shader(const unsigned char* code, size_t size, SDL_GPUShad
     return SDL_CreateGPUShader(dev, &ci);
 }
 
+static SDL_GPUComputePipeline* compute(const unsigned char* code, size_t size, SDL_GPUShaderFormat format,
+                                       const char* entry, int samplers, int reads, int writes, int x, int y) {
+    SDL_GPUComputePipelineCreateInfo ci;
+    memset(&ci, 0, sizeof ci);
+    ci.code = code;
+    ci.code_size = size;
+    ci.entrypoint = entry;
+    ci.format = format;
+    ci.num_samplers = (Uint32)samplers;
+    ci.num_readonly_storage_buffers = (Uint32)reads;
+    ci.num_readwrite_storage_buffers = (Uint32)writes;
+    ci.num_uniform_buffers = 1;
+    ci.threadcount_x = (Uint32)x, ci.threadcount_y = (Uint32)y, ci.threadcount_z = 1;
+    return SDL_CreateGPUComputePipeline(dev, &ci);
+}
+
 static SDL_GPUGraphicsPipeline* make_resolve_pipe(void) {
     SDL_GPUGraphicsPipelineCreateInfo ci;
     SDL_GPUColorTargetDescription ct;
@@ -553,7 +587,7 @@ static int make_targets(float n) {
     for (i = 0; i < 2; i++) {
         release(&frame_tex[i]), release(&key_q[i]), release(&key_o[i]);
     }
-    release(&depth_tex);
+    release(&depth_tex), release(&count_tex);
     for (i = 0; i < 2; i++) {
         frame_tex[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, w, h, 1,
                                     SDL_GPU_TEXTUREUSAGE_SAMPLER | SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
@@ -561,18 +595,25 @@ static int make_targets(float n) {
         key_o[i] = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, w, h, 1, key);
     }
     depth_tex = make_texture(SDL_GPU_TEXTUREFORMAT_D32_FLOAT, w, h, 1, SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET);
+    if (count_on) {
+        count_tex = make_texture(SDL_GPU_TEXTUREFORMAT_R32_FLOAT, w, h, 1, key);
+    }
     scale = (float)h / RD_HEIGHT, frame_w = w, frame_h = h;
     return frame_tex[0] != NULL && frame_tex[1] != NULL && key_q[0] != NULL && key_q[1] != NULL && key_o[0] != NULL &&
            key_o[1] != NULL && depth_tex != NULL;
 }
 
-void rd_gpu_view(float resolution, int aa, int w, int h, int sprites) {
-    /* auto: a whole multiple, filtered down to the window; texel: the window's own size */
+/* auto: a whole multiple, filtered down to the window; texel: the window's own size */
+static float view_scale(float resolution, int aa, int h, int sprites) {
     float n = resolution > 0 ? resolution
             : h <= 0 ? 1
             : sprites == RD_SPRITES_TEXEL ? (float)(h * (aa < 1 ? 1 : aa)) / RD_HEIGHT
             : (float)((h * (aa < 1 ? 1 : aa) + RD_HEIGHT - 1) / RD_HEIGHT);
-    want_scale = n < 1 ? 1 : n > RD_GPU_MAX_SCALE ? RD_GPU_MAX_SCALE : n;
+    return n < 1 ? 1 : n > RD_GPU_MAX_SCALE ? RD_GPU_MAX_SCALE : n;
+}
+
+void rd_gpu_view(float resolution, int aa, int w, int h, int sprites) {
+    want_scale = view_scale(resolution, aa, h, sprites);
     want_w = w, want_h = h;
     want_sprites = sprites;
 }
@@ -610,6 +651,10 @@ static void fit_view(void) {
     hud_mode = scale > 1 ? want_hud : 0;
 }
 
+void rd_gpu_view_size(float resolution, int aa, int h, int sprites, int* fw, int* fh) {
+    *fh = 3 * (int)(RD_HEIGHT * view_scale(resolution, aa, h, sprites) / 3 + 0.5f), *fw = *fh / 3 * 4;
+}
+
 void rd_gpu_frame_size(int* w, int* h) {
     *w = out_w > 0 ? out_w : frame_w;
     *h = out_w > 0 ? out_h : frame_h;
@@ -620,6 +665,7 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     const char* e = getenv("MVC2_GPULAYERS");
     const char* q = getenv("MVC2_RDQUALITY");
     const char* g = getenv("MVC2_GPUEDGES");
+    const char* c = getenv("MVC2_GPUCOUNT");
     SDL_GPUShaderStage vtx = SDL_GPU_SHADERSTAGE_VERTEX, frag = SDL_GPU_SHADERSTAGE_FRAGMENT;
     float n = want_scale;
     dev = device;
@@ -628,6 +674,7 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
         rd_quality(q);
     }
     exact_edges = g == NULL || atoi(g) != 0;
+    count_on = c == NULL || atoi(c) != 0;
     if (SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_DXBC) {
         SDL_GPUShaderFormat f = SDL_GPU_SHADERFORMAT_DXBC;
         vs = shader(rd_gpu_vs_dxbc, sizeof rd_gpu_vs_dxbc, f, "vs_main", vtx, 0, 0);
@@ -635,6 +682,10 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
                          : shader(rd_gpu_ps_dxbc, sizeof rd_gpu_ps_dxbc, f, "ps_main", frag, BINDINGS, 2);
         full_vs = shader(rd_gpu_full_vs_dxbc, sizeof rd_gpu_full_vs_dxbc, f, "vs_full", vtx, 0, 0);
         resolve_ps = shader(rd_gpu_resolve_ps_dxbc, sizeof rd_gpu_resolve_ps_dxbc, f, "ps_resolve", frag, 1, 1);
+        if (count_on) {
+            most_cp = compute(rd_gpu_most_dxbc, sizeof rd_gpu_most_dxbc, f, "cs_most", 1, 0, 1, 16, 16);
+            draws_cp = compute(rd_gpu_draws_dxbc, sizeof rd_gpu_draws_dxbc, f, "cs_draws", 0, 1, 2, 64, 1);
+        }
     } else if (SDL_GetGPUShaderFormats(dev) & SDL_GPU_SHADERFORMAT_SPIRV) {
         SDL_GPUShaderFormat f = SDL_GPU_SHADERFORMAT_SPIRV;
         vs = shader(rd_gpu_vs_spirv, sizeof rd_gpu_vs_spirv, f, "vs_main", vtx, 0, 0);
@@ -642,6 +693,10 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
                          : shader(rd_gpu_ps_spirv, sizeof rd_gpu_ps_spirv, f, "ps_main", frag, BINDINGS, 2);
         full_vs = shader(rd_gpu_full_vs_spirv, sizeof rd_gpu_full_vs_spirv, f, "vs_full", vtx, 0, 0);
         resolve_ps = shader(rd_gpu_resolve_ps_spirv, sizeof rd_gpu_resolve_ps_spirv, f, "ps_resolve", frag, 1, 1);
+        if (count_on) {
+            most_cp = compute(rd_gpu_most_spirv, sizeof rd_gpu_most_spirv, f, "cs_most", 1, 0, 1, 16, 16);
+            draws_cp = compute(rd_gpu_draws_spirv, sizeof rd_gpu_draws_spirv, f, "cs_draws", 0, 1, 2, 64, 1);
+        }
     } else {
         SDL_Log("rd_gpu: the device takes neither DXBC nor SPIR-V");
         return false;
@@ -651,6 +706,15 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
     si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     si.address_mode_u = si.address_mode_v = si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     point = SDL_CreateGPUSampler(dev, &si);
+    if (count_on) {
+        SDL_GPUBufferCreateInfo bi = { SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE,
+                                       4, 0 };
+        most_buf = most_cp != NULL && draws_cp != NULL ? SDL_CreateGPUBuffer(dev, &bi) : NULL;
+        if (most_buf == NULL) {
+            SDL_Log("rd_gpu: every translucent layer drawn: %s", SDL_GetError());
+            count_on = 0;
+        }
+    }
     if (full_vs != NULL && resolve_ps != NULL) {
         resolve_pipe = make_resolve_pipe();
     }
@@ -672,6 +736,10 @@ bool rd_gpu_init(SDL_GPUDevice* device) {
         pipeline(P_BACKGROUND, 0, 0);
         pipeline(P_KEY, 0, 0);
         pipeline(P_PEEL, 0, 0);
+        if (count_on) {
+            pipeline(P_COUNT, 0, 0);
+            pipeline(P_FIX, 0, 0);
+        }
         for (a = 0; a < 8; a++) {
             for (b = 0; b < 8; b++) {
                 if (b < 2) {
@@ -703,7 +771,8 @@ void rd_gpu_submit(SDL_GPUCommandBuffer* cmd) {
 
 void rd_gpu_quit(void) {
     SDL_GPUTexture** own[] = { &frame_tex[0], &frame_tex[1], &depth_tex, &key_q[0], &key_q[1], &key_o[0], &key_o[1],
-                               &pal_tex, &dummy_rgba, &dummy_r32, &out_tex };
+                               &pal_tex, &dummy_rgba, &dummy_r32, &out_tex, &count_tex };
+    SDL_GPUBuffer** bufs[] = { &most_buf, &draws_buf, &args_buf };
     SDL_GPUGraphicsPipeline** p = &pipes[0][0][0][0];
     size_t i;
     wait_flight(0), wait_flight(1);
@@ -725,6 +794,23 @@ void rd_gpu_quit(void) {
     SDL_ReleaseGPUShader(dev, full_vs);
     SDL_ReleaseGPUShader(dev, resolve_ps);
     full_vs = resolve_ps = NULL;
+    for (i = 0; i < sizeof bufs / sizeof bufs[0]; i++) {
+        if (*bufs[i] != NULL) {
+            SDL_ReleaseGPUBuffer(dev, *bufs[i]);
+            *bufs[i] = NULL;
+        }
+    }
+    if (draws_trans != NULL) {
+        SDL_ReleaseGPUTransferBuffer(dev, draws_trans);
+        draws_trans = NULL;
+    }
+    if (most_cp != NULL) {
+        SDL_ReleaseGPUComputePipeline(dev, most_cp);
+    }
+    if (draws_cp != NULL) {
+        SDL_ReleaseGPUComputePipeline(dev, draws_cp);
+    }
+    most_cp = draws_cp = NULL, draws_cap = args_cap = 0;
     scale = 1, frame_w = RD_WIDTH, frame_h = RD_HEIGHT, out_w = out_h = 0, tb_size = 0;
     for (i = 0; i < sizeof pipes / sizeof pipes[0][0][0][0]; i++) {
         if (p[i] != NULL) {
@@ -1405,11 +1491,13 @@ static void bind_textures(SDL_GPURenderPass* rp, SDL_GPUTexture* tex, SDL_GPUTex
     }
 }
 
-/* a layer's keys, in one draw */
-static void draw_keys(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int mode, SDL_GPUTexture* const* keys) {
+/* the translucent list in one draw: a layer's keys, the last layer's pixels or the count; row: its draw in args_buf,
+   or -1 */
+static void draw_whole(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int kind, int mode,
+                       SDL_GPUTexture* const* keys, int row) {
     const BATCH* first = &batches[RD_TRANS][0];
     const BATCH* last = &batches[RD_TRANS][nbatches[RD_TRANS] - 1];
-    SDL_GPUGraphicsPipeline* p = pipeline(P_KEY, 0, 0);
+    SDL_GPUGraphicsPipeline* p = pipeline(kind, 0, 0);
     DRAW d;
     if (p == NULL) {
         return;
@@ -1419,11 +1507,16 @@ static void draw_keys(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int mode
     memset(&d, 0, sizeof d);
     d.mode = mode;
     SDL_PushGPUFragmentUniformData(cmd, 0, &d, sizeof d);
-    SDL_DrawGPUPrimitives(rp, (Uint32)(last->first + last->count - first->first), 1, (Uint32)first->first, 0);
+    if (row >= 0) {
+        SDL_DrawGPUPrimitivesIndirect(rp, args_buf, (Uint32)row * 16u, 1);
+    } else {
+        SDL_DrawGPUPrimitives(rp, (Uint32)(last->first + last->count - first->first), 1, (Uint32)first->first, 0);
+    }
 }
 
+/* row: the first batch's draw in args_buf, or -1 */
 static void draw_list(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int list, int kind, int mode,
-                      SDL_GPUTexture* const* keys) {
+                      SDL_GPUTexture* const* keys, int row) {
     int i;
     SDL_GPUGraphicsPipeline* bound = NULL;
     for (i = 0; i < nbatches[list]; i++) {
@@ -1446,8 +1539,98 @@ static void draw_list(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int list
         bind_textures(rp, state_tex[b->state], keys);
         draw_values(&d, s, list, mode);
         SDL_PushGPUFragmentUniformData(cmd, 0, &d, sizeof d);
-        SDL_DrawGPUPrimitives(rp, (Uint32)b->count, 1, (Uint32)b->first, 0);
+        if (row >= 0) {
+            SDL_DrawGPUPrimitivesIndirect(rp, args_buf, (Uint32)(row + i) * 16u, 1);
+        } else {
+            SDL_DrawGPUPrimitives(rp, (Uint32)b->count, 1, (Uint32)b->first, 0);
+        }
     }
+}
+
+/* room for a frame of nb translucent batches over up to layers layers; 0 when there is none */
+static int count_room(int nb, int layers) {
+    uint32_t d = (uint32_t)nb + 1, a = (uint32_t)layers * (uint32_t)(nb + 2);
+    if (d > draws_cap) {
+        SDL_GPUBufferCreateInfo bi = { SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ, 0, 0 };
+        SDL_GPUTransferBufferCreateInfo ti = { SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, 0, 0 };
+        if (draws_buf != NULL) {
+            SDL_ReleaseGPUBuffer(dev, draws_buf);
+            SDL_ReleaseGPUTransferBuffer(dev, draws_trans);
+        }
+        draws_cap = d * 2;
+        bi.size = draws_cap * 8, ti.size = 8 + draws_cap * 8;
+        draws_buf = SDL_CreateGPUBuffer(dev, &bi);
+        draws_trans = SDL_CreateGPUTransferBuffer(dev, &ti);
+        if (draws_buf == NULL || draws_trans == NULL) {
+            draws_cap = 0;
+            return 0;
+        }
+    }
+    if (a > args_cap) {
+        SDL_GPUBufferCreateInfo bi = { SDL_GPU_BUFFERUSAGE_INDIRECT | SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE, 0, 0 };
+        if (args_buf != NULL) {
+            SDL_ReleaseGPUBuffer(dev, args_buf);
+        }
+        args_cap = a * 2;
+        bi.size = args_cap * 16;
+        args_buf = SDL_CreateGPUBuffer(dev, &bi);
+        if (args_buf == NULL) {
+            args_cap = 0;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* the frame's translucent draws for the counts: the most fragments' slot zeroed, then the keys' draw and the
+   batches' */
+static void count_upload(SDL_GPUCopyPass* copy) {
+    const BATCH* b = batches[RD_TRANS];
+    int i, nb = nbatches[RD_TRANS];
+    uint32_t* d = SDL_MapGPUTransferBuffer(dev, draws_trans, true);
+    d[0] = d[1] = 0;
+    d[2] = (uint32_t)b[0].first, d[3] = (uint32_t)(b[nb - 1].first + b[nb - 1].count - b[0].first);
+    for (i = 0; i < nb; i++) {
+        d[4 + 2 * i] = (uint32_t)b[i].first, d[5 + 2 * i] = (uint32_t)b[i].count;
+    }
+    SDL_UnmapGPUTransferBuffer(dev, draws_trans);
+    {
+        SDL_GPUTransferBufferLocation src = { draws_trans, 0 };
+        SDL_GPUBufferRegion dst = { most_buf, 0, 4 };
+        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+    }
+    {
+        SDL_GPUTransferBufferLocation src = { draws_trans, 8 };
+        SDL_GPUBufferRegion dst = { draws_buf, 0, (Uint32)(nb + 1) * 8u };
+        SDL_UploadToGPUBuffer(copy, &src, &dst, true);
+    }
+}
+
+/* each pixel's fragments counted, the most found, and each layer's draws made: entries a layer */
+static void count_layers(SDL_GPUCommandBuffer* cmd, SDL_GPURenderPass* rp, int layers, int entries) {
+    uint32_t u[4] = { (uint32_t)frame_w, (uint32_t)frame_h, (uint32_t)layers, (uint32_t)entries };
+    SDL_GPUStorageBufferReadWriteBinding rw[2];
+    SDL_GPUTextureSamplerBinding tb;
+    SDL_GPUComputePass* cp;
+    draw_whole(cmd, rp, P_COUNT, 5, NULL, -1);
+    SDL_EndGPURenderPass(rp);
+    memset(rw, 0, sizeof rw);
+    rw[0].buffer = most_buf;
+    cp = SDL_BeginGPUComputePass(cmd, NULL, 0, rw, 1);
+    tb.texture = count_tex, tb.sampler = point;
+    SDL_BindGPUComputePipeline(cp, most_cp);
+    SDL_BindGPUComputeSamplers(cp, 0, &tb, 1);
+    SDL_PushGPUComputeUniformData(cmd, 0, u, sizeof u);
+    SDL_DispatchGPUCompute(cp, (Uint32)(frame_w + 15) / 16u, (Uint32)(frame_h + 15) / 16u, 1);
+    SDL_EndGPUComputePass(cp);
+    rw[0].buffer = args_buf, rw[0].cycle = true;
+    rw[1].buffer = most_buf;
+    cp = SDL_BeginGPUComputePass(cmd, NULL, 0, rw, 2);
+    SDL_BindGPUComputePipeline(cp, draws_cp);
+    SDL_BindGPUComputeStorageBuffers(cp, 0, &draws_buf, 1);
+    SDL_PushGPUComputeUniformData(cmd, 0, u, sizeof u);
+    SDL_DispatchGPUCompute(cp, 1, 1, 1);
+    SDL_EndGPUComputePass(cp);
 }
 
 static SDL_GPURenderPass* begin(SDL_GPUCommandBuffer* cmd, SDL_GPUTexture* color, int clear, float value, int clear_depth) {
@@ -1508,7 +1691,7 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
     SDL_GPURenderPass* rp;
     FRAMEU fu;
     float zscale;
-    int n, i, layer, f = 0;
+    int n, i, layer, f = 0, counting, entries;
     /* the translucent layers peeled */
     int layers = layers_env ? layers_env : rd_q.nosort ? 4 : 12;
     frame_no++;
@@ -1521,7 +1704,12 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
         const RD_TEXTURE* t = rd_frame->states[i].tex;
         state_tex[i] = t == NULL ? NULL : i > 0 && rd_frame->states[i - 1].tex == t ? state_tex[i - 1] : texture(t);
     }
+    entries = nbatches[RD_TRANS] + 2;
+    counting = count_on && count_tex != NULL && nbatches[RD_TRANS] > 0 && count_room(nbatches[RD_TRANS], layers);
     copy = SDL_BeginGPUCopyPass(cmd);
+    if (counting) {
+        count_upload(copy);
+    }
     {
         SDL_GPUTransferBufferLocation src = { vtrans, 0 };
         SDL_GPUBufferRegion dst = { vbuf, 0, (Uint32)(n * sizeof(GVTX)) };
@@ -1557,8 +1745,8 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
             SDL_DrawGPUPrimitives(rp, 6, 1, 0, 0);
         }
     }
-    draw_list(cmd, rp, RD_OPAQUE, P_OPAQUE, 0, NULL);
-    draw_list(cmd, rp, RD_PUNCH, P_PUNCH, 0, NULL);
+    draw_list(cmd, rp, RD_OPAQUE, P_OPAQUE, 0, NULL, -1);
+    draw_list(cmd, rp, RD_PUNCH, P_PUNCH, 0, NULL, -1);
     SDL_EndGPURenderPass(rp);
 
     if (nbatches[RD_TRANS] == 0) {
@@ -1576,33 +1764,49 @@ SDL_GPUTexture* rd_gpu_end_frame(SDL_GPUCommandBuffer* cmd) {
         }
         SDL_EndGPURenderPass(SDL_BeginGPURenderPass(cmd, ct, 2, NULL));
     }
+    if (counting) {
+        SDL_GPUTextureLocation from, to;
+        count_layers(cmd, begin(cmd, count_tex, 1, 0.0f, 0), layers, entries);
+        /* the frame copied once: from then on each layer copies only the last layer's pixels */
+        copy = SDL_BeginGPUCopyPass(cmd);
+        memset(&from, 0, sizeof from);
+        memset(&to, 0, sizeof to);
+        from.texture = frame_tex[0], to.texture = frame_tex[1];
+        SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)frame_w, (Uint32)frame_h, 1, false);
+        SDL_EndGPUCopyPass(copy);
+    }
     for (layer = 0; layer < layers; layer++) {
         int cur = layer & 1, last = cur ^ 1;
         SDL_GPUTexture* keys[5] = { NULL };
         /* the nearest 1/w past the last layer */
         keys[0] = key_q[last], keys[1] = key_o[last];
         rp = begin(cmd, key_q[cur], 1, 3.0e38f, 0);
-        draw_keys(cmd, rp, 1, keys);
+        draw_whole(cmd, rp, P_KEY, 1, keys, counting ? layer * entries : -1);
         SDL_EndGPURenderPass(rp);
         /* the first triangle at it */
         keys[2] = key_q[cur];
         rp = begin(cmd, key_o[cur], 1, 3.0e38f, 0);
-        draw_keys(cmd, rp, 2, keys);
+        draw_whole(cmd, rp, P_KEY, 2, keys, counting ? layer * entries : -1);
         SDL_EndGPURenderPass(rp);
         /* its fragment, blended by the shader over a copy of the frame */
-        copy = SDL_BeginGPUCopyPass(cmd);
-        {
+        if (!counting) {
             SDL_GPUTextureLocation from, to;
+            copy = SDL_BeginGPUCopyPass(cmd);
             memset(&from, 0, sizeof from);
             memset(&to, 0, sizeof to);
             from.texture = frame_tex[f], to.texture = frame_tex[f ^ 1];
             SDL_CopyGPUTextureToTexture(copy, &from, &to, (Uint32)frame_w, (Uint32)frame_h, 1, false);
+            SDL_EndGPUCopyPass(copy);
         }
-        SDL_EndGPUCopyPass(copy);
         keys[0] = keys[1] = NULL, keys[3] = key_o[cur], keys[4] = frame_tex[f];
         f ^= 1;
         rp = begin(cmd, frame_tex[f], 0, 0.0f, 0);
-        draw_list(cmd, rp, RD_TRANS, P_PEEL, 3, keys);
+        if (counting && layer > 0) {
+            /* the copy's pixels the last layer changed */
+            SDL_GPUTexture* last_keys[5] = { key_q[last], key_o[last], NULL, NULL, frame_tex[f ^ 1] };
+            draw_whole(cmd, rp, P_FIX, 4, last_keys, layer * entries + 1);
+        }
+        draw_list(cmd, rp, RD_TRANS, P_PEEL, 3, keys, counting ? layer * entries + 2 : -1);
         SDL_EndGPURenderPass(rp);
     }
     if (f != 0) {

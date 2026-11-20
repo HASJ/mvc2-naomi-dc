@@ -4,7 +4,7 @@ The game runs as ARM software on the DE10-Nano and draws through the user's Pine
 driver; we ship neither. Sound goes to `/dev/MrAudio`. MiSTer_MVC2, a Main_MiSTer build, starts the
 game in the Pinedra core's place and keeps the OSD and the pads.
 
-- Pads: `/dev/shm/mvc2-joy` (`agpl/wrapper/mvc2_joy_shm.h`). The game runs as
+- Pads, and the first start's unpack shown on the OSD: `/dev/shm/mvc2-joy` (`agpl/wrapper/mvc2_joy_shm.h`). The game runs as
   `/media/fat/games/mvc2/mvc2-pinedra`, logs in `games/mvc2/logs/`.
 - `build-hps.sh` builds MiSTer_MVC2 in Main_MiSTer's own toolchain container (Docker), into `build/mister`
   or `$MISTER_BUILD`.

@@ -278,33 +278,46 @@ static void view_size(int* w, int* h) {
     }
 }
 
-static SDL_Texture* gpu_frame(void) {
-    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu);
-    SDL_GPUTexture* t;
-    int w, h;
-    if (cmd == NULL) {
-        return gpu_screen;
-    }
-    view_size(&w, &h);
-    gpu_one_to_one = 0;
+/* rd_gpu_view's resolution and aa, and the size the frame is shown at (w by h); 1 when shown pixel for pixel */
+static int view_args(float* res, int* aa, int* w, int* h) {
+    view_size(w, h);
+    *res = view_res, *aa = view_aa;
     if (view_sprites == RD_SPRITES_TEXEL && scaling == 1) {
         /* texel sprites in whole pixels: 2688 by 2016 when it fits, 7 by 9 to a character's pixel, else the largest
            whole multiple of 640 by 480; each shown pixel for pixel */
         int ow, oh, fw, fh;
-        float res = view_res;
         SDL_GetRenderOutputSize(renderer, &ow, &oh);
-        if (res <= 0) {
+        if (*res <= 0) {
             int k = oh / RD_HEIGHT < ow / RD_WIDTH ? oh / RD_HEIGHT : ow / RD_WIDTH;
-            res = ow >= 2688 && oh >= 2016 ? 4.2f : k < 1 ? 1 : (float)k;
+            *res = ow >= 2688 && oh >= 2016 ? 4.2f : k < 1 ? 1 : (float)k;
         }
-        fh = 3 * (int)(RD_HEIGHT * res / 3 + 0.5f), fw = fh / 3 * 4;
+        fh = 3 * (int)(RD_HEIGHT * *res / 3 + 0.5f), fw = fh / 3 * 4;
+        *res *= view_aa < 1 ? 1 : view_aa, *aa = 1;
         if (fw <= ow && fh <= oh) {
-            w = fw, h = fh, gpu_one_to_one = 1;
+            *w = fw, *h = fh;
+            return 1;
         }
-        rd_gpu_view(res * (view_aa < 1 ? 1 : view_aa), 1, w, h, view_sprites);
-    } else {
-        rd_gpu_view(view_res, view_aa, w, h, view_sprites);
     }
+    return 0;
+}
+
+void view_drawn(int* fw, int* fh) {
+    float res;
+    int aa, w, h;
+    view_args(&res, &aa, &w, &h);
+    rd_gpu_view_size(res, aa, h, view_sprites, fw, fh);
+}
+
+static SDL_Texture* gpu_frame(void) {
+    SDL_GPUCommandBuffer* cmd = SDL_AcquireGPUCommandBuffer(gpu);
+    SDL_GPUTexture* t;
+    float res;
+    int aa, w, h;
+    if (cmd == NULL) {
+        return gpu_screen;
+    }
+    gpu_one_to_one = view_args(&res, &aa, &w, &h);
+    rd_gpu_view(res, aa, w, h, view_sprites);
     rd_gpu_hud(view_hud);
     rd_gpu_texel_grid(view_grid);
     t = rd_gpu_end_frame(cmd);

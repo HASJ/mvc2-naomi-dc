@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "mister_front.h"
@@ -206,29 +207,34 @@ static void read_dev(int i) {
     }
 }
 
-/* the wrapper's page (/dev/shm/mvc2-joy): the reference's MisterJoyShm, its own magic */
+/* the wrapper's page (/dev/shm/mvc2-joy): the reference's MisterJoyShm, its own magic; the unpack's progress, for
+   its OSD, where the page is that long */
 #define JOY_MAGIC 0x3243564Du        /* "MVC2" */
 typedef struct {
     uint32_t magic, version;
     uint32_t joy_mask[2];
     int8_t left_x[2], left_y[2], right_x[2], right_y[2];
+    uint32_t unpack_kb, unpack_kb_total;
+    char unpack_name[32];
 } JOY_SHM;
 
-static const volatile JOY_SHM* joy;
-static int joy_tried;
+static volatile JOY_SHM* joy;
+static int joy_tried, joy_unpack;
 static uint32_t joy_last[2];
 
 static int joy_open(void) {
     const char* path = getenv("MVC2_JOY_SHM");
+    struct stat st;
     int fd;
     if (joy_tried) {
         return joy != NULL;
     }
     joy_tried = 1;
-    if (path == NULL || (fd = open(path, O_RDONLY)) < 0) {
+    if (path == NULL || (fd = open(path, O_RDWR)) < 0) {
         return 0;
     }
-    joy = mmap(NULL, sizeof *joy, PROT_READ, MAP_SHARED, fd, 0);
+    joy_unpack = fstat(fd, &st) == 0 && st.st_size >= (off_t)sizeof *joy;
+    joy = mmap(NULL, sizeof *joy, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     close(fd);
     if (joy == MAP_FAILED || joy->magic != JOY_MAGIC || joy->version != 1) {
         host_log("input: %s is not the wrapper's pads", path);
@@ -237,6 +243,20 @@ static int joy_open(void) {
     }
     host_log("input: the wrapper's pads, from %s", path);
     return 1;
+}
+
+void mister_unpacking(const char* name, uint32_t done_kb, uint32_t total_kb) {
+    size_t i;
+    if (!joy_open() || !joy_unpack) {
+        return;
+    }
+    for (i = 0; i + 1 < sizeof joy->unpack_name && name[i] != 0; i++) {
+        joy->unpack_name[i] = name[i];
+    }
+    joy->unpack_name[i] = 0;
+    joy->unpack_kb = done_kb;
+    __sync_synchronize();
+    joy->unpack_kb_total = total_kb;
 }
 
 /* the core's order: right, left, down, up, LP, HP, A1, LK, HK, A2, Start, Coin, Test, Service */

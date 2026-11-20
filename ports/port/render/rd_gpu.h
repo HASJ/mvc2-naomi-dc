@@ -23,6 +23,8 @@ bool rd_gpu_init(SDL_GPUDevice* device);
    arcade does, sharp (bilinear only across its texels' edges) or by the nearest texel, each at the game's pixels;
    texel reads it where its texels fall, each pixel the mean of the texels under it */
 void rd_gpu_view(float resolution, int aa, int w, int h, int sprites);
+/* the size rd_gpu_view's frame would be drawn at, when the GPU can make it */
+void rd_gpu_view_size(float resolution, int aa, int h, int sprites, int* fw, int* fh);
 /* drawn larger, what isn't a sprite: sharp as sprites are, smooth (read as the game filters it), or arcade (smooth,
    and the game's front in its own pixels, each a block of the pixels drawn) */
 void rd_gpu_hud(int mode);

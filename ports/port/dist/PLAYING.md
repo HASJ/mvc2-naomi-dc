@@ -55,18 +55,73 @@ Controllers: the first plugged in is player 1's, the second player 2's.
 
 ## Settings
 
-`mvc2.cfg` beside the executable has the settings, each explained there.
+F1 sets the picture while you play. `mvc2.cfg` beside the executable keeps every setting, each explained there.
 
-The graphics card draws the game at the window's resolution: 3D stages, polygons and effects come out sharp, while the
-characters keep their pixels (`sprites = sharp`; `smooth` to smooth them, `pixel` for no smoothing at all,
-`arcade` for the arcade's own filtering, `texel` for the characters' own pixels, each the same size; with
-`scale = integer` it is shown pixel for pixel, 2688 by 2016 on a 4K screen; every sprite sits on one grid of the
-characters' pixels, so a character's parts meet with no slivers, or on its own with `texel_grid = object`). The timer, gauges and words keep the
-arcade's own pixels (`hud = arcade`; `smooth` to smooth them, `sharp` to read them as sprites). `aa = 2` (up to 4)
-smooths edges by drawing larger still; `resolution = 1` is the arcade's 640 by 480. F1 sets these too.
+### Renderer (`renderer`)
 
-Without a graphics card that can, or with `renderer = soft`, the CPU draws the arcade's 640 by 480
-instead; on a slow PC, `render = half` makes that much faster.
+- **GPU** (`gpu`, the default): the graphics card draws the game larger than the arcade's 640 by 480, so 3D
+  stages, polygons and effects come out sharp at your screen's resolution.
+- **Soft** (`soft`): the CPU draws the arcade's own 640 by 480, as the board did. For a PC whose graphics card
+  can't run the game; the game uses it by itself when the card can't start.
+
+### Picture, on the GPU (`resolution`, `aa`)
+
+The game is drawn at a whole multiple of 640 by 480, then filtered down to the window. F1's PICTURE row shows the
+size it draws at in your window. Each step up draws more pixels, so a slower card should stay at **auto**.
+
+| F1             | mvc2.cfg                     | drawn at, full screen at 1080p | at 4K (2160p)  |
+|----------------|------------------------------|--------------------------------|----------------|
+| auto           | `resolution = auto`          | 1920 by 1440                   | 3200 by 2400   |
+| auto, aa 2x    | `aa = 2`                     | 3200 by 2400                   | 5760 by 4320   |
+| auto, aa 3x    | `aa = 3`                     | 4480 by 3360                   | 7680 by 5760   |
+| auto, aa 4x    | `aa = 4`                     | 5760 by 4320                   | 7680 by 5760   |
+| 4.2x           | `resolution = 4.2`           | 2688 by 2016                   | 2688 by 2016   |
+| 1x, the arcade's | `resolution = 1`           | 640 by 480                     | 640 by 480     |
+
+aa smooths the edges by drawing larger still; 7680 by 5760 (12 times) is the most. `resolution` takes any
+multiple from 1 to 12.
+
+### Picture, in software (`render`)
+
+| F1           | mvc2.cfg            | what it does                                                     | time a frame |
+|--------------|---------------------|------------------------------------------------------------------|--------------|
+| exact        | `render = exact`    | every pixel as the arcade's PowerVR2 draws it                    | all of it    |
+| fast         | `render = fast`     | the nearest texel, no texture smoothing                          | about 3/4    |
+| lite+fast    | `render = lite+fast`| fast, drawn with integers: very close to exact, a little quicker | about 2/3    |
+| fast+half    | `render = fast+half`| drawn at 320 by 240, each pixel shown as four; small text blurs  | about 1/4    |
+
+`mvc2.cfg` also takes `lite` on its own (texture smoothing kept), `half`, `nofog` (no fog) and `nosort`
+(see-through effects not sorted per pixel). The CPU draws on all its cores.
+
+### Sprites (`sprites`, GPU only)
+
+How the characters and other flat pictures look when drawn larger:
+
+- **sharp** (default): the characters keep their pixels, crisp at any size.
+- **smooth**: their pixels smoothed.
+- **pixel**: no smoothing at all.
+- **arcade**: the arcade's own filtering.
+- **texel**: the characters' own pixels, each the same size. With `scale = integer`, the game is shown pixel for
+  pixel, 2688 by 2016 on a 4K screen. `texel_grid = shared` (the default) puts every sprite on one grid of the
+  characters' pixels, so a character's parts meet with no slivers; `object` puts each on its own.
+
+### HUD (`hud`, GPU only)
+
+The timer, gauges, words and menus:
+
+- **arcade** (default): in the arcade's own pixels.
+- **smooth**: smoothed.
+- **sharp**: drawn as the sprites are.
+
+### The window
+
+- F10, or `scale`, sets how the picture fits the window:
+  - **aspect**: as large as it fits, at 4:3.
+  - **integer**: whole multiples only, pixel exact.
+  - **stretch**: the whole window.
+- F11 or Alt+Enter, or `fullscreen = yes`: full screen.
+
+### Unlock
 
 `unlock = all` lets you choose every character, colour and stage. Your saves keep only what you really
 unlocked, but games played this way still count in the records.

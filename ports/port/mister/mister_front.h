@@ -43,6 +43,8 @@ extern uint32_t mister_audio_wait_us;       /* the game's waits for it, from the
 /* the keyboard's and pads' controls added in (mister_input.c); 1 once the player has asked to quit */
 void mister_input_read(HOST_INPUT* in);
 int mister_input_quit(void);
+/* the first start's unpack of name, on the wrapper's OSD */
+void mister_unpacking(const char* name, uint32_t done_kb, uint32_t total_kb);
 
 /* MVC2_PROF=file: the program counter sampled (mister_prof.c) */
 void mister_prof_start(void);
