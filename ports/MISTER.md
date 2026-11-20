@@ -86,8 +86,9 @@ the GNU AGPL 3.0; its source is in `licenses/MiSTer_MVC2`. Pinedra GPU is © its
 - The controls: the wrapper's pads from its shared page (`MVC2_JOY_SHM`), else `/dev/input/event*`: a keyboard as
   the PC's keys and pads by place, as on the PC; Start and Select held two seconds quits (Start and Coin on the
   wrapper's pads). SIGTERM ends the run.
-- The log has each part's time a frame every 300 frames (`MVC2_STATS=n`), the memory and rd_gl1's work, and a
-  line for each frame over 50 ms.
+- The log (`games/mvc2/logs/last-run.log`) has the start's lines and any error, written on a thread of its own:
+  the card is mounted sync. `MVC2_STATS=n` adds each part's time a frame every n frames, the memory and rd_gl1's
+  work, and a line for each frame over 50 ms (a run of `MVC2_FRAMES` has them every 300).
 
 Test switches, as on the PC: `MVC2_FRAMES`, `MVC2_SHOT`, `MVC2_PRESS`, `MVC2_WAV`, `MVC2_SOUND=1`. And
 `MVC2_MRAUDIO=0` (the sound made but not played), `MVC2_SNDTHREAD=0` (made on the game's thread), `MVC2_VSYNC=0`

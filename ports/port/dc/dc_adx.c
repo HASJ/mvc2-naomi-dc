@@ -27,6 +27,11 @@
 #define ADX_RUNS
 #endif
 
+/* the next piece read ahead on the disc's reader */
+#if defined(__PSP__) || defined(MVC2_MISTER)
+#define ADX_READ_AHEAD
+#endif
+
 #define ADX_SECTORS 16
 #define ADX_BUF (ADX_SECTORS * GDD_SCT_SIZE)
 #define ADX_BLOCK 18            /* a channel's 32 samples: a 16-bit scale and 16 bytes of 4-bit deltas */
@@ -56,8 +61,8 @@ struct _adx_talk {
     uint32_t buf_off, buf_len;  /* the file's bytes in buf */
     int head;                   /* the header still being read ahead (3DS) */
     char name[32];
-#ifdef __PSP__
-    uint8_t next[ADX_BUF];      /* the piece after buf's, read ahead on the reader (psp_reader.c) */
+#ifdef ADX_READ_AHEAD
+    uint8_t next[ADX_BUF];      /* the piece after buf's, read ahead on the reader (psp_reader.c, mister_reader.c) */
     uint32_t next_off;
     int next_on;
 #endif
@@ -263,9 +268,9 @@ static int ahead_ready(const struct _adx_talk* p, uint32_t n) {
 }
 #endif
 
-#ifdef __PSP__
+#ifdef ADX_READ_AHEAD
 /* MVC2_ADX_AHEAD (on unless 0): the piece from buf's last sector read ahead on the reader, so that the game's thread
-   doesn't wait on the memory stick in a fight; the same bytes as read here */
+   doesn't wait on the card in a fight; the same bytes as read here */
 DC_FILE* dc_gd_file(GDFS gd, long* size);   /* dc_gd.c */
 
 static void music_ahead(ADXT p) {
@@ -337,7 +342,7 @@ static const uint8_t* bytes_at(ADXT p, uint32_t off, uint32_t n) {
 #ifdef __3DS__
         ah.here += (uint32_t)ah.on;
 #endif
-#ifdef __PSP__
+#ifdef ADX_READ_AHEAD
         if (music_take(p, off, n)) {
             return p->buf + (off - p->buf_off);
         }
@@ -347,7 +352,7 @@ static const uint8_t* bytes_at(ADXT p, uint32_t off, uint32_t n) {
         gdFsRead(p->gd, ADX_SECTORS, p->buf);
         p->buf_off = sct * GDD_SCT_SIZE;
         p->buf_len = ADX_BUF;
-#ifdef __PSP__
+#ifdef ADX_READ_AHEAD
         music_ahead(p);
 #endif
     }
@@ -358,7 +363,7 @@ static void close_files(ADXT p) {
 #ifdef __3DS__
     ahead_stop();
 #endif
-#ifdef __PSP__
+#ifdef ADX_READ_AHEAD
     music_stop(p);
 #endif
     if (p->gd != NULL) {

@@ -1,10 +1,10 @@
 /*
  * dc_gd.c  The Dreamcast's disc (Shinobi's gdFs) over a folder of its files, read at once in whole 2048-byte
- * sectors; a request is complete when gdFsGetStat next looks, and the drive's door never opens. On the 3DS and the
- * PSP with MVC2_GD_ASYNC=1, gdFsReqRd32's reads are done on another thread, and complete after as many frames as a
- * drive would take (MVC2_GD_SEEK, GD_RATE), waited for then if need be: the same frames on every run, whatever the
- * card does. With MVC2_GD_AHEAD=1 too, a ...POL.BIN file so read has its ...TEX.BIN read ahead, for the game's
- * gdFsRead.
+ * sectors; a request is complete when gdFsGetStat next looks, and the drive's door never opens. On the 3DS, the PSP
+ * and the MiSTer with MVC2_GD_ASYNC=1, gdFsReqRd32's reads are done on another thread, and complete after as many
+ * frames as a drive would take (MVC2_GD_SEEK, GD_RATE), waited for then if need be: the same frames on every run,
+ * whatever the card does. With MVC2_GD_AHEAD=1 too, a ...POL.BIN file so read has its ...TEX.BIN read ahead, for the
+ * game's gdFsRead.
  */
 
 #include <errno.h>
@@ -19,8 +19,8 @@
 #include "frame_log.h"
 FRAME_LOG fl;
 
-/* the 3DS and the PSP read the disc on a thread of their own (host_read_start and the rest) */
-#if defined(__3DS__) || defined(__PSP__)
+/* the 3DS, the PSP and the MiSTer read the disc on a thread of their own (host_read_start and the rest) */
+#if defined(__3DS__) || defined(__PSP__) || defined(MVC2_MISTER)
 #define GD_READER 1
 #endif
 
@@ -38,13 +38,13 @@ struct GDS_FS_HANDLE {
 };
 
 static char root[1024];
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
 static void list_folder(void);
 #endif
 #if defined(__PSP__)
 static void open_test(void);
 #endif
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
 /* MVC2_GD_NOBUF=1: the files read without stdio's buffer, each read one call to the SD card's service */
 static int no_buf = -1;
 #endif
@@ -100,7 +100,7 @@ int dc_gd_open(const char* disc_path) {
 #ifdef GD_READER
     trace = getenv("MVC2_TRACE_GD") != NULL;
 #endif
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
     if (!dc_image_mounted() && (getenv("MVC2_GD_LATER") == NULL || atoi(getenv("MVC2_GD_LATER")) != 0)) {
         list_folder();
     }
@@ -118,9 +118,17 @@ int dc_gd_open(const char* disc_path) {
 #include <3ds.h>
 #define ticks_now() svcGetSystemTick()
 #define TICKS_MS (SYSCLOCK_ARM11 / 1000.0)
-#else
+#elif defined(__PSP__)
 #include <pspkernel.h>
 #define ticks_now() ((uint64_t)sceKernelGetSystemTimeWide())
+#define TICKS_MS 1000.0
+#else
+#include <time.h>
+static uint64_t ticks_now(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint64_t)t.tv_sec * 1000000u + (uint64_t)t.tv_nsec / 1000u;
+}
 #define TICKS_MS 1000.0
 #endif
 
@@ -557,7 +565,7 @@ struct DC_FILE {
     char later[32];             /* a folder's file opened at its first read, on whichever thread reads it */
 };
 
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
 #include <strings.h>
 /* the folder's files and their sizes, listed once: a file opened is opened at its first read, so that a read on the
    reader leaves the game's thread nothing to wait for (an open costs the memory stick 15-20 ms, and the 3DS's SD card
@@ -656,7 +664,7 @@ DC_FILE* dc_file_open(const char* path, long* size) {
         free(d);
         return NULL;
     }
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
     {
         const LISTED* l = list_find(path);
         if (l != NULL) {
@@ -710,7 +718,7 @@ static int file_now(DC_FILE* d, const char* path) {
         return 0;
     }
     __atomic_add_fetch(&files_open, 1, __ATOMIC_RELAXED);
-#if defined(__3DS__) || defined(__PSP__)
+#ifdef GD_READER
     if (no_buf < 0) {
         no_buf = getenv("MVC2_GD_NOBUF") != NULL && atoi(getenv("MVC2_GD_NOBUF")) != 0;
         if (no_buf) {
@@ -777,6 +785,16 @@ void dc_file_let_go(DC_FILE* d) {
         d->f = NULL;
         __atomic_sub_fetch(&files_open, 1, __ATOMIC_RELAXED);
     }
+}
+#elif defined(MVC2_MISTER)
+/* the MiSTer keeps any number of files open */
+int dc_file_has_handle(const DC_FILE* d) {
+    (void)d;
+    return 0;
+}
+
+void dc_file_let_go(DC_FILE* d) {
+    (void)d;
 }
 #endif
 

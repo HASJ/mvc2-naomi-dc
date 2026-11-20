@@ -94,6 +94,7 @@ void naomi_run_frame(void);         /* until the game waits for the next vertica
 void host_poll(void);               /* from the game's busy waits: the interrupts happen here */
 void host_stub(const char* name);   /* a library routine the port lacks: says so once */
 void host_stub_report(void);
+extern int host_stubs_quiet;    /* the MiSTer: the stubs' first calls not logged */
 unsigned host_frame(void);
 extern uint32_t host_fills;         /* counts the port's writes into the game's memory: ROM and disc reads */
 void host_log(const char* fmt, ...);
@@ -154,10 +155,13 @@ int ctr_save_later(const char* name, const void* data, int size); /* a save writ
 void ctr_save_flush(void);                                       /* every save written (ctr_save.c) */
 int mister_save_later(const char* name, const void* data, int size);  /* the same on the MiSTer (mister_save.c) */
 void mister_save_flush(void);
+void mister_log_flush(void);    /* the log's queued lines written (mister_log.c) */
+void mister_log_rescue(void);   /* and from a fatal signal's handler */
 void host_save_file(const char* name, const void* p, int size);  /* written whole or not at all (nl_am.c) */
 int ctr_rom_packed(uint32_t offset, void* dst, uint32_t size); /* and its packed reads, 1 when given */
 void dc_gd_read_elsewhere(const char* name);   /* a file read on another reader, as if by gdFsRead */
-/* the host's disc reader, one read at a time (MVC2_GD_ASYNC): ctr_stream.c on the 3DS, psp_reader.c on the PSP */
+/* the host's disc reader, one read at a time (MVC2_GD_ASYNC): ctr_stream.c on the 3DS, psp_reader.c on the PSP,
+   mister_reader.c on the MiSTer */
 int host_read_start(DC_FILE* f, long off, void* to, size_t want);
 int host_read_busy(void);
 size_t host_read_end(float* ms);

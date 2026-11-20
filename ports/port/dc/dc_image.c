@@ -775,8 +775,8 @@ static void disc_give(void) {
 }
 #define DISC_LOCK() disc_take()
 #define DISC_UNLOCK() disc_give()
-#elif defined(__PSP__)
-void host_disc_lock(int on);    /* port/psp */
+#elif defined(__PSP__) || defined(MVC2_MISTER)
+void host_disc_lock(int on);    /* psp_reader.c, mister_reader.c */
 static void disc_lock_init(void) {
 }
 #define DISC_LOCK() host_disc_lock(1)

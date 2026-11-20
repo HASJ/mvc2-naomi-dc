@@ -42,6 +42,9 @@ int ctr_log_line(const char* fmt, va_list ap);  /* port/ctr/ctr_log.c: queued fo
 #ifdef __PSP__
 void psp_log_line(const char* fmt, va_list ap); /* port/psp/psp_log.c: written through to the file */
 #endif
+#ifdef MVC2_MISTER
+int mister_log_line(const char* fmt, va_list ap);   /* port/mister/mister_log.c: queued for a thread to write */
+#endif
 
 void (*host_crumb)(const char* what);
 
@@ -58,6 +61,12 @@ void host_log(const char* fmt, ...) {
     psp_log_line(fmt, ap);
     va_end(ap);
     return;
+#endif
+#ifdef MVC2_MISTER
+    if (mister_log_line(fmt, ap)) {
+        va_end(ap);
+        return;
+    }
 #endif
     vfprintf(stderr, fmt, ap);
     va_end(ap);
@@ -88,6 +97,9 @@ static void x87_check(void) {
 static const char* stub_name[512];
 static unsigned stub_calls[512];
 static int nstubs;
+#ifdef MVC2_MISTER
+int host_stubs_quiet;
+#endif
 
 void host_stub(const char* name) {
     int i;
@@ -101,6 +113,11 @@ void host_stub(const char* name) {
         stub_name[nstubs] = name;
         stub_calls[nstubs++] = 1;
     }
+#ifdef MVC2_MISTER
+    if (host_stubs_quiet) {
+        return;
+    }
+#endif
     host_log("stub: %s (frame %u)", name, frames);
 }
 

@@ -24,6 +24,7 @@
 #include "../nl/nl_port.h"
 #include "rd_gl1.h"
 #include "frame_log.h"
+#include "snd_drv.h"
 
 int fl_timing;
 
@@ -216,7 +217,7 @@ static void pace(void) {
     next_frame += step;
 }
 
-/* each part's time a frame, logged every MVC2_STATS frames (300 by default) */
+/* each part's time a frame, logged every MVC2_STATS frames (in a run of MVC2_FRAMES, 300 unless set; else none) */
 typedef struct {
     uint64_t sum, most, last;
 } SPAN;
@@ -226,7 +227,7 @@ enum { T_GAME, T_CPU, T_DRAW, T_OUT, T_SOUND, T_MAKE, T_WAIT, T_FRAME, T_SPANS }
    sound's own thread's; wait: the game's for it */
 static const char* const span_names[T_SPANS] = { "game", "cpu", "draw", "out", "sound", "make", "wait", "frame" };
 static SPAN spans[T_SPANS];
-static unsigned stat_frames, stat_every = 300;
+static unsigned stat_frames, stat_every;
 static uint64_t present_us, present_cpu, stat_start;
 static long stat_switches;
 
@@ -285,6 +286,7 @@ static void frame_log(void) {
         tried = 1;
         frame_file = path != NULL ? fopen(path, "w") : NULL;
         if (frame_file != NULL) {
+            setvbuf(frame_file, NULL, _IOFBF, 1 << 20);   /* written at the end: the card is mounted sync */
             f = frame_file;
             fprintf(f, "n");
             for (i = 0; i < T_SPANS; i++) {
@@ -324,9 +326,6 @@ static void memory_line(void) {
              "textures %.1f MB%s", rss_kb(0) / 1024, rss_kb(1) / 1024, m.arena / 1048576.0, m.uordblks / 1048576.0,
              m.fordblks / 1048576.0, m.hblkhd / 1048576.0, naomi_rom_held() / 1048576.0, nl_tex_held() / 1048576.0,
              gl);
-    if (getenv("MVC2_FRAMELOG") != NULL) {
-        malloc_stats();     /* every thread's arena, to stderr */
-    }
 }
 
 /* a frame over 50 ms, as it happens: its parts, its page faults, its GL uploads, and with MVC2_LOAD_TIMES its
@@ -335,7 +334,7 @@ static void slow_frame(uint64_t took, long major, long minor) {
     const RD_GL1_STATS* g = mister_gl_stats();
     FRAME_LOG f = fl;
     memset(&fl, 0, sizeof fl);
-    if (took < 50000) {
+    if (took < 50000 || stat_every == 0) {
         return;
     }
     if (fl_timing) {
@@ -354,6 +353,11 @@ static void stats_frame(void) {
     char line[600];
     int i, n;
     uint64_t now = mister_us();
+    if (stat_every == 0) {
+        memset(&gl_sum, 0, sizeof gl_sum);
+        memset(spans, 0, sizeof spans);
+        return;
+    }
     if (stat_start == 0) {
         stat_start = now;
     }
@@ -535,14 +539,18 @@ void host_out_of_memory(const char* what, size_t bytes) {
 }
 
 /* the switches set by default, env.txt's own value kept: the sound CPU's driver as C and the mixer's 32x16
-   multiplies (the same samples), as on the 3DS and the PSP; the arcade's sound costs 9.7 ms a frame so, 11 ms not */
+   multiplies (the same samples), as on the 3DS and the PSP; the arcade's sound costs 9.7 ms a frame so, 11 ms not.
+   And the Dreamcast's files read ahead on the disc's reader (dc_gd.c), the same bytes in the same frames */
 static void set_defaults(void) {
-    static const char* const on[][2] = { { "MVC2_SNDNATIVE", "3" }, { "MVC2_MIXSIMD", "2" } };
+    static const char* const on[][2] = { { "MVC2_SNDNATIVE", "3" }, { "MVC2_MIXSIMD", "2" },   { "MVC2_GD_AHEAD", "1" },
+                                         { "MVC2_GD_NEXT", "1" },     { "MVC2_GD_KEEP", "1" }, { "MVC2_GD_PROGS", "1" } };
     size_t i;
     for (i = 0; i < sizeof on / sizeof *on; i++) {
         if (getenv(on[i][0]) == NULL) {
             setenv(on[i][0], on[i][1], 0);
-            host_log("default: %s=%s", on[i][0], on[i][1]);
+            if (stat_every != 0) {
+                host_log("default: %s=%s", on[i][0], on[i][1]);
+            }
         }
     }
 }
@@ -571,6 +579,7 @@ static void on_fatal(int sig, siginfo_t* info, void* context) {
     char text[64];
     int n = backtrace(at, 64), i;
     (void)info;
+    mister_log_rescue();
     say(text, snprintf(text, sizeof text, "fatal signal %d, its stack:\n", sig));
     backtrace_symbols_fd(at, n, 2);
     /* the unwinder stops at abort(): the words on the stack that point into the program, the callers among them */
@@ -603,10 +612,14 @@ int main(int argc, char** argv) {
     long frames_left = getenv("MVC2_FRAMES") ? atol(getenv("MVC2_FRAMES")) : -1;
     uint64_t frame_start = 0;
     test_run = frames_left >= 0;
-    set_defaults();
-    if (getenv("MVC2_STATS") != NULL && atoi(getenv("MVC2_STATS")) > 0) {
+    atexit(mister_log_flush);
+    stat_every = test_run ? 300 : 0;
+    if (getenv("MVC2_STATS") != NULL) {
         stat_every = (unsigned)atoi(getenv("MVC2_STATS"));
     }
+    snd_drv_quiet(stat_every == 0);
+    host_stubs_quiet = stat_every == 0;
+    set_defaults();
     if (!naomi_map_ram()) {
         fprintf(stderr, "could not map main RAM at %08X\n", NAOMI_RAM_BASE);
         return 1;
@@ -680,6 +693,8 @@ int main(int argc, char** argv) {
     snd_close();
     mister_audio_close();
     mister_gl_exit();
-    host_stub_report();
+    if (stat_every != 0) {
+        host_stub_report();
+    }
     return 0;
 }
