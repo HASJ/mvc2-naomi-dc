@@ -142,6 +142,7 @@ static const RD_TEXTURE* group_texture(uint32_t pcw, uint32_t tcw, int texno) {
     if (!(pcw & 8) || texno < 0 || index >= NL_MAX_TEX || !nl_tex[index].loaded) {
         return NULL;
     }
+    nl_tex_use(&nl_tex[index]);
     return &nl_tex[index].tex;
 }
 

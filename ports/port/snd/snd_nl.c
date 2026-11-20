@@ -241,6 +241,9 @@ int32_t nlsndInit(const void* driver, int32_t mode) {
     if (getenv("MVC2_DSP")) {
         aica_set_dsp(atoi(getenv("MVC2_DSP")));
     }
+    if (getenv("MVC2_DSPJIT")) {
+        aica_set_dsp_jit(atoi(getenv("MVC2_DSPJIT")));
+    }
     if (getenv("MVC2_REVERB")) {
         aica_set_reverb(atoi(getenv("MVC2_REVERB")));
     }

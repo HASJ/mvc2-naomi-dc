@@ -189,5 +189,7 @@ void rd_quality(const char* words);
 
 /* rd_soft.c: the frame into ARGB (ABGR when built with RD_ABGR) */
 void rd_end_frame(uint32_t* frame, int pitch);
+/* and into RGB565, field -1 every row, 0 or 1 only the even or odd rows; frame is only written, in order */
+void rd_end_frame565(uint16_t* frame, int pitch, int field);
 
 #endif

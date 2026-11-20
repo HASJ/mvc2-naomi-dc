@@ -4,6 +4,7 @@
  */
 
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,6 +15,7 @@
 
 #include "naomi_host.h"
 #include "aica.h"
+#include "aica_dsp.h"
 #include "arm7.h"
 #include "prof.h"
 #include "snd_drv.h"
@@ -991,11 +993,22 @@ static void render_channel(int c, int n) {
 
 /* ---- the DSP ---- */
 
-static int32_t temp[128], mems[32], efreg[16];
-static int32_t frc_reg, y_reg, adrs_reg, memval;
-static uint32_t mdec;
+static DSP_REGS dsp;
 static int dsp_last;                /* the steps up to the last that does something */
 static int dsp_dirty = 1;
+static int dsp_jit = 1;             /* MVC2_DSPJIT */
+#ifdef AICA_DSP_JIT
+static int dsp_made;                /* the program translated */
+static unsigned dsp_makes, dsp_words;
+static int dsp_fast;                /* the translated program runs this chunk */
+static int dsp_table;               /* the program reads or writes the RAM as a table */
+static uint16_t dsp_written;        /* the effect outputs it writes */
+static struct {
+    uint8_t e, right;
+    int32_t lv, pan;
+} dsp_outs[16];                     /* those written and not silent: the chunk's output mix */
+static int dsp_outs_n;
+#endif
 
 static int32_t sx24(int32_t v) {
     return (int32_t)((uint32_t)v << 8) >> 8;
@@ -1025,20 +1038,6 @@ static int32_t dsp_unpack(uint16_t v) {
     m |= sign << 23;
     return sx24(m) >> e;
 }
-
-/* a step of the program, decoded when the program changes */
-typedef struct {
-    uint8_t tra, twa, ira, iwa, ewa, masa, shift, ysel;
-    uint16_t f;             /* the DF_ flags */
-    int16_t coef;           /* its coefficient, 13 bits */
-    uint16_t madrs;
-} DSP_STEP;
-
-enum {
-    DF_TWT = 1, DF_XSEL = 2, DF_IWT = 4, DF_TABLE = 8, DF_MWT = 16, DF_MRD = 32, DF_EWT = 64, DF_ADRL = 128,
-    DF_FRCL = 256, DF_YRL = 512, DF_NEGB = 1024, DF_ZERO = 2048, DF_BSEL = 4096, DF_NOFL = 8192, DF_ADREB = 16384,
-    DF_NXADR = 32768
-};
 
 static DSP_STEP prog[128];
 
@@ -1072,44 +1071,127 @@ static void dsp_scan(void) {
         p->madrs = (uint16_t)reg16(0x3200 + p->masa * 4);
     }
     dsp_dirty = 0;
+#ifdef AICA_DSP_JIT
+    dsp_made = 0;
+    if (dsp_jit && dsp_last) {
+        dsp_words = (unsigned)aica_dsp_jit_make(prog, dsp_last, &dsp);
+        dsp_made = dsp_words > 0;
+        memset(dsp.efreg, 0, sizeof dsp.efreg);     /* those the program doesn't write stay 0 */
+        dsp_makes++;
+        dsp_table = 0;
+        dsp_written = 0;
+        for (s = 0; s < dsp_last; s++) {
+            dsp_table |= (prog[s].f & (DF_MRD | DF_MWT)) && (prog[s].f & DF_TABLE);
+            if (prog[s].f & DF_EWT) {
+                dsp_written |= (uint16_t)(1u << prog[s].ewa);
+            }
+        }
+    }
+#endif
 }
+
+#ifdef AICA_DSP_JIT
+/* MVC2_DSPJIT=2: each sample made by both, from the same state; the C's kept */
+static struct {
+    uint32_t addr;
+    uint16_t old, now;
+} dsp_log[128];
+static int dsp_log_n = -1;
+
+static void dsp_logged(uint32_t addr) {
+    if (dsp_log_n >= 0 && dsp_log_n < 128) {
+        dsp_log[dsp_log_n].addr = addr;
+        dsp_log[dsp_log_n++].old = (uint16_t)(ram[addr] | ram[addr + 1] << 8);
+    }
+}
+
+static void dsp_sample(const int32_t* mix);
+
+static void dsp_check(const int32_t* mix) {
+    static DSP_REGS before, c;
+    static unsigned long checked, wrong;
+    int k, bad = 0;
+    before = dsp;
+    dsp_log_n = 0;
+    dsp_sample(mix);
+    c = dsp;
+    for (k = 0; k < dsp_log_n; k++) {
+        dsp_log[k].now = (uint16_t)(ram[dsp_log[k].addr] | ram[dsp_log[k].addr + 1] << 8);
+    }
+    for (k = dsp_log_n; k-- > 0;) {
+        ram[dsp_log[k].addr] = (uint8_t)dsp_log[k].old;
+        ram[dsp_log[k].addr + 1] = (uint8_t)(dsp_log[k].old >> 8);
+    }
+    dsp = before;
+    aica_dsp_jit_run(&dsp, mix);
+    if (memcmp(&dsp, &c, offsetof(DSP_REGS, ring)) != 0) {
+        bad = 1;
+    }
+    for (k = 0; k < dsp_log_n; k++) {
+        uint32_t a = dsp_log[k].addr;
+        if ((uint16_t)(ram[a] | ram[a + 1] << 8) != dsp_log[k].now) {
+            bad = 1;
+        }
+    }
+    checked++;
+    if (bad && wrong++ < 8) {
+        int i;
+        host_log("sound DSP check: sample %lu wrong (mdec %u)", checked, (unsigned)c.mdec);
+        for (i = 0; i < (int)(offsetof(DSP_REGS, ring) / 4); i++) {
+            if (((const int32_t*)&dsp)[i] != ((const int32_t*)&c)[i]) {
+                host_log("  word %d: %08lx, C %08lx", i, (unsigned long)((const int32_t*)&dsp)[i],
+                         (unsigned long)((const int32_t*)&c)[i]);
+            }
+        }
+    }
+    if (checked % 441000 == 0) {
+        host_log("sound DSP check: %lu samples, %lu wrong", checked, wrong);
+    }
+    dsp = c;
+    for (k = 0; k < dsp_log_n; k++) {
+        ram[dsp_log[k].addr] = (uint8_t)dsp_log[k].now;
+        ram[dsp_log[k].addr + 1] = (uint8_t)(dsp_log[k].now >> 8);
+    }
+    dsp_log_n = -1;
+}
+#endif
 
 static void dsp_sample(const int32_t* mix) {
     uint32_t rbl = 8192u << ((reg16(0x2804) >> 13) & 3), rbp = reg16(0x2804) & 0xFFF;
     int32_t acc = 0, inputs = 0;
     int s;
-    memset(efreg, 0, sizeof efreg);
+    memset(dsp.efreg, 0, sizeof dsp.efreg);
     for (s = 0; s < dsp_last; s++) {
         const DSP_STEP* p = &prog[s];
         uint32_t f = p->f;
         int32_t b, x, y, shifted, t;
         if (p->ira <= 0x1F) {
-            inputs = sx24(mems[p->ira]);
+            inputs = sx24(dsp.mems[p->ira]);
         } else if (p->ira <= 0x2F) {
             inputs = sx24(mix[p->ira - 0x20] << 4);
         } else {
             inputs = 0;
         }
         if (f & DF_IWT) {
-            mems[p->iwa] = memval;
+            dsp.mems[p->iwa] = dsp.memval;
             if (p->ira == p->iwa) {
-                inputs = memval;
+                inputs = dsp.memval;
             }
         }
-        t = sx24(temp[(p->tra + mdec) & 0x7F]);
+        t = sx24(dsp.temp[(p->tra + dsp.mdec) & 0x7F]);
         b = f & DF_ZERO ? 0 : f & DF_BSEL ? acc : t;
         if ((f & (DF_NEGB | DF_ZERO)) == DF_NEGB) {
             b = -b;
         }
         x = f & DF_XSEL ? inputs : t;
         switch (p->ysel) {
-        case 0: y = frc_reg; break;
+        case 0: y = dsp.frc; break;
         case 1: y = p->coef; break;
-        case 2: y = (y_reg >> 11) & 0x1FFF; break;
-        default: y = (y_reg >> 4) & 0x0FFF; break;
+        case 2: y = (dsp.y >> 11) & 0x1FFF; break;
+        default: y = (dsp.y >> 4) & 0x0FFF; break;
         }
         if (f & DF_YRL) {
-            y_reg = inputs;
+            dsp.y = inputs;
         }
         switch (p->shift) {
         case 0: shifted = acc > 0x7FFFFF ? 0x7FFFFF : acc < -0x800000 ? -0x800000 : acc; break;
@@ -1120,18 +1202,18 @@ static void dsp_sample(const int32_t* mix) {
         y = (int32_t)((uint32_t)y << 19) >> 19;
         acc = (int32_t)(((int64_t)x * y) >> 12) + b;
         if (f & DF_TWT) {
-            temp[(p->twa + mdec) & 0x7F] = shifted;
+            dsp.temp[(p->twa + dsp.mdec) & 0x7F] = shifted;
         }
         if (f & DF_FRCL) {
-            frc_reg = p->shift == 3 ? shifted & 0xFFF : (shifted >> 11) & 0x1FFF;
+            dsp.frc = p->shift == 3 ? shifted & 0xFFF : (shifted >> 11) & 0x1FFF;
         }
         if (f & (DF_MRD | DF_MWT)) {
             uint32_t addr = p->madrs;
             if (!(f & DF_TABLE)) {
-                addr += mdec;
+                addr += dsp.mdec;
             }
             if (f & DF_ADREB) {
-                addr += adrs_reg & 0xFFF;
+                addr += dsp.adrs & 0xFFF;
             }
             if (f & DF_NXADR) {
                 addr++;
@@ -1140,24 +1222,77 @@ static void dsp_sample(const int32_t* mix) {
             addr = ((addr + (rbp << 10)) * 2) & aica_ram_mask;
             if (f & DF_MRD) {
                 uint16_t w = (uint16_t)(ram[addr] | ram[addr + 1] << 8);
-                memval = f & DF_NOFL ? sx24((int32_t)(int16_t)w << 8) : dsp_unpack(w);
+                dsp.memval = f & DF_NOFL ? sx24((int32_t)(int16_t)w << 8) : dsp_unpack(w);
             }
             if (f & DF_MWT) {
                 uint16_t w = f & DF_NOFL ? (uint16_t)(shifted >> 8) : dsp_pack(shifted);
+#ifdef AICA_DSP_JIT
+                dsp_logged(addr);
+#endif
                 ram[addr] = (uint8_t)w;
                 ram[addr + 1] = (uint8_t)(w >> 8);
                 arm7_code_written(addr, 2);
             }
         }
         if (f & DF_ADRL) {
-            adrs_reg = p->shift == 3 ? (shifted >> 12) & 0xFFF : inputs >> 16;
+            dsp.adrs = p->shift == 3 ? (shifted >> 12) & 0xFFF : inputs >> 16;
         }
         if (f & DF_EWT) {
-            efreg[p->ewa] += shifted >> 8;
+            dsp.efreg[p->ewa] += shifted >> 8;
         }
     }
-    mdec--;
+    dsp.mdec--;
 }
+
+#ifdef AICA_DSP_JIT
+/* the chunk's ring and outputs for the translated program, or 0 where the ring wraps or the code is in it */
+static int dsp_chunk(void) {
+    uint32_t r = reg16(0x2804), rbl = 8192u << ((r >> 13) & 3), start = (r & 0xFFF) << 11;
+    uint32_t span = (dsp_table && rbl < 0x10000 ? 0x10000 : rbl) * 2;
+    int e;
+    if (!dsp_made || start < arm7_code_limit() || start + span > aica_ram_mask + 1) {
+        return 0;
+    }
+    dsp.ring = ram + start;
+    dsp.rbl_mask = rbl - 1;
+    dsp_outs_n = 0;
+    for (e = 0; e < 16; e++) {
+        uint32_t ef = reg16(0x2000 + e * 4);
+        int32_t lv = level_gain[(ef >> 8) & 15];
+        if ((dsp_written >> e & 1) && lv) {
+            dsp_outs[dsp_outs_n].e = (uint8_t)e;
+            dsp_outs[dsp_outs_n].right = (ef & 0x10) != 0;
+            dsp_outs[dsp_outs_n].lv = lv;
+            dsp_outs[dsp_outs_n++].pan = pan_gain[ef & 15];
+        }
+    }
+    return 1;
+}
+
+/* a sample of the translated program, added to l and r as aica_render's loop adds the outputs */
+static void dsp_fast_sample(const int32_t* mix, int32_t* l, int32_t* r) {
+    int k;
+    if (dsp_jit == 2) {
+        dsp_check(mix);
+    } else {
+        aica_dsp_jit_run(&dsp, mix);
+    }
+    for (k = 0; k < dsp_outs_n; k++) {
+        int32_t v = dsp.efreg[dsp_outs[k].e], sl, sr;
+        if (!v) {
+            continue;
+        }
+        sl = sr = v * dsp_outs[k].lv >> 15;
+        if (dsp_outs[k].right) {
+            sr = sr * dsp_outs[k].pan >> 15;
+        } else {
+            sl = sl * dsp_outs[k].pan >> 15;
+        }
+        *l += sl;
+        *r += sr;
+    }
+}
+#endif
 
 /* ---- the timers and the interrupts ---- */
 
@@ -1528,10 +1663,10 @@ int aica_init(int ram_8mb) {
     memset(ch, 0, sizeof ch);
     memset(ch_on, 0, sizeof ch_on);
     memset(par_ok, 0, sizeof par_ok);
-    memset(temp, 0, sizeof temp);
-    memset(mems, 0, sizeof mems);
-    frc_reg = y_reg = adrs_reg = memval = 0;
-    mdec = 0;
+    memset(dsp.temp, 0, sizeof dsp.temp);
+    memset(dsp.mems, 0, sizeof dsp.mems);
+    dsp.frc = dsp.y = dsp.adrs = dsp.memval = 0;
+    dsp.mdec = 0;
     dsp_dirty = 1;
     scipd = mcipd = intreq = 0;
     memset(timer_count, 0, sizeof timer_count);
@@ -1566,6 +1701,11 @@ void aica_run_cpu(int cycles) {
         game_side = 0;
 #endif
     }
+}
+
+void aica_set_dsp_jit(int mode) {
+    dsp_jit = mode;
+    dsp_dirty = 1;
 }
 
 void aica_set_dsp(int on) {
@@ -1616,6 +1756,10 @@ void aica_stats(AICA_STATS* s) {
 /* the channels sounding and the DSP, for MVC2_SNDDBG */
 void aica_dump(void (*log)(const char* fmt, ...)) {
     int c;
+#ifdef AICA_DSP_JIT
+    log("aica: dsp translated %d (%u times, %u words), running %d, %d outputs", dsp_made, dsp_makes, dsp_words,
+        dsp_fast, dsp_outs_n);
+#endif
     log("aica: mvol %u, dsp %d steps, rbp %X rbl %u, scieb %X scipd %X timers %X %X %X, pc %08X", reg16(0x2800) & 15,
         dsp_last, reg16(0x2804) & 0xFFF, (reg16(0x2804) >> 13) & 3, reg16(0x289C), scipd, reg16(0x2890),
         reg16(0x2894), reg16(0x2898), arm7_pc());
@@ -1626,8 +1770,8 @@ void aica_dump(void (*log)(const char* fmt, ...)) {
             nz += w != 0;
             z6 += (w & 0x7800) >= 0x5800;
         }
-        log("  ring at %X: %u words not 0, %u with exponent >= 11; efreg %d %d %d %d", rb, nz, z6, efreg[0], efreg[1],
-            efreg[2], efreg[3]);
+        log("  ring at %X: %u words not 0, %u with exponent >= 11; efreg %d %d %d %d", rb, nz, z6, dsp.efreg[0], dsp.efreg[1],
+            dsp.efreg[2], dsp.efreg[3]);
         if (getenv("MVC2_DSPDUMP")) {
             for (i = 0; i < (uint32_t)dsp_last; i++) {
                 uint32_t o = 0x3400 + i * 16;
@@ -1802,18 +1946,26 @@ void aica_render(int16_t* out, int n) {
                 rv_l[0] = rv_l[1] = rv_r[0] = rv_r[1] = 0;
             }
         }
+#ifdef AICA_DSP_JIT
+        dsp_fast = dsp_on && dsp_last && dsp_chunk();
+#endif
         for (i = 0; i < len; i++) {
             int32_t l = mix_l[i], r = mix_r[i], g;
+#ifdef AICA_DSP_JIT
+            if (dsp_fast) {
+                dsp_fast_sample(mixs[i], &l, &r);
+            } else
+#endif
             if (dsp_on && dsp_last) {
                 int e;
                 dsp_sample(mixs[i]);
                 for (e = 0; e < 16; e++) {
                     uint32_t ef = reg16(0x2000 + e * 4);
                     int32_t lv = level_gain[(ef >> 8) & 15], sl, sr;
-                    if (!lv || !efreg[e]) {
+                    if (!lv || !dsp.efreg[e]) {
                         continue;
                     }
-                    sl = sr = efreg[e] * lv >> 15;
+                    sl = sr = dsp.efreg[e] * lv >> 15;
                     if (ef & 0x10) {
                         sr = sr * pan_gain[ef & 15] >> 15;
                     } else {

@@ -17,8 +17,8 @@ It is a decompilation: the machine code has been rewritten as C, and as SH-4 ass
 assembler (the SH-4 is the CPU of both machines), so people can read it and change it. Most files are the same
 for both. Where the Dreamcast differs, the file says so with `#ifdef TARGET_DC`.
 
-The same C also runs elsewhere. `ports/` compiles it into a PC and a 3DS version of the game, which play from
-your own ROM set or disc.
+The same C also runs elsewhere. `ports/` compiles it into PC, 3DS, PSP and MiSTer versions of the game, which play
+from your own ROM set or disc.
 
 For a tour of how the game itself works (the frame loop, inputs, special moves, hit boxes, damage), read
 `docs/HOW_THE_GAME_WORKS.md`.
@@ -39,8 +39,12 @@ To build a port, which plays the game on another machine:
 - PC (Windows): [ports/README.md](ports/README.md)
 - Nintendo 3DS: [ports/3DS.md](ports/3DS.md). Both versions run at full speed, 60 fps, on every 3DS and 2DS,
   the original models too.
+- PSP: [ports/PSP.md](ports/PSP.md), the Dreamcast version.
+- MiSTer: [ports/MISTER.md](ports/MISTER.md), both versions, drawn by the Pinedra GPU core, which must be installed
+  first ([Pinedra GPU on Patreon](https://www.patreon.com/pinedragpu/posts/pinedra-gpu-for-175129847)).
 
-These need only GCC, CMake, Python 3 and SDL3, or devkitPro for the 3DS. The releases have them ready to play.
+These need only GCC, CMake, Python 3 and SDL3, or devkitPro for the 3DS, pspdev for the PSP and Docker for the
+MiSTer. The releases have them ready to play.
 
 ## Building
 

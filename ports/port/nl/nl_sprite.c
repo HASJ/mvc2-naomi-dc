@@ -113,7 +113,7 @@ int nlSprPut(const NLsprarg* a) {
 
 static int spr_put(const NLsprarg* a) {
     static const float corner[4][2] = { { 1, 1 }, { 3, 1 }, { 3, 3 }, { 1, 3 } };
-    const NL_TEX* t;
+    NL_TEX* t;
     RD_STATE s = { 0 };
     RD_VTX v[4];
     float sx = screen_x, sy = screen_y;
@@ -196,6 +196,7 @@ static int spr_put(const NLsprarg* a) {
     s.offset = (a->attr & NLSPR_COLORSET) != 0;
     s.origin = RD_SPRITE;
     s.fog = (a->attr & NLSPR_FOG_EBL) ? RD_FOG_TABLE : RD_FOG_NONE;
+    nl_tex_use(t);
     s.tex = &t->tex;
     s.palette = nl_palette_base(t, t->palette);
     rd_quad(&s, v);

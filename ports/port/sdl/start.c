@@ -10,6 +10,8 @@
 #include "ctr_front.h"
 #elif defined(__PSP__)
 #include "psp_front.h"
+#elif defined(MVC2_MISTER)
+#include "mister_front.h"
 #else
 #include "sdl_front.h"
 #endif
@@ -59,9 +61,10 @@ static const char* beside_exe(const char* path, char* buf, size_t size) {
     if (path[0] == '/' || path[0] == '\\' || (path[0] != 0 && path[1] == ':')) {
         return path;
     }
-#if defined(__3DS__) || defined(__PSP__)
+#if defined(__3DS__) || defined(__PSP__) || defined(MVC2_MISTER)
     (void)base;
-    snprintf(buf, size, "%s", path);    /* each starts in its data folder, sdmc:/3ds/mvc2 or ms0:/PSP/GAME/MVC2 */
+    /* each starts in its data folder, sdmc:/3ds/mvc2, ms0:/PSP/GAME/MVC2 or /media/fat/games/mvc2 */
+    snprintf(buf, size, "%s", path);
     return buf;
 #else
     if (base[0] == 0) {
@@ -151,7 +154,7 @@ const char* config_get(const char* key) {
 void config_set(const char* key, const char* value) {
     char* text = NULL;
     size_t len = 0;
-    char line[1100], copy[1100];
+    char line[1100], copy[1100], tmp[1110];
     int done = 0;
     FILE* f;
     keep(key, value);
@@ -186,17 +189,24 @@ void config_set(const char* key, const char* value) {
     if (f != NULL) {
         fclose(f);
     }
-    f = fopen(config_path, "w");
+    snprintf(tmp, sizeof tmp, "%s.new", config_path);
+    f = fopen(tmp, "w");
     if (f != NULL) {
+        int whole;
         if (len == 0) {
-            fputs("# where each mode's data is (arcade=, dc=), the mode to start in when both are found, and the settings\n", f);
+            whole = fputs("# where each mode's data is (arcade=, dc=), the mode to start in when both are found, and the settings\n", f) >= 0;
         } else {
-            fputs(text, f);
+            whole = fputs(text, f) >= 0;
         }
         if (!done) {
-            fprintf(f, "%s = %s\n", key, value);
+            whole = fprintf(f, "%s = %s\n", key, value) >= 0 && whole;
         }
-        fclose(f);
+        if (fclose(f) == 0 && whole) {
+            remove(config_path);
+            rename(tmp, config_path);
+        } else {
+            remove(tmp);    /* a full disk: the old settings kept */
+        }
     }
     free(text);
 }
@@ -220,6 +230,11 @@ static const char* check(int mode, const char* dir) {
 }
 
 static char told[4000];
+static int why;
+
+int pick_why(void) {
+    return why;
+}
 
 static void front_tell(const char* title, const char* text) {
     fprintf(stderr, "%s\n%s\n", title, text);
@@ -239,7 +254,7 @@ const char* pick_message(void) {
 
 /* -1 to quit */
 static int ask(const char* const path[MODES]) {
-#if !defined(__3DS__) && !defined(__PSP__)
+#if !defined(__3DS__) && !defined(__PSP__) && !defined(MVC2_MISTER)
     static const SDL_MessageBoxButtonData buttons[] = {
         { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, ARCADE, "Arcade" },
         { 0, DC, "Dreamcast" },
@@ -263,6 +278,8 @@ static int ask(const char* const path[MODES]) {
     return ctr_ask(text);
 #elif defined(__PSP__)
     return psp_ask(text);
+#elif defined(MVC2_MISTER)
+    return DC;      /* no menu yet: mode = arcade in mvc2.cfg for the other */
 #else
     if (!SDL_SUCCEEDED(SDL_ShowMessageBox(&box, &chosen))) {
         return -1;
@@ -281,6 +298,7 @@ int pick_game(int argc, char** argv) {
     int flag = -1, i;
     mode = -1;
     told[0] = 0;
+    why = PICK_QUIT;
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--arcade") == 0) {
             flag = ARCADE;
@@ -336,6 +354,7 @@ int pick_game(int argc, char** argv) {
     }
     if (mode < 0 || missing[mode] != NULL) {
         char text[4000];
+        why = mode < 0 ? PICK_NO_DATA : mode == ARCADE ? PICK_NO_ARCADE : PICK_NO_DC;
         int n = snprintf(text, sizeof text, "%s", mode < 0 ? "No game data was found.\n" : "");
         for (i = 0; i < MODES; i++) {
             if (built[i] && (mode < 0 || mode == i) && n < (int)sizeof text) {
@@ -354,7 +373,16 @@ int pick_game(int argc, char** argv) {
 }
 
 #ifdef MVC2_DC
-#if !defined(__3DS__) && !defined(__PSP__)
+#ifdef MVC2_MISTER
+static void unpack_progress(uint32_t done, uint32_t total) {
+    static uint32_t shown = ~0u;
+    uint32_t pct = total > 0 ? (uint32_t)((uint64_t)done * 100 / total) : 0;
+    if (pct / 10 != shown) {
+        shown = pct / 10;
+        host_log("unpacking the disc's files: %u%%", (unsigned)pct);
+    }
+}
+#elif !defined(__3DS__) && !defined(__PSP__)
 /* the window's title says how far it is, and the window keeps answering */
 static void unpack_progress(uint32_t done, uint32_t total) {
     static uint32_t shown = ~0u;
@@ -394,6 +422,9 @@ static int unpack_disc(const char* dir) {
     psp_unpack_screen(text);
     err = dc_image_unpack(dir, psp_unpack_progress);
     psp_unpack_screen(NULL);
+#elif defined(MVC2_MISTER)
+    (void)image;
+    err = dc_image_unpack(dir, unpack_progress);
 #else
     (void)image;
     err = dc_image_unpack(dir, unpack_progress);
@@ -413,11 +444,12 @@ static int unpack_disc(const char* dir) {
                  missing);
     }
     host_log("%s", text);
+    why = PICK_BAD_DISC;
 #if defined(__3DS__)
     ctr_rom_error = text;
 #elif defined(__PSP__)
     psp_tell("Marvel vs. Capcom 2", text);
-#else
+#elif !defined(MVC2_MISTER)
     if (getenv("MVC2_FRAMES") == NULL) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Marvel vs. Capcom 2", text, NULL);
     }

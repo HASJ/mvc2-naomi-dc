@@ -75,7 +75,7 @@ static void position(RD_VTX* d, const float* p) {
     }
 }
 
-static void state(RD_STATE* s, int translucent, const NL_TEX* t, int offset) {
+static void state(RD_STATE* s, int translucent, NL_TEX* t, int offset) {
     s->list = translucent ? RD_TRANS : RD_OPAQUE;
     s->depth = RD_GREATER;
     s->zwrite = !translucent;
@@ -86,6 +86,9 @@ static void state(RD_STATE* s, int translucent, const NL_TEX* t, int offset) {
     s->tex_alpha = 1;
     s->offset = (uint8_t)offset;
     s->origin = disp_coord ? RD_SCENE : RD_FRONT;
+    if (t != NULL) {
+        nl_tex_use(t);
+    }
     s->tex = t != NULL ? &t->tex : NULL;
     s->palette = t != NULL ? nl_palette_base(t, nl_palette_direct ? disp_palette : t->palette) : 0;
 }

@@ -162,22 +162,28 @@ static int load_file(const char* name, char* p, int size) {
 void host_save_file(const char* name, const void* p, int size) {
     char tmp[256];
     FILE* f;
+    int whole;
     snprintf(tmp, sizeof tmp, "%s.tmp", name);
     f = fopen(tmp, "wb");
     if (f == NULL) {
         return;
     }
-    if (fwrite(p, 1, (size_t)size, f) == (size_t)size && fclose(f) == 0) {
+    whole = fwrite(p, 1, (size_t)size, f) == (size_t)size;
+    if (fclose(f) == 0 && whole) {
         remove(name);
         rename(tmp, name);
     } else {
-        fclose(f);
+        remove(tmp);    /* a full disk: the old file kept */
     }
 }
 
 static void save_file(const char* name, const char* p, int size) {
 #ifdef __3DS__
     if (ctr_save_later(name, p, size)) {
+        return;
+    }
+#elif defined(MVC2_MISTER)
+    if (mister_save_later(name, p, size)) {
         return;
     }
 #endif

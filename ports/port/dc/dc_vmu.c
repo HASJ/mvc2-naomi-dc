@@ -157,6 +157,7 @@ static void format(void) {
 static void save_card(void) {
     char tmp[1110];
     FILE* f;
+    int whole;
     if (!keep) {
         return;
     }
@@ -166,14 +167,16 @@ static void save_card(void) {
     }
     snprintf(tmp, sizeof tmp, "%s.new", path);
     f = fopen(tmp, "wb");
-    if (f == NULL || fwrite(card, sizeof card, 1, f) != 1) {
+    if (f == NULL) {
         host_log("could not save the memory card to %s", tmp);
-        if (f != NULL) {
-            fclose(f);
-        }
         return;
     }
-    fclose(f);
+    whole = fwrite(card, sizeof card, 1, f) == 1;
+    if (fclose(f) != 0 || !whole) {
+        host_log("could not save the memory card to %s", tmp);
+        remove(tmp);    /* a full disk: the old card kept */
+        return;
+    }
     remove(path);
     rename(tmp, path);
 }

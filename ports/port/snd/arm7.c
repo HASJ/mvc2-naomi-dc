@@ -1081,6 +1081,13 @@ int arm7_run_interpreted(int cycles) {
 #endif
 }
 
+uint32_t arm7_code_limit(void) {
+#ifdef ARM7_JIT
+    _Static_assert(ARM7_JIT_WORDS * 4 <= DEC_N * 4, "the translators' code is in the decoded part");
+#endif
+    return DEC_N * 4;
+}
+
 void arm7_code_written(uint32_t addr, uint32_t size) {
     uint32_t i, last = addr + size < DEC_N * 4 ? addr + size : DEC_N * 4;
     if (addr < DEC_N * 4) {

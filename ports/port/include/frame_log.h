@@ -20,6 +20,17 @@ static inline uint64_t fl_now(void) {
 static inline uint64_t fl_now(void) {
     return (uint64_t)sceKernelGetSystemTimeWide() * 1000ull;
 }
+#elif defined(MVC2_MISTER)
+/* MVC2_LOAD_TIMES=1: the times kept (main_mister.c); else none, a clock read being a system call on the MiSTer's A9 */
+extern int fl_timing;
+static inline uint64_t fl_now(void) {
+    struct timespec ts;
+    if (!fl_timing) {
+        return 0;
+    }
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+}
 #else
 static inline uint64_t fl_now(void) {
     struct timespec ts;

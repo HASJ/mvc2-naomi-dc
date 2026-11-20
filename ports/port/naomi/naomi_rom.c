@@ -4,6 +4,8 @@
  * ic11 at 0, the mask ROMs from 0x800000 8 MB each, then ic31 again; from 0x8000000 ic31 and ic32s as one
  * 32-bit wide ROM; 0x400000 mirrors 0x1200000. Read 64 KB blocks at a time through a cache. The files
  * can be in MAME's zip of the set instead, which is unpacked once into an image of the address space.
+ * On the MiSTer the files (or the image) are mapped: the kernel's page cache holds the blocks, and our cache only
+ * the 32-bit wide ROM's, which are put together.
  */
 
 #include <stdio.h>
@@ -15,6 +17,11 @@
 #define make_dir(d) _mkdir(d)
 #else
 #define make_dir(d) mkdir(d, 0777)
+#endif
+
+#ifdef MVC2_MISTER
+#define ROM_MAPPED
+#include <sys/mman.h>
 #endif
 
 #include "naomi_host.h"
@@ -78,6 +85,10 @@ static struct {
     uint32_t used;
 } slot[CACHE_BLOCKS];
 static uint32_t clock_now;
+#ifdef ROM_MAPPED
+static const uint8_t* mapped[NFILES + 1];   /* each file's, or NULL */
+static const uint8_t* mapped_image;
+#endif
 
 static FILE* open_file(const char* dir, const char* name) {
     char path[1024];
@@ -180,10 +191,41 @@ static uint8_t* take_slot(uint32_t b) {
     return slot[s].data;
 }
 
+#ifdef ROM_MAPPED
+static const uint8_t* map_file(FILE* f, uint32_t size) {
+    void* p = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fileno(f), 0);
+    return p != MAP_FAILED ? p : NULL;
+}
+
+/* block b where it is mapped as it is, else NULL (the wide ROM's, past the files, a file not mapped) */
+static const uint8_t* mapped_block(uint32_t b) {
+    uint32_t at = b << BLOCK_SHIFT;
+    size_t i;
+    if (mapped_image != NULL) {
+        return mapped_image + at;
+    }
+    if (at >= MIRROR_TO && at < MIRROR_TO + MIRROR_SIZE) {
+        at += MIRROR_FROM - MIRROR_TO;
+    }
+    for (i = 0; i < NFILES && at < WIDE_BASE; i++) {
+        if (at >= files[i].offset && at < files[i].offset + files[i].size) {
+            return mapped[i] != NULL ? mapped[i] + (at - files[i].offset) : NULL;
+        }
+    }
+    return NULL;
+}
+#endif
+
 /* last is the request's last block, for a reader reading ahead */
 static const uint8_t* block(uint32_t b, uint32_t last) {
     int s = slot_of[b];
     uint8_t* d;
+#ifdef ROM_MAPPED
+    const uint8_t* m = mapped_block(b);
+    if (m != NULL) {
+        return m;
+    }
+#endif
     if (s >= 0) {
         slot[s].used = ++clock_now;
         return slot[s].data;
@@ -201,6 +243,15 @@ static const uint8_t* block(uint32_t b, uint32_t last) {
 
 int naomi_rom_cached(uint32_t b) {
     return b < ROM_BLOCKS && slot_of[b] >= 0;
+}
+
+uint32_t naomi_rom_held(void) {
+    uint32_t n = 0;
+    int i;
+    for (i = 0; i < CACHE_BLOCKS; i++) {
+        n += slot[i].data != NULL ? BLOCK_SIZE : 0;
+    }
+    return n;
 }
 
 /* a block the reader read ahead */
@@ -280,6 +331,9 @@ static int open_files(const char* dir) {
         if (rom_file[i] == NULL) {
             return 0;
         }
+#ifdef ROM_MAPPED
+        mapped[i] = map_file(rom_file[i], i < NFILES ? files[i].size : WIDE_SIZE);
+#endif
     }
     return 1;
 }
@@ -287,6 +341,12 @@ static int open_files(const char* dir) {
 static void close_files(void) {
     size_t i;
     for (i = 0; i <= NFILES; i++) {
+#ifdef ROM_MAPPED
+        if (mapped[i] != NULL) {
+            munmap((void*)mapped[i], i < NFILES ? files[i].size : WIDE_SIZE);
+            mapped[i] = NULL;
+        }
+#endif
         if (rom_file[i] != NULL) {
             fclose(rom_file[i]);
             rom_file[i] = NULL;
@@ -433,6 +493,9 @@ int naomi_rom_open(const char* dir) {
                 return 0;
             }
             setvbuf(image, NULL, _IONBF, 0);
+#ifdef ROM_MAPPED
+            mapped_image = map_file(image, ROM_SIZE);
+#endif
         } else if (!open_files(dir)) {
             close_files();
             return 0;
@@ -449,6 +512,12 @@ void naomi_rom_close(void) {
         use_reader = 0;
     }
     if (image != NULL) {
+#ifdef ROM_MAPPED
+        if (mapped_image != NULL) {
+            munmap((void*)mapped_image, ROM_SIZE);
+            mapped_image = NULL;
+        }
+#endif
         fclose(image);
         image = NULL;
     }

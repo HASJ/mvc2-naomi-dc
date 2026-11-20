@@ -21,7 +21,13 @@
 
 NL_TEX nl_tex[NL_MAX_TEX];
 int nl_tex_offset;
+int nl_tex_later;
 static uint32_t serials;    /* each change of a texture's texels takes the next */
+static uint32_t drawn;      /* frames given to the renderer */
+
+/* Texels the game has freed, given back once RETIRE_FRAMES more frames have gone to the renderer: a frame in flight
+   may still read them. */
+#define RETIRE_FRAMES 3
 
 /* Kamui's texture types: the kind in bits 8-15, the texel format in 0-7 */
 
@@ -224,6 +230,7 @@ static size_t source_size(int kind, int w, int h);
 
 int nl_tex_sources;
 int nl_tex_sync;
+int nl_tex_fresh;
 
 /* The 3DS tiles a PAL4 texture straight from its source, kept after the texels. A VQ square keeps only its source,
    unpacked when its GPU texture is made. Elsewhere, with nl_tex_sources, a PAL4 or VQ texture keeps only its source,
@@ -273,9 +280,14 @@ static void unpack_kept(const RD_TEXTURE* t, RD_TEXTURE* out) {
     out->unpack = NULL;
 }
 
+static int tex_format(int type) {
+    int kind = type >> 8 & 0xff;
+    return kind >= KM_PAL4 && kind <= KM_PAL8_MM ? (kind <= KM_PAL4_MM ? RD_PAL4 : RD_PAL8) : type & 0xff;
+}
+
 static int unpack_texels(RD_TEXTURE* t, int type, const void* data) {
     int kind = type >> 8 & 0xff, k;
-    t->format = kind >= KM_PAL4 && kind <= KM_PAL8_MM ? (kind <= KM_PAL4_MM ? RD_PAL4 : RD_PAL8) : type & 0xff;
+    t->format = tex_format(type);
     t->unpack = NULL;
     if (!texels_made(type, t->width, t->height)) {
         if (kind == KM_VQ || kind == KM_VQ_MM || nl_tex_sources) {
@@ -321,6 +333,17 @@ static void keep_source(NL_TEX* t, const void* src, size_t bytes) {
     t->tex.twiddled = (t->type >> 8 & 0xff) == KM_PAL4 ? at : NULL;
 }
 
+static void retire(void* texels);
+
+/* the old texels kept while a frame in flight may read them */
+static void let_go(void* texels) {
+    if (nl_tex_fresh) {
+        retire(texels);
+    } else {
+        free(texels);
+    }
+}
+
 /* a load that changes no texels keeps the serial */
 static int unpack_again(NL_TEX* t, const void* src, size_t bytes, size_t texel) {
     size_t kept = source_kept(t->type, t->tex.width, t->tex.height), room = bytes + kept;
@@ -349,7 +372,7 @@ static int unpack_again(NL_TEX* t, const void* src, size_t bytes, size_t texel) 
         set_mips(&t->tex, texel);
         return 1;
     }
-    free(old);
+    let_go(old);
     t->bytes = room;
     keep_source(t, src, bytes);
     t->tex.serial = ++serials;
@@ -477,8 +500,6 @@ static size_t texel_bytes(int type, int w, int h, size_t* texel) {
     return mipmapped(kind) && w == h ? bytes * 4 / 3 + *texel : bytes;
 }
 
-static void retire(void* texels);
-
 #ifdef __3DS__
 /* MVC2_TEX_KEEP_FREED=1: a small texture the game frees kept as it was, with its serial, while the kept ones come to
    no more than KEEP_MOST bytes; loaded again from a source of the same hash it is back as it was, unpacked again
@@ -522,11 +543,49 @@ static void kept_let_go_all(void) {
 }
 #endif
 
+/* with nl_tex_later: a texture no frame in flight draws, whose texels can wait for its next draw */
+static int may_wait(const NL_TEX* t, int type, int w, int h, size_t n) {
+#ifdef __3DS__
+    (void)t, (void)type, (void)w, (void)h, (void)n;
+    return 0;       /* ctr_render reads loaded textures ahead of their draws */
+#else
+    static int on = -1;
+    if (on < 0) {
+        const char* e = getenv("MVC2_TEX_LATER");
+        on = e != NULL ? atoi(e) != 0 : nl_tex_later;
+    }
+    return on && n != 0 && texels_made(type, w, h) && drawn - t->used >= RETIRE_FRAMES;
+#endif
+}
+
+/* the source kept after the texels, for the first draw */
+static void wait_source(NL_TEX* t, const void* src, size_t at, size_t n) {
+    memcpy((uint8_t*)t->tex.texels + at, src, n);
+    t->later = at;
+}
+
+static void unpack_waiting(NL_TEX* t) {
+    uint64_t c0 = fl_now();
+    const uint8_t* src = (const uint8_t*)t->tex.texels + t->later;
+    t->later = 0;
+    unpack_texels(&t->tex, t->type, src);
+    fl.conv_ns += fl_now() - c0;
+    fl.tex_conv++;
+}
+
+void nl_tex_use(NL_TEX* t) {
+    t->used = drawn;
+    if (t->later != 0) {
+        unpack_waiting(t);
+    }
+}
+
 /* the texels are copied, so the game may reuse the memory */
 static int tex_load(NL_TEX* t, const NLthd* thd) {
     int w = thd->width, h = thd->height, kind = thd->type >> 8 & 0xff, levels = 0;
     size_t texel, bytes, room, n;
     uint64_t hash;
+    int wait;
     if (w <= 0 || h <= 0 || w > 1024 || h > 1024) {
         return 0;
     }
@@ -569,23 +628,37 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
         if (n != 0 && hash_ok[t - nl_tex] && loaded_hash[t - nl_tex] == hash) {
             return 1;                                   /* the same source: the same texels and serial */
         }
+        room = source_at(thd->type, w, h, bytes) + source_kept(thd->type, w, h);
+        if (may_wait(t, thd->type, w, h, n) && t->bytes >= room + n) {
+            wait_source(t, thd->address, room, n);
+            keep_source(t, thd->address, bytes);
+            t->tex.serial = ++serials;
+            loaded_hash[t - nl_tex] = hash;
+            hash_ok[t - nl_tex] = 1;
+            return 1;
+        }
+        if (t->later != 0) {
+            unpack_waiting(t);      /* unpack_again compares with the texels there */
+        }
         { uint64_t c0 = fl_now(); t->loaded = unpack_again(t, thd->address, bytes, texel); fl.conv_ns += fl_now() - c0; fl.tex_conv++; }
         loaded_hash[t - nl_tex] = hash;
         hash_ok[t - nl_tex] = n != 0 && t->loaded;
         return t->loaded;
     }
     hash_ok[t - nl_tex] = 0;
+    t->later = 0;
     room = source_at(thd->type, w, h, bytes) + source_kept(thd->type, w, h);
-    if (t->tex.texels == NULL || t->bytes < room) {
-        free(t->tex.texels);
-        t->tex.texels = host_try_malloc(room);
+    wait = may_wait(t, thd->type, w, h, n);
+    if (t->tex.texels == NULL || t->bytes < room + (wait ? n : 0) || nl_tex_fresh) {
+        let_go(t->tex.texels);
+        t->tex.texels = host_try_malloc(room + (wait ? n : 0));
 #ifdef __3DS__
         if (t->tex.texels == NULL && kept_bytes != 0) {
             kept_let_go_all();
             t->tex.texels = host_try_malloc(room);
         }
 #endif
-        t->bytes = room;
+        t->bytes = room + (wait ? n : 0);
         if (t->tex.texels == NULL) {
             static int told;
             if (told++ < 8) {
@@ -600,7 +673,17 @@ static int tex_load(NL_TEX* t, const NLthd* thd) {
     t->tex.levels = levels;
     set_mips(&t->tex, texel);
     t->type = thd->type;
-    { uint64_t c0 = fl_now(); t->loaded = unpack_texels(&t->tex, thd->type, thd->address); fl.conv_ns += fl_now() - c0; fl.tex_conv++; }
+    if (wait) {
+        t->tex.format = tex_format(thd->type);
+        t->tex.unpack = NULL;
+        wait_source(t, thd->address, room, n);
+        t->loaded = 1;
+    } else {
+        uint64_t c0 = fl_now();
+        t->loaded = unpack_texels(&t->tex, thd->type, thd->address);
+        fl.conv_ns += fl_now() - c0;
+        fl.tex_conv++;
+    }
     keep_source(t, thd->address, bytes);
     t->tex.serial = ++serials;
     loaded_hash[t - nl_tex] = hash;
@@ -676,6 +759,20 @@ static uint64_t keyed_hash(const uint8_t* src, size_t n) {
     return e->hash;
 }
 
+/* with nl_tex_fresh, new memory for a reload's texels (levels none); 0 when there is none */
+static int fresh_texels(NL_TEX* t) {
+    void* p;
+    if (!nl_tex_fresh) {
+        return 1;
+    }
+    if ((p = host_try_malloc(t->bytes)) == NULL) {
+        return 0;
+    }
+    retire(t->tex.texels);
+    t->tex.texels = p;
+    return 1;
+}
+
 /* 0 when the reload is not one the cache takes; the source's first `drawn` bytes alone tell one reload from another */
 static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes, size_t drawn) {
     int kind = t->type >> 8 & 0xff, i, made = texels_made(t->type, t->tex.width, t->tex.height);
@@ -701,6 +798,9 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes, size_t dra
             c->used = ++cache_clock;
             if (t->tex.serial != c->serial) {
                 if (made) {
+                    if (!fresh_texels(t)) {
+                        return 0;
+                    }
                     memcpy(t->tex.texels, cache_texels[sn][i], bytes);
                     HOST_WRITTEN(HOST_W_TEX, bytes);
                 }
@@ -717,7 +817,7 @@ static int reload_cached(NL_TEX* t, const uint8_t* src, size_t bytes, size_t dra
     }
     if (made) {
         uint8_t* out = cache_texels[sn][e - set];
-        if (!unpack_level(kind, t->tex.width, t->tex.height, src, out)) {
+        if (!fresh_texels(t) || !unpack_level(kind, t->tex.width, t->tex.height, src, out)) {
             return 0;
         }
         memcpy(t->tex.texels, out, bytes);
@@ -742,6 +842,9 @@ static int reload(NL_TEX* t, const void* texels, int side) {
     if (!t->loaded) {
         return 0;
     }
+    if (t->later != 0) {
+        unpack_waiting(t);      /* a reload changes part of them */
+    }
     if (t->tex.corner != side) {
         t->tex.corner = side;
         t->tex.serial = ++serials;
@@ -762,10 +865,6 @@ int nl_tex_reload(NL_TEX* t, const void* texels) {
     return reload(t, texels, 0);
 }
 
-/* Texels the game has freed, given back once RETIRE_FRAMES more frames have gone to the renderer: a frame in flight
-   may still read them. */
-#define RETIRE_FRAMES 3
-
 typedef struct {
     void* texels;
     uint32_t drawn;
@@ -773,7 +872,6 @@ typedef struct {
 
 static RETIRED* retired;
 static int nretired, retired_room;
-static uint32_t drawn;          /* frames given to the renderer */
 
 static void retire(void* texels) {
     if (texels == NULL) {
@@ -849,6 +947,7 @@ void nl_tex_free(NL_TEX* t) {
     }
 #endif
     t->loaded = 0;
+    t->later = 0;
     retire(t->tex.texels);
     t->tex.texels = NULL;
     t->tex.levels = 0;

@@ -72,6 +72,7 @@ void naomi_rom_set_reader(const NAOMI_ROM_READER* reader);
 int naomi_rom_make_image(const char* dir, const char* path, void (*progress)(uint32_t done, uint32_t total));
 const char* naomi_rom_image_name(void);
 int naomi_rom_cached(uint32_t block);
+uint32_t naomi_rom_held(void);              /* the bytes the ROM cache holds */
 void naomi_rom_put(uint32_t block, const void* data);   /* a block read ahead, into the cache */
 /* the set's files from its zip (naomi_zip.c) */
 typedef struct NAOMI_ZIP NAOMI_ZIP;
@@ -151,6 +152,8 @@ uint32_t ctr_stream_times(float* mean, float* most, uint32_t* dropped);   /* the
 int ctr_rom_dma(uint32_t offset, void* dst, uint32_t size);   /* the game's DMA from the ROM, 1 when read (ctr_rom.c) */
 int ctr_save_later(const char* name, const void* data, int size); /* a save written by a thread, 1 when taken */
 void ctr_save_flush(void);                                       /* every save written (ctr_save.c) */
+int mister_save_later(const char* name, const void* data, int size);  /* the same on the MiSTer (mister_save.c) */
+void mister_save_flush(void);
 void host_save_file(const char* name, const void* p, int size);  /* written whole or not at all (nl_am.c) */
 int ctr_rom_packed(uint32_t offset, void* dst, uint32_t size); /* and its packed reads, 1 when given */
 void dc_gd_read_elsewhere(const char* name);   /* a file read on another reader, as if by gdFsRead */
@@ -192,6 +195,8 @@ void* host_keep_block(size_t size); /* memory kept through restarts (the sound's
 void host_present(void);
 int pick_game(int argc, char** argv);   /* start.c: from the data found */
 const char* pick_message(void);         /* why none can run ("" when the player quit) */
+enum { PICK_QUIT, PICK_NO_DATA, PICK_NO_ARCADE, PICK_NO_DC, PICK_BAD_DISC };
+int pick_why(void);                     /* why pick_game or start_game gave up: a PICK_ */
 const char* config_get(const char* key);             /* mvc2.cfg's, or NULL */
 const char* host_save_path(const char* name);
 void config_set(const char* key, const char* value); /* and saves mvc2.cfg */

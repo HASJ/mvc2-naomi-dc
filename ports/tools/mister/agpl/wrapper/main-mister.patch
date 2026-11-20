@@ -1,0 +1,352 @@
+diff --git a/fpga_io.cpp b/fpga_io.cpp
+index 0272742..9a927b3 100644
+--- a/fpga_io.cpp
++++ b/fpga_io.cpp
+@@ -8,6 +8,7 @@
+ #include <termios.h>
+ #include <sys/types.h>
+ #include <sys/stat.h>
++#include <sys/wait.h>
+ 
+ #include "fpga_io.h"
+ #include "file_io.h"
+@@ -423,12 +424,13 @@ static int make_env(const char *name, const char *cfg)
+ 	return 0;
+ }
+ 
+-int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
++static int fpga_load_rbf_inner(const char *name, const char *cfg)
+ {
+-	OsdDisable();
+ 	static char path[1024];
+ 	int ret = 0;
+ 
++	OsdDisable();
++
+ 	if(cfg)
+ 	{
+ 		fpga_core_reset(1);
+@@ -503,6 +505,22 @@ int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
+ 	}
+ 	close(rbf);
+ 
++	return ret;
++}
++
++int fpga_load_rbf_no_restart(const char *name)
++{
++	return fpga_load_rbf_inner(name, nullptr);
++}
++
++int fpga_load_rbf(const char *name, const char *cfg, const char *xml)
++{
++	static char path[1024];
++	if(name[0] == '/') strcpy(path, name);
++	else sprintf(path, "%s/%s", !strcasecmp(name, "menu.rbf") ? getStorageDir(0) : getRootDir(), name);
++
++	int ret = fpga_load_rbf_inner(name, cfg);
++
+ 	app_restart(!strcasecmp(name, "menu.rbf") ? "menu.rbf" : path, xml);
+ 	return ret;
+ }
+@@ -612,8 +630,17 @@ char *getappname()
+ 	return dest;
+ }
+ 
++extern volatile sig_atomic_t g_child_pid;
++
+ void app_restart(const char *path, const char *xml, const char *exe)
+ {
++	pid_t child = (pid_t)g_child_pid;
++	if (child > 0)
++	{
++		kill(child, SIGTERM);
++		waitpid(child, NULL, 0);
++	}
++
+ 	sync();
+ 	fpga_core_reset(1);
+ 
+diff --git a/fpga_io.h b/fpga_io.h
+index cba66c3..a828942 100644
+--- a/fpga_io.h
++++ b/fpga_io.h
+@@ -34,6 +34,7 @@ int fpga_get_fio_size();
+ int fpga_get_io_version();
+ 
+ int fpga_load_rbf(const char *name, const char *cfg = 0, const char *xml = 0);
++int fpga_load_rbf_no_restart(const char *name);
+ 
+ void reboot(int cold);
+ void app_restart(const char *path, const char *xml = 0, const char *exe = 0);
+diff --git a/input.cpp b/input.cpp
+index 1389006..f7edd69 100644
+--- a/input.cpp
++++ b/input.cpp
+@@ -1413,6 +1413,7 @@ static uint32_t tmp_axis[4];
+ static int tmp_axis_n = 0;
+ 
+ static int grabbed = 1;
++static int input_joy_passthrough = 0;
+ 
+ static uint32_t osd_timer = 0;
+ static uint32_t map_advance_timer = 0;
+@@ -2087,7 +2088,11 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
+ 		// on OSD exit and causes combinations to match when partial buttons are pressed.
+ 		if (!user_io_osd_is_visible()) osdbtn = 0;
+ 
+-		if (user_io_osd_is_visible() || (bnum == BTN_OSD))
++		if (input_btncheck_active && bnum != BTN_OSD)
++		{
++			set_key_state(num, code, press, mask);
++		}
++		else if (user_io_osd_is_visible() || (bnum == BTN_OSD))
+ 		{
+ 			mask &= ~JOY_BTN3;
+ 			if (press)
+@@ -2203,7 +2208,7 @@ static void joy_digital(int jnum, uint32_t mask, uint32_t code, char press, int
+ 			}
+ 			input_cb(&ev, 0, 0, true);
+ 		}
+-		else if (video_fb_state())
++		else if (video_fb_state() && !input_joy_passthrough)
+ 		{
+ 			switch (mask)
+ 			{
+@@ -2746,6 +2751,17 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
+ 				{
+ 					// not defined try to guess the mapping
+ 					map_joystick(input[dev].map, input[dev].mmap);
++
++					// When passthrough is active and the core defines no
++					// buttons (no J, in CONF_STR), map_joystick only fills
++					// the d-pad.  Copy any missing standard button entries
++					// from mmap so they flow through to shared memory.
++					if (input_joy_passthrough)
++					{
++						for (int b = SYS_BTN_A; b <= SYS_BTN_START; b++)
++							if (!input[dev].map[b] && input[dev].mmap[b])
++								input[dev].map[b] = input[dev].mmap[b];
++					}
+ 				}
+ 				else
+ 				{
+@@ -3288,7 +3304,7 @@ static void input_cb(struct input_event *ev, struct input_absinfo *absinfo, int
+ 					if (osd_event == 2) joy_digital(input[dev].num, 0, 0, 0, BTN_OSD);
+ 				}
+ 
+-				if (user_io_osd_is_visible() || video_fb_state())
++				if ((user_io_osd_is_visible() && !input_btncheck_active) || (video_fb_state() && !input_joy_passthrough))
+ 				{
+ 					if (ev->value <= 1)
+ 					{
+@@ -5935,6 +5951,10 @@ void key_update_frames_held()
+ 	}
+ }
+ 
++static uint32_t joy_mask_export[NUMPLAYERS] = {};
++static uint32_t joy_mask_raw[NUMPLAYERS] = {};
++int input_btncheck_active = 0;
++
+ int input_poll(int getchar)
+ {
+ 
+@@ -5989,6 +6009,7 @@ int input_poll(int getchar)
+ 	for (int i = 0; i < NUMPLAYERS; i++) {
+ 		joy_mask[i] = build_joy_mask(i);
+ 		autofire_mask[i] = build_autofire_mask(i);
++		joy_mask_raw[i] = joy_mask[i];
+ 	}
+ 
+ 	if (grabbed)
+@@ -6001,16 +6022,24 @@ int input_poll(int getchar)
+ 				joy_mask_prev[i] = joy_mask[i];
+ 				user_io_digital_joystick(i, joy_mask[i], newdir);
+ 			}
++			joy_mask_export[i] = joy_mask[i];
+ 		}
+ 	}
++	else if (input_joy_passthrough)
++	{
++		for (int i = 0; i < NUMPLAYERS; i++)
++			joy_mask_export[i] = joy_mask[i] | autofire_mask[i];
++	}
+ 
+-	if (!grabbed || user_io_osd_is_visible())
++	if ((!grabbed || user_io_osd_is_visible()) && !input_joy_passthrough)
+ 	{
+ 		for (int i = 0; i < NUMPLAYERS; i++)
+ 		{
+ 			if(joy_mask[i]) user_io_digital_joystick(i, 0, 1);
+ 		}
+-		memset(key_states, 0, sizeof(key_states));
++		if (!input_btncheck_active)
++			memset(key_states, 0, sizeof(key_states));
++		memset(joy_mask_export, 0, sizeof(joy_mask_export));
+ 	}
+ 
+ 	if (mouse_req)
+@@ -6547,3 +6576,20 @@ void input_advanced_save_entry(advancedButtonMap *abm_entry, int devnum)
+ 		return;
+ 	}
+ }
++
++void input_get_joy_mask(uint32_t *out, int count)
++{
++	for (int i = 0; i < count && i < NUMPLAYERS; i++)
++		out[i] = joy_mask_export[i];
++}
++
++void input_get_joy_mask_raw(uint32_t *out, int count)
++{
++	for (int i = 0; i < count && i < NUMPLAYERS; i++)
++		out[i] = joy_mask_raw[i];
++}
++
++void input_set_joy_passthrough(int enable)
++{
++	input_joy_passthrough = enable;
++}
+diff --git a/input.h b/input.h
+index 97c9b1d..2551a64 100644
+--- a/input.h
++++ b/input.h
+@@ -130,6 +130,11 @@ void input_lightgun_save(int idx, int32_t *cal);
+ 
+ void input_switch(int grab);
+ int input_state();
++void input_get_joy_mask(uint32_t *out, int count);
++void input_get_joy_mask_raw(uint32_t *out, int count);
++void input_set_joy_passthrough(int enable);
++
++extern int input_btncheck_active;
+ void input_uinp_destroy();
+ 
+ extern char joy_bnames[NUMBUTTONS][32];
+diff --git a/menu.cpp b/menu.cpp
+index a8d8bd8..82eaf78 100644
+--- a/menu.cpp
++++ b/menu.cpp
+@@ -224,6 +224,7 @@ static uint32_t parentstate;
+ static uint32_t menusub = 0;
+ static uint32_t menusub_last = 0; //for when we allocate it dynamically and need to know last row
+ static uint64_t menumask = 0; // Used to determine which rows are selectable...
++int menu_core_entry = 0;
+ static uint32_t menu_timer = 0;
+ static uint32_t menu_save_timer = 0;
+ static uint32_t load_addr = 0;
+@@ -2749,16 +2750,20 @@ void HandleUI(void)
+ 			parentstate = MENU_COMMON1;
+ 			int n;
+ 
++			if (menusub == 0 && !menu_core_entry) menusub = 2;
+ 			while(1)
+ 			{
+ 				n = 0;
+-				menumask = 0x7805d;
++				menumask = menu_core_entry ? 0x7805d : 0x7805c;
+ 
+ 				if (!menusub) firstmenu = 0;
+ 				adjvisible = 0;
+ 
+-				MenuWrite(n++, " Core                      \x16", menusub == 0, 0);
+-				MenuWrite(n++);
++				if (menu_core_entry)
++				{
++					MenuWrite(n++, " Core                      ", menusub == 0, 0);
++					MenuWrite(n++);
++				}
+ 
+ 				if (cfg.osd_lock[0] && !cfg.osd_lock_time)
+ 				{
+diff --git a/menu.h b/menu.h
+index b69bdfb..db510d5 100644
+--- a/menu.h
++++ b/menu.h
+@@ -6,6 +6,7 @@
+ void SelectFile(const char* path, const char* pFileExt, int Options, unsigned char MenuSelect, unsigned char MenuCancel);
+ 
+ void HandleUI(void);
++extern int menu_core_entry;
+ void menu_key_set(unsigned int c);
+ void menu_process_save();
+ void PrintDirectory(int expand = 0);
+diff --git a/user_io.cpp b/user_io.cpp
+index 89f33e2..5ca1996 100644
+--- a/user_io.cpp
++++ b/user_io.cpp
+@@ -166,6 +166,17 @@ void user_io_set_core_name(const char *name)
+ 	printf("Core name set to \"%s\"\n", core_name);
+ }
+ 
++void user_io_wrapper_set_core_names(const char *core, const char *orig)
++{
++	const char *core_value = (core && core[0]) ? core : "";
++	const char *orig_value = (orig && orig[0]) ? orig : core_value;
++
++	snprintf(core_name, sizeof(core_name), "%s", core_value);
++	snprintf(orig_name, sizeof(orig_name), "%s", orig_value);
++	ovr_name[0] = 0;
++	ovr_samedir = 0;
++}
++
+ char *user_io_get_core_name(int orig)
+ {
+ 	return orig ? orig_name : core_name;
+@@ -529,12 +540,21 @@ uint32_t user_io_hd_mask(const char *opt)
+ 	return start;
+ }
+ 
++// Sticky flags for T/R trigger detection. HandleUI() pulses triggers
++// (set 1 then 0) within a single call, so external pollers can't see them.
++// This captures the pulse so the wrapper can detect it later.
++static volatile uint32_t g_status_trigger_flags = 0;
++
+ void user_io_status_set(const char *opt, uint32_t value, int ex)
+ {
+ 	int start, end;
+ 	int size = user_io_status_bits(opt, &start, &end, ex);
+ 	if (!size) return;
+ 
++	// Capture trigger pulses (single-bit set to 1) as sticky flags
++	if (value == 1 && size == 1)
++		g_status_trigger_flags |= (1u << start);
++
+ 	int s = start / 8;
+ 	int e = end / 8;
+ 
+@@ -554,6 +574,13 @@ void user_io_status_set(const char *opt, uint32_t value, int ex)
+ 	}
+ }
+ 
++uint32_t user_io_status_trigger_take()
++{
++	uint32_t flags = g_status_trigger_flags;
++	g_status_trigger_flags = 0;
++	return flags;
++}
++
+ int user_io_status_save(const char *filename)
+ {
+ 	return FileSaveConfig(filename, cur_status, sizeof(cur_status));
+diff --git a/user_io.h b/user_io.h
+index 79bda2e..8d372b9 100644
+--- a/user_io.h
++++ b/user_io.h
+@@ -184,6 +184,7 @@ uint32_t user_io_status_mask(const char *opt);
+ uint32_t user_io_hd_mask(const char *opt);
+ uint32_t user_io_status_get(const char *opt, int ex = 0);
+ void user_io_status_set(const char *opt, uint32_t value, int ex = 0);
++uint32_t user_io_status_trigger_take();
+ int user_io_status_save(const char *filename);
+ void user_io_status_reset();
+ 
+@@ -192,6 +193,8 @@ void user_io_write_gameid(const char *filename, uint32_t crc32_val = 0, const ch
+ int  user_io_file_mount(const char *name, unsigned char index = 0, char pre = 0, int pre_size = 0);
+ void user_io_bufferinvalidate(unsigned char index);
+ char *user_io_make_filepath(const char *path, const char *filename);
++void user_io_set_core_name(const char *name);
++void user_io_wrapper_set_core_names(const char *core_name, const char *orig_name);
+ char *user_io_get_core_name(int orig = 0);
+ char *user_io_get_core_name2();
+ char *user_io_get_core_path(const char *suffix = NULL, int recheck = 0);

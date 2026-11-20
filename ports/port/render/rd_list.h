@@ -207,7 +207,7 @@ extern RD_FOG rd_fog;
 
 /* the quality words rd_quality last took, each 1 when given; a back end does what it can of them */
 typedef struct {
-    uint8_t half, fast, nofog, nosort;
+    uint8_t half, fast, nofog, nosort, lite;
 } RD_QUALITY;
 
 extern RD_QUALITY rd_q;

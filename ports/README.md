@@ -1,13 +1,14 @@
 # Ports
 
-A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC, Nintendo 3DS and PSP,
+A port of Marvel vs. Capcom 2, the NAOMI arcade game and the Dreamcast version, to PC, Nintendo 3DS, PSP and MiSTer,
 built on their decompilation, which is the rest of this repository. It is not an emulator: the decompiled
 game is compiled for the host, and the port supplies what the NAOMI board, the Dreamcast and Sega's libraries
 did.
 
 To play on Windows, unzip a release, put the game's data in `roms/mvsc2` and `disc` beside `mvc2.exe`, and
 run it; `PLAYING.md` has the keys and settings. For the 3DS, see [3DS.md](3DS.md); for the PSP, which plays the
-Dreamcast version, [PSP.md](PSP.md).
+Dreamcast version, [PSP.md](PSP.md); for the MiSTer, with the Pinedra GPU core,
+[MISTER.md](MISTER.md).
 
 For the Dreamcast version, on the PC, the 3DS and the PSP alike, put any one of these in `disc`:
 

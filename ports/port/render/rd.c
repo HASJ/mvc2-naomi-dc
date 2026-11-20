@@ -21,6 +21,7 @@ void rd_quality(const char* words) {
     rd_q.fast = words != NULL && strstr(words, "fast") != NULL;
     rd_q.nofog = words != NULL && strstr(words, "nofog") != NULL;
     rd_q.nosort = words != NULL && strstr(words, "nosort") != NULL;
+    rd_q.lite = words != NULL && strstr(words, "lite") != NULL;
 }
 
 #ifdef RD_SHARED_POOL

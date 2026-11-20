@@ -24,6 +24,8 @@ typedef struct {
     int loaded;
     int palette;        /* the bank a sprite draws with */
     size_t bytes;
+    size_t later;       /* with nl_tex_later: where in texels its source waits for its first draw, else 0 */
+    uint32_t used;      /* the frame given to the renderer that last drew it */
 } NL_TEX;
 
 #define NL_MAX_TEX 0x1000
@@ -34,6 +36,7 @@ extern int nl_palette_direct;
 
 int nl_tex_load(NL_TEX* t, const NLthd* thd);
 int nl_tex_reload(NL_TEX* t, const void* texels);
+void nl_tex_use(NL_TEX* t);         /* before a draw takes its texels */
 void nl_tex_free(NL_TEX* t);        /* the game's free: its texels given back when the renderer is past them */
 void nl_tex_frame(void);            /* before each frame is given to the renderer */
 void nl_tex_free_all(void);
@@ -42,9 +45,15 @@ int nl_lz_key(const void* p, size_t n, uint64_t* key);   /* bytes from the cell 
 /* set by a front end before the game starts: PAL4 and VQ textures kept as their sources, rd_texture's unpack making
    their texels when the renderer wants them (not for rd_soft) */
 extern int nl_tex_sources;
+/* set by a front end before the game starts: a texture loaded while no frame in flight draws it is unpacked when it
+   is first drawn (most of those a round loads never are); MVC2_TEX_LATER=0 or 1 overrides */
+extern int nl_tex_later;
 /* set by a front end whose renderer is done with a frame when it returns: freed texels go after the next frames
    whether drawn or not */
 extern int nl_tex_sync;
+/* set by a front end whose renderer reads a frame while the game makes the next: a texture's new texels go to new
+   memory, its old given back as a free's are */
+extern int nl_tex_fresh;
 size_t nl_tex_held(void);           /* the bytes the textures take */
 
 /* nlObjPutSetFadeColor's, 0 to 1 */

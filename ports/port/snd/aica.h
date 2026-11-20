@@ -47,6 +47,7 @@ extern void (*aica_write_log)(uint32_t off, uint32_t v, uint32_t mask);
 extern uint32_t aica_watch_gen;     /* moved by each chunk and each write to a channel's first word, its loop start
                                        or 0x280C: what snd_drv.c's channel watch reads */
 void aica_set_dsp(int on);
+void aica_set_dsp_jit(int mode);   /* the DSP's program as the host's code: 1 on, 2 each sample checked, 0 off */
 void aica_set_reverb(int on);     /* a cheap reverb in the DSP's place, when it is off */
 void aica_set_filter(int on);
 void aica_set_half(int on);         /* the plain chunks mixed at half the rate */

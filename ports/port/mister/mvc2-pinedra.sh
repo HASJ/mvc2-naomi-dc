@@ -1,0 +1,18 @@
+#!/bin/sh
+# /media/fat/games/mvc2/mvc2-pinedra [--arcade | --dc]: the game on the Pinedra GPU, as the MVC2 wrapper starts it
+# on the core loaded as "MVC2 Pinedra"; MVC2_* settings from env.txt beside it, NAME=value a line
+cd "$(dirname "$0")" || exit 1
+# Pinedra Config's "no start animation", as its own games take it
+grep -qx 'splash=0' /media/fat/pinedra/settings/all.cfg 2>/dev/null && export PND_SPLASH=0
+# no multisampling, as the board drew (env.txt can set PND_MSAA=1)
+export PND_MSAA=0
+# the driver one frame ahead, not its default: a frame shown a vblank or two sooner, as fast
+export PND_FRAMES_AHEAD=1
+# the sound thread (SDLAudio) on CPU1, off the game thread's CPU0: select about 1 ms a frame faster
+export PND_AUDIO_CORE=1
+if [ -f env.txt ]; then
+    set -a
+    . ./env.txt
+    set +a
+fi
+exec bin/mvc2-pinedra "$@"

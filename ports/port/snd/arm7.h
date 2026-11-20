@@ -34,6 +34,7 @@ void arm7_translate(int on);
 void arm7_translate2(int mode);     /* MVC2_ARMJIT2: the translator that keeps the guest's registers in the host's */        /* whether runs may use translated code, where the host has it */
 int arm7_run_interpreted(int cycles);   /* arm7_run without it: for another thread than the sound's */
 void arm7_code_written(uint32_t addr, uint32_t size);   /* the RAM written from outside: its code checked before it runs */
+uint32_t arm7_code_limit(void);  /* writes from it on have nothing to check */
 uint32_t arm7_code_changes(void);   /* counts those writes to the code's 32 KB */
 
 /* for snd_drv.c, which runs the driver's routines as C */

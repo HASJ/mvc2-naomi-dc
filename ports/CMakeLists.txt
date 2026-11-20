@@ -19,6 +19,17 @@ else()
     set(POINTERS ${GAME}/build)
 endif()
 option(MVC2_SDL3 "the PC front end on SDL3, with the GPU renderer (OFF: SDL2)" ON)
+# the MiSTer (DE10-Nano, 32-bit ARM Linux): no SDL, its own front end (port/mister), drawn on the Pinedra GPU core by
+# its OpenGL (rd_gl1), its libGL.so.1 loaded at run time, so linked dynamically
+option(MVC2_MISTER "the MiSTer front end" OFF)
+if(MVC2_MISTER)
+    set(MVC2_SDL3 OFF)
+    add_compile_definitions(MVC2_MISTER)
+    # Debian bullseye's gcc 10.2 made a loop into a memmove to the wrong place under -fwrapv: no loops made calls
+    add_compile_options(-fno-tree-loop-distribute-patterns)
+    # a fatal signal's stack written by backtrace(), which needs the unwind tables on ARM
+    add_compile_options(-funwind-tables)
+endif()
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 4)
     message(FATAL_ERROR "the game stores addresses in 32 bits: build for a 32-bit target (MSYS2 mingw32, or 32-bit ARM Linux)")
@@ -71,8 +82,14 @@ if(PSP)
 endif()
 
 # the game's C as SHC took it
+# -O2 on the MiSTer, gated by the PC's and Fightcade's checks; the others' stays until gated on their hardware
+if(MVC2_MISTER)
+    set(MVC2_GAME_OPT -O2 CACHE STRING "the game's C's optimization")
+else()
+    set(MVC2_GAME_OPT -O1 CACHE STRING "the game's C's optimization")
+endif()
 set(GAME_OPTIONS
-    -std=gnu89 -fwrapv -fno-strict-aliasing -fsigned-char -w -O1 -fno-delete-null-pointer-checks
+    -std=gnu89 -fwrapv -fno-strict-aliasing -fsigned-char -w ${MVC2_GAME_OPT} -fno-delete-null-pointer-checks
     -include ${PORT}/include/port_prefix.h
     -fno-toplevel-reorder -fno-zero-initialized-in-bss)
 # floats in single precision, as the SH-4's: x87's wider ones round differently
@@ -166,6 +183,7 @@ set(NAOMI_SOURCES
     ${PORT}/render/rd.c
     ${PORT}/snd/arm7.c
     ${PORT}/snd/aica.c
+    ${PORT}/snd/aica_dsp_jit.c
     ${PORT}/snd/snd_drv.c
     ${PORT}/snd/snd_nl.c
     ${PORT}/snd/s3l.c)
@@ -258,8 +276,17 @@ else()
     else()
         message(FATAL_ERROR "port/sys has coroutines and division by zero for Windows (x86) and 32-bit ARM only")
     endif()
+    if(MVC2_MISTER)
+        set(FRONT_SOURCES ${PORT}/mister/main_mister.c ${PORT}/mister/mister_pinedra.c ${PORT}/mister/mister_audio.c
+            ${PORT}/mister/mister_save.c ${PORT}/mister/mister_prof.c ${PORT}/mister/mister_input.c ${PORT}/sdl/start.c
+            ${PORT}/render/rd_gl1.c ${PORT}/render/rd_gl1_tex.c)
+        # -O3 vectorizes the translucent sort's box tests
+        set_source_files_properties(${PORT}/render/rd_gl1.c PROPERTIES COMPILE_OPTIONS -O3)
+        set_source_files_properties(${PORT}/nl/nl_obj.c ${PORT}/render/rd.c ${PORT}/nl/nl_matha.c PROPERTIES COMPILE_OPTIONS -O3)
+    else()
     set(FRONT_SOURCES ${PORT}/sdl/main_sdl.c ${PORT}/sdl/hunt.c ${PORT}/sdl/start.c ${PORT}/sdl/input_sdl.c ${PORT}/sdl/menu_sdl.c
         ${PORT}/sdl/sdl_audio.c ${PORT}/sdl/test_mode.c)
+    endif()
 endif()
 if(NINTENDO_3DS)
     list(APPEND FRONT_SOURCES ${PORT}/ctr/ctr_audio.c ${PORT}/ctr/ctr_code.c)    # the sound out and its translator's code memory
@@ -298,6 +325,8 @@ elseif(MVC2_SDL3 AND NOT NINTENDO_3DS)
     set(SDL_LIBS SDL3::SDL3)
     target_compile_definitions(mvc2_port PRIVATE RD_SDL3)
     target_link_libraries(mvc2_port PRIVATE SDL3::SDL3)
+elseif(MVC2_MISTER)
+    target_link_libraries(mvc2_port PRIVATE pthread)
 elseif(NOT NINTENDO_3DS)
     find_package(SDL2 REQUIRED)
     set(SDL_LIBS SDL2::SDL2main SDL2::SDL2)
@@ -583,6 +612,10 @@ function(mvc2_executable TARGET)
                         MUSIC_PATH ${PORT}/psp/SND0.AT3)
     else()
         target_link_libraries(${TARGET} PRIVATE ${SDL_LIBS} m)
+        if(MVC2_MISTER)
+            target_include_directories(${TARGET} PRIVATE ${PORT}/mister)
+            target_link_libraries(${TARGET} PRIVATE pthread dl)
+        endif()
         if(MVC2_SDL3)
             target_compile_definitions(${TARGET} PRIVATE MVC2_SDL3 RD_SDL3)
         endif()

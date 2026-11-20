@@ -1,6 +1,6 @@
 name: Release
 
-# Builds the Windows, 3DS and PSP zips, and the 3DS CIA, and attaches them to the release (by hand: with a tag, or none to only
+# Builds the Windows, 3DS and PSP zips, the 3DS CIA and the MiSTer package, and attaches them to the release (by hand: with a tag, or none to only
 # build). The ROM-exact builds can't run here: SHC and Sega's SDK libraries can't be redistributed.
 on:
   release:
@@ -266,8 +266,36 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  mister:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag || github.ref }}
+
+      - name: Build and package
+        id: package
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          version="${TAG:-${GITHUB_SHA::7}}"
+          sh ports/tools/mister/build.sh "$version" dist
+          echo "name=mvc2-mister-$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.package.outputs.name }}
+          path: |
+            dist/${{ steps.package.outputs.name }}.tar.gz
+            dist/${{ steps.package.outputs.name }}.sha256
+            dist/mvc2_setup.sh
+          if-no-files-found: error
+          retention-days: 30
+
   publish:
-    needs: [package, pc, psp]
+    needs: [package, pc, psp, mister]
     if: github.event_name == 'release' || inputs.tag != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 10
