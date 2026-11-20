@@ -273,6 +273,13 @@ void input_read(HOST_INPUT* in) {
                 }
             }
         }
+        /* neutral SOCD: opposing directions cancel so right-side pl_sw_set matches left-side */
+        if ((in->player[pl] & (JVS_LEFT | JVS_RIGHT)) == (JVS_LEFT | JVS_RIGHT)) {
+            in->player[pl] &= ~(uint32_t)(JVS_LEFT | JVS_RIGHT);
+        }
+        if ((in->player[pl] & (JVS_UP | JVS_DOWN)) == (JVS_UP | JVS_DOWN)) {
+            in->player[pl] &= ~(uint32_t)(JVS_UP | JVS_DOWN);
+        }
     }
     for (pl = 0; pl < 2; pl++) {
         if (input_menu_combo(pl)) {
